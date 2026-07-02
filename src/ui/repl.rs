@@ -94,6 +94,7 @@ pub async fn run_repl(
                     temperature: config.temperature,
                     max_tokens: Some(config.max_output_tokens as u32),
                     stream: true,
+                    response_format: None,
                 };
                 let result = client
                     .chat_stream(&req, &mut |delta| {

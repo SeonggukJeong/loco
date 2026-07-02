@@ -26,6 +26,9 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
     pub stream: bool,
+    /// 에이전트 턴의 json_schema 강제 (스펙 §4). None이면 필드 자체를 보내지 않는다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<serde_json::Value>,
 }
 
 /// 응답의 message는 content가 null일 수 있어 요청용 ChatMessage와 분리
@@ -55,6 +58,11 @@ impl ChatResponse {
             .first()
             .and_then(|c| c.message.content.as_deref())
             .unwrap_or("")
+    }
+
+    /// 첫 번째 choice의 finish_reason ("stop", "length" 등)
+    pub fn finish_reason(&self) -> Option<&str> {
+        self.choices.first().and_then(|c| c.finish_reason.as_deref())
     }
 }
 
@@ -89,6 +97,7 @@ mod tests {
             temperature: 0.1,
             max_tokens: None,
             stream: false,
+            response_format: None,
         };
         let v: serde_json::Value = serde_json::to_value(&req).unwrap();
         assert_eq!(v["model"], "gemma-4b");
@@ -106,9 +115,49 @@ mod tests {
             temperature: 0.1,
             max_tokens: Some(2048),
             stream: false,
+            response_format: None,
         };
         let v: serde_json::Value = serde_json::to_value(&req).unwrap();
         assert_eq!(v["max_tokens"], 2048, "Some이면 값이 그대로 직렬화되어야 함");
+    }
+
+    #[test]
+    fn response_format_is_omitted_when_none() {
+        let req = ChatRequest {
+            model: "m".into(),
+            messages: vec![ChatMessage::user("hi")],
+            temperature: 0.1,
+            max_tokens: None,
+            stream: false,
+            response_format: None,
+        };
+        let v: serde_json::Value = serde_json::to_value(&req).unwrap();
+        assert!(v.get("response_format").is_none());
+    }
+
+    #[test]
+    fn response_format_serializes_when_set() {
+        let req = ChatRequest {
+            model: "m".into(),
+            messages: vec![ChatMessage::user("hi")],
+            temperature: 0.1,
+            max_tokens: None,
+            stream: false,
+            response_format: Some(serde_json::json!({"type": "json_schema"})),
+        };
+        let v: serde_json::Value = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["response_format"]["type"], "json_schema");
+    }
+
+    #[test]
+    fn finish_reason_reads_first_choice() {
+        let body = r#"{"choices": [{"message": {"role": "assistant", "content": "x"}, "finish_reason": "length"}]}"#;
+        let resp: ChatResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(resp.finish_reason(), Some("length"));
+
+        let none = r#"{"choices": []}"#;
+        let resp: ChatResponse = serde_json::from_str(none).unwrap();
+        assert_eq!(resp.finish_reason(), None);
     }
 
     #[test]

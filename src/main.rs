@@ -36,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
                 temperature: config.temperature,
                 max_tokens: Some(config.max_output_tokens as u32),
                 stream: true,
+                response_format: None,
             };
             client
                 .chat_stream(&req, &mut |delta| {

@@ -21,8 +21,13 @@ pub enum LlmError {
     Api { status: u16, body: String },
     #[error("응답 파싱 실패: {0}")]
     Parse(String),
-    #[error(transparent)]
+    #[error("HTTP 요청 실패: {0}")]
     Http(#[from] reqwest::Error),
+}
+
+/// serde_json 파싱 실패를 원문과 함께 LlmError::Parse로 감싼다 (M1 중복 제거)
+fn parse_json<T: serde::de::DeserializeOwned>(body: &str) -> Result<T, LlmError> {
+    serde_json::from_str(body).map_err(|e| LlmError::Parse(format!("{e}: {body}")))
 }
 
 /// 총 시도 횟수 (초기 1회 + 재시도 2회). 스펙 §9의 "3회"는 총 시도 기준.
@@ -50,6 +55,14 @@ impl OpenAiClient {
 
     fn post(&self, url: &str) -> reqwest::RequestBuilder {
         let mut rb = self.http.post(url);
+        if let Some(key) = &self.api_key {
+            rb = rb.bearer_auth(key);
+        }
+        rb
+    }
+
+    fn get(&self, url: &str) -> reqwest::RequestBuilder {
+        let mut rb = self.http.get(url);
         if let Some(key) = &self.api_key {
             rb = rb.bearer_auth(key);
         }
@@ -95,7 +108,7 @@ impl OpenAiClient {
     pub async fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, LlmError> {
         let resp = self.send_with_retry(req).await?;
         let body = resp.text().await?;
-        serde_json::from_str(&body).map_err(|e| LlmError::Parse(format!("{e}: {body}")))
+        parse_json(&body)
     }
 
     /// 스트리밍 응답. 델타마다 on_delta를 호출하고 전체 텍스트를 반환한다.
@@ -114,8 +127,7 @@ impl OpenAiClient {
                 if payload == "[DONE]" {
                     break 'outer;
                 }
-                let parsed: StreamChunk = serde_json::from_str(&payload)
-                    .map_err(|e| LlmError::Parse(format!("{e}: {payload}")))?;
+                let parsed: StreamChunk = parse_json(&payload)?;
                 if let Some(content) = parsed
                     .choices
                     .first()
@@ -140,11 +152,7 @@ impl OpenAiClient {
         }
 
         let url = format!("{}/models", self.base_url);
-        let mut rb = self.http.get(&url);
-        if let Some(key) = &self.api_key {
-            rb = rb.bearer_auth(key);
-        }
-        let resp = rb.send().await.map_err(|e| {
+        let resp = self.get(&url).send().await.map_err(|e| {
             if e.is_connect() {
                 LlmError::Connect { base_url: self.base_url.clone(), source: e }
             } else {
@@ -157,9 +165,14 @@ impl OpenAiClient {
             return Err(LlmError::Api { status: status.as_u16(), body });
         }
         let body = resp.text().await?;
-        let list: ModelList =
-            serde_json::from_str(&body).map_err(|e| LlmError::Parse(format!("{e}: {body}")))?;
+        let list: ModelList = parse_json(&body)?;
         Ok(list.data.into_iter().map(|m| m.id).collect())
+    }
+}
+
+impl crate::llm::LlmClient for OpenAiClient {
+    async fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, LlmError> {
+        OpenAiClient::chat(self, req).await
     }
 }
 
@@ -197,6 +210,7 @@ mod tests {
             temperature: 0.1,
             max_tokens: None,
             stream: false,
+            response_format: None,
         }
     }
 
@@ -399,5 +413,29 @@ mod tests {
         let config = crate::config::Config::default();
         let err = resolve_model(&client, &config).await.unwrap_err();
         assert!(err.to_string().contains("모델"));
+    }
+
+    #[tokio::test]
+    async fn http_error_message_is_korean() {
+        // 잘못된 URL → 연결 이전의 reqwest 빌더 에러 → LlmError::Http 경로
+        let client = OpenAiClient::new("not-a-url", None);
+        let err = client.chat(&sample_request()).await.unwrap_err();
+        assert!(err.to_string().starts_with("HTTP 요청 실패"), "{err}");
+    }
+
+    async fn call_via_trait<C: crate::llm::LlmClient>(c: &C, req: &ChatRequest) -> String {
+        c.chat(req).await.unwrap().text().to_string()
+    }
+
+    #[tokio::test]
+    async fn openai_client_implements_llm_client_trait() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(ok_body()))
+            .mount(&server)
+            .await;
+        let client = OpenAiClient::new(&format!("{}/v1", server.uri()), None);
+        assert_eq!(call_via_trait(&client, &sample_request()).await, "hello");
     }
 }
