@@ -12,7 +12,7 @@ M1 (streaming chat REPL) merged to main; M2 (read-tool agent) is next.
 
 ## Hard constraints (from spec)
 - Edition 2024. Dependency list is fixed by the spec — ask the user before adding any crate
-- reqwest stays `default-features = false, features = ["json", "stream", "rustls"]` — no OpenSSL in the graph (reqwest 0.13 renamed `rustls-tls` → `rustls`)
+- reqwest stays `default-features = false, features = ["json", "stream", "rustls-no-provider"]`; TLS crypto provider is rustls+ring (direct dep, user-approved) — no OpenSSL and no aws-lc-sys in the graph (Windows offline builds need no cmake/NASM). `main()` installs the ring provider at startup
 - Network calls only to the configured endpoint; the HTTP client uses `.no_proxy()` (corporate proxies must not capture localhost LLM traffic)
 - User-facing CLI messages in Korean; identifiers and SYSTEM_PROMPT in English
 - Errors: `thiserror` in `llm` module, `anyhow` at app level

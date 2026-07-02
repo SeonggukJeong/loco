@@ -17,6 +17,12 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // ring을 프로세스 기본 TLS 프로바이더로 설치 (aws-lc-sys 제거 — Windows 오프라인 빌드 대응).
+    // 테스트는 이 설치 없이도 동작한다: 그래프에 프로바이더가 ring 하나뿐이면 rustls가 자동 선택.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("rustls crypto provider 설치 실패");
+
     let cli = Cli::parse();
     let config = Config::load_default()?;
     let client = OpenAiClient::new(&config.base_url, config.api_key.clone());

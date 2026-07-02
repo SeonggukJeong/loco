@@ -178,8 +178,17 @@ pub async fn resolve_model(client: &OpenAiClient, config: &Config) -> anyhow::Re
 mod tests {
     use super::*;
     use crate::llm::types::ChatMessage;
+    use std::sync::Once;
     use wiremock::matchers::{body_partial_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    static INIT: Once = Once::new();
+
+    fn init_crypto() {
+        INIT.call_once(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
+    }
 
     fn sample_request() -> ChatRequest {
         ChatRequest {
@@ -202,6 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_posts_to_chat_completions() {
+        init_crypto();
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
@@ -221,6 +231,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_sends_bearer_token_when_configured() {
+        init_crypto();
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
@@ -236,6 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_retries_on_500_then_succeeds() {
+        init_crypto();
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
@@ -257,6 +269,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_gives_actionable_error_when_server_down() {
+        init_crypto();
         // 포트를 잡았다가 놓아서 "아무도 리슨하지 않는 주소"를 확보
         let addr = {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -271,6 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_reports_4xx_without_retry() {
+        init_crypto();
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
@@ -286,6 +300,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_stream_accumulates_deltas_in_order() {
+        init_crypto();
         let server = MockServer::start().await;
         let sse_body = concat!(
             "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n",
@@ -319,6 +334,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_models_parses_ids() {
+        init_crypto();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/v1/models"))
@@ -336,6 +352,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_model_prefers_config_value() {
+        init_crypto();
         // 이 주소는 실제로 다이얼되지 않는다 — config에 모델이 있으면
         // 네트워크를 아예 안 탄다는 것을 검증하는 테스트라 하드코딩해도 안전
         let client = OpenAiClient::new("http://127.0.0.1:9/v1", None);
@@ -349,6 +366,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_model_falls_back_to_first_server_model() {
+        init_crypto();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/v1/models"))
@@ -366,6 +384,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_model_errors_when_server_has_none() {
+        init_crypto();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/v1/models"))
