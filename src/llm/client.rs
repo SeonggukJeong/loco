@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use super::types::{ChatRequest, ChatResponse};
+use futures_util::StreamExt;
+
+use super::sse::SseParser;
+use super::types::{ChatRequest, ChatResponse, StreamChunk};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
@@ -91,6 +94,37 @@ impl OpenAiClient {
         let resp = self.send_with_retry(req).await?;
         let body = resp.text().await?;
         serde_json::from_str(&body).map_err(|e| LlmError::Parse(format!("{e}: {body}")))
+    }
+
+    /// 스트리밍 응답. 델타마다 on_delta를 호출하고 전체 텍스트를 반환한다.
+    pub async fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_delta: &mut dyn FnMut(&str),
+    ) -> Result<String, LlmError> {
+        let resp = self.send_with_retry(req).await?;
+        let mut stream = resp.bytes_stream();
+        let mut parser = SseParser::new();
+        let mut full = String::new();
+        'outer: while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            for payload in parser.feed(&chunk) {
+                if payload == "[DONE]" {
+                    break 'outer;
+                }
+                let parsed: StreamChunk = serde_json::from_str(&payload)
+                    .map_err(|e| LlmError::Parse(format!("{e}: {payload}")))?;
+                if let Some(content) = parsed
+                    .choices
+                    .first()
+                    .and_then(|c| c.delta.content.as_deref())
+                {
+                    on_delta(content);
+                    full.push_str(content);
+                }
+            }
+        }
+        Ok(full)
     }
 }
 
@@ -202,5 +236,38 @@ mod tests {
         let client = OpenAiClient::new(&format!("{}/v1", server.uri()), None);
         let err = client.chat(&sample_request()).await.unwrap_err();
         assert!(matches!(err, LlmError::Api { status: 404, .. }));
+    }
+
+    #[tokio::test]
+    async fn chat_stream_accumulates_deltas_in_order() {
+        let server = MockServer::start().await;
+        let sse_body = concat!(
+            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"안녕\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"하세요\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_partial_json(serde_json::json!({"stream": true})))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw(sse_body, "text/event-stream"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = OpenAiClient::new(&format!("{}/v1", server.uri()), None);
+        let mut req = sample_request();
+        req.stream = true;
+
+        let mut seen = Vec::new();
+        let full = client
+            .chat_stream(&req, &mut |d| seen.push(d.to_string()))
+            .await
+            .unwrap();
+        assert_eq!(seen, vec!["안녕".to_string(), "하세요".to_string()]);
+        assert_eq!(full, "안녕하세요");
     }
 }
