@@ -1,16 +1,24 @@
+use std::cell::RefCell;
 use std::io::Write;
 
 use rustyline::error::ReadlineError;
 
+use crate::agent::{Agent, AgentEvent, AgentOutcome, PARSE_ATTEMPTS};
 use crate::config::Config;
 use crate::llm::client::OpenAiClient;
 use crate::llm::types::{ChatMessage, ChatRequest};
+use crate::tools::{Registry, ToolCtx};
+use crate::ui::status::{format_action, Spinner};
 
-pub const SYSTEM_PROMPT: &str = "You are loco, a concise coding assistant running on a local model. \
+/// /chat 경로(M1 스트리밍 채팅) 전용 시스템 프롬프트
+pub const CHAT_SYSTEM_PROMPT: &str = "You are loco, a concise coding assistant running on a local model. \
 Answer briefly and accurately. Reply in the user's language.";
 
 #[derive(Debug, PartialEq)]
 pub enum Input {
+    /// 기본 입력 — 에이전트 루프로 (스펙 §7, M2부터)
+    Agent(String),
+    /// /chat <메시지> — M1 스트리밍 채팅 경로 (빠른 질문용)
     Chat(String),
     Help,
     Clear,
@@ -21,22 +29,32 @@ pub enum Input {
 
 pub fn parse_input(line: &str) -> Input {
     let line = line.trim();
+    if let Some(msg) = line.strip_prefix("/chat ") {
+        let msg = msg.trim();
+        if !msg.is_empty() {
+            return Input::Chat(msg.to_string());
+        }
+    }
     if let Some(cmd) = line.strip_prefix('/') {
-        match cmd.trim() {
+        return match cmd.trim() {
             "help" => Input::Help,
             "clear" => Input::Clear,
             "config" => Input::Config,
             "quit" | "exit" => Input::Quit,
             other => Input::Unknown(other.to_string()),
-        }
-    } else {
-        Input::Chat(line.to_string())
+        };
     }
+    Input::Agent(line.to_string())
 }
 
 fn print_help() {
-    println!("명령어: /help 도움말, /clear 히스토리 초기화, /config 설정 표시, /quit 종료");
-    println!("그 외 입력은 모델에게 전달됩니다.");
+    println!("입력한 내용은 에이전트가 툴(read_file/list_files/grep)로 조사해 답합니다.");
+    println!("명령어:");
+    println!("  /chat <메시지>  에이전트 없이 모델과 바로 대화 (스트리밍)");
+    println!("  /clear          에이전트·채팅 히스토리 초기화");
+    println!("  /config         현재 설정 표시");
+    println!("  /quit           종료");
+    println!("실행 중 Ctrl+C 는 진행 중인 요청을 취소합니다.");
 }
 
 fn print_config(config: &Config, model: &str) {
@@ -61,9 +79,18 @@ pub async fn run_repl(
     config: &Config,
     model: &str,
 ) -> anyhow::Result<()> {
+    let root = std::env::current_dir()?;
+    let mut agent = Agent::new(
+        client,
+        Registry::read_only(),
+        ToolCtx { root },
+        model.to_string(),
+        config,
+    );
+    let mut agent_history = agent.initial_history();
+    let mut chat_history = vec![ChatMessage::system(CHAT_SYSTEM_PROMPT)];
     let mut rl = rustyline::DefaultEditor::new()?;
-    let mut history: Vec<ChatMessage> = vec![ChatMessage::system(SYSTEM_PROMPT)];
-    println!("loco — 로컬 모델 코딩 어시스턴트 (모델: {model}, /help 참고)");
+    println!("loco — 로컬 모델 코딩 에이전트 (모델: {model}, /help 참고)");
 
     loop {
         let line = match rl.readline("loco> ") {
@@ -81,44 +108,18 @@ pub async fn run_repl(
             Input::Quit => break,
             Input::Help => print_help(),
             Input::Config => print_config(config, model),
+            Input::Unknown(cmd) => println!("알 수 없는 명령: /{cmd} — /help 참고"),
             Input::Clear => {
-                history.truncate(1); // 시스템 프롬프트만 남김
+                // 에이전트/채팅 히스토리는 분리 운영 — 둘 다 초기화
+                agent_history = agent.initial_history();
+                chat_history.truncate(1);
                 println!("(히스토리 초기화)");
             }
-            Input::Unknown(cmd) => println!("알 수 없는 명령: /{cmd} — /help 참고"),
             Input::Chat(text) => {
-                history.push(ChatMessage::user(text));
-                let req = ChatRequest {
-                    model: model.to_string(),
-                    messages: history.clone(),
-                    temperature: config.temperature,
-                    max_tokens: Some(config.max_output_tokens as u32),
-                    stream: true,
-                    response_format: None,
-                };
-                let result = client
-                    .chat_stream(&req, &mut |delta| {
-                        print!("{delta}");
-                        let _ = std::io::stdout().flush();
-                    })
-                    .await;
-                match result {
-                    Ok(full) => {
-                        if full.is_empty() {
-                            // 빈 응답은 히스토리를 오염시키므로 사용자 턴을 되돌린다 (에러 처리와 동일 패턴)
-                            history.pop();
-                            println!("(빈 응답 — 히스토리에 남기지 않음)");
-                        } else {
-                            println!();
-                            history.push(ChatMessage::assistant(full));
-                        }
-                    }
-                    Err(e) => {
-                        // 실패한 사용자 턴은 히스토리에서 제거 (재입력 가능하게)
-                        history.pop();
-                        println!("\n오류: {e}");
-                    }
-                }
+                run_chat_turn(client, config, model, &mut chat_history, text).await;
+            }
+            Input::Agent(text) => {
+                run_agent_turn(&mut agent, &mut agent_history, config, &text).await;
             }
         }
     }
@@ -126,13 +127,132 @@ pub async fn run_repl(
     Ok(())
 }
 
+/// M1 스트리밍 채팅 경로 (/chat). Ctrl+C로 취소 가능
+async fn run_chat_turn(
+    client: &OpenAiClient,
+    config: &Config,
+    model: &str,
+    history: &mut Vec<ChatMessage>,
+    text: String,
+) {
+    history.push(ChatMessage::user(text));
+    let req = ChatRequest {
+        model: model.to_string(),
+        messages: history.clone(),
+        temperature: config.temperature,
+        max_tokens: Some(config.max_output_tokens as u32),
+        stream: true,
+        response_format: None,
+    };
+    let mut on_delta = |delta: &str| {
+        print!("{delta}");
+        let _ = std::io::stdout().flush();
+    };
+    let result = tokio::select! {
+        r = client.chat_stream(&req, &mut on_delta) => r,
+        _ = tokio::signal::ctrl_c() => {
+            history.pop();
+            println!("\n(중단됨)");
+            return;
+        }
+    };
+    match result {
+        Ok(full) if full.is_empty() => {
+            history.pop();
+            println!("(빈 응답 — 히스토리에 남기지 않음)");
+        }
+        Ok(full) => {
+            println!();
+            history.push(ChatMessage::assistant(full));
+        }
+        Err(e) => {
+            history.pop();
+            println!("\n오류: {e}");
+        }
+    }
+}
+
+/// 에이전트 턴. Ctrl+C·에러·파싱 실패 시 히스토리를 요청 이전 상태로 되돌린다
+async fn run_agent_turn(
+    agent: &mut Agent<&OpenAiClient>,
+    history: &mut Vec<ChatMessage>,
+    config: &Config,
+    text: &str,
+) {
+    let snapshot_len = history.len();
+    // 직전 실행이 MaxTurns였다면 이번 요청은 push가 아니라 꼬리 user 메시지에
+    // in-place 병합된다(agent::run 진입부) — 길이가 안 변하므로 truncate만으로는
+    // 취소된 요청 텍스트가 남는다. 꼬리 내용까지 스냅샷해 원복한다
+    let snapshot_tail = history.last().cloned();
+    let spinner = RefCell::new(Spinner::start("생각 중"));
+    let mut on_event = |ev: AgentEvent<'_>| {
+        spinner.borrow_mut().stop();
+        match ev {
+            AgentEvent::Thought(t) => println!("· {t}"),
+            AgentEvent::Action { tool, args } => println!("{}", format_action(tool, args)),
+            AgentEvent::Notice(n) => println!("{n}"),
+        }
+        *spinner.borrow_mut() = Spinner::start("생각 중");
+    };
+    let result = tokio::select! {
+        r = agent.run(history, text, &mut on_event) => Some(r),
+        _ = tokio::signal::ctrl_c() => None,
+    };
+    // on_event는 &RefCell만 캡처해 Copy — drop()은 clippy::dropping_copy_types에 걸리고
+    // 애초에 불필요하다 (NLL이 차용을 끝낸다)
+    spinner.borrow_mut().stop();
+
+    match result {
+        None => {
+            rollback(history, snapshot_len, snapshot_tail);
+            println!("\n(중단됨 — 이번 요청은 히스토리에서 제거)");
+        }
+        Some(Ok(AgentOutcome::Finished(summary))) => println!("\n{summary}"),
+        Some(Ok(AgentOutcome::MaxTurns)) => println!(
+            "(최대 턴 {}회에 도달했습니다 — 작업을 더 작게 나눠 다시 시도하세요)",
+            config.max_turns
+        ),
+        Some(Ok(AgentOutcome::ParseFailed(raw))) => {
+            rollback(history, snapshot_len, snapshot_tail);
+            println!("(모델 응답을 {PARSE_ATTEMPTS}회 파싱하지 못했습니다. 마지막 원문:)\n{raw}");
+        }
+        Some(Err(e)) => {
+            rollback(history, snapshot_len, snapshot_tail);
+            println!("오류: {e}");
+        }
+    }
+}
+
+/// 실패/중단 롤백 — 길이 절단 + 꼬리 메시지 원복.
+/// 병합 경로(직전 MaxTurns)에선 길이가 그대로라 truncate만으로는 부족하다.
+/// snapshot_tail은 세 arm 중 하나에서만 소비되므로 move해도 안전
+fn rollback(history: &mut Vec<ChatMessage>, len: usize, tail: Option<ChatMessage>) {
+    history.truncate(len);
+    if let (Some(slot), Some(orig)) = (history.last_mut(), tail) {
+        *slot = orig;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn plain_text_is_chat() {
-        assert_eq!(parse_input("안녕"), Input::Chat("안녕".to_string()));
+    fn plain_text_goes_to_the_agent() {
+        assert_eq!(parse_input("config 어디서 읽어?"), Input::Agent("config 어디서 읽어?".to_string()));
+    }
+
+    #[test]
+    fn chat_command_bypasses_the_agent() {
+        assert_eq!(parse_input("/chat 안녕"), Input::Chat("안녕".to_string()));
+        // 슬래시로 시작하는 채팅도 /chat으로 보낼 수 있다 (M1 이연 항목 해소)
+        assert_eq!(parse_input("/chat /help가 뭐야"), Input::Chat("/help가 뭐야".to_string()));
+    }
+
+    #[test]
+    fn bare_chat_is_unknown() {
+        assert_eq!(parse_input("/chat"), Input::Unknown("chat".to_string()));
+        assert_eq!(parse_input("/chat   "), Input::Unknown("chat".to_string()));
     }
 
     #[test]

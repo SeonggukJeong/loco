@@ -5,7 +5,7 @@ use clap::Parser;
 use loco::config::Config;
 use loco::llm::client::{resolve_model, OpenAiClient};
 use loco::llm::types::{ChatMessage, ChatRequest};
-use loco::ui::repl::{run_repl, SYSTEM_PROMPT};
+use loco::ui::repl::{run_repl, CHAT_SYSTEM_PROMPT};
 
 #[derive(Parser)]
 #[command(name = "loco", version, about = "폐쇄망 소형모델 코딩 CLI")]
@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         Some(prompt) => {
             let req = ChatRequest {
                 model,
-                messages: vec![ChatMessage::system(SYSTEM_PROMPT), ChatMessage::user(prompt)],
+                messages: vec![ChatMessage::system(CHAT_SYSTEM_PROMPT), ChatMessage::user(prompt)],
                 temperature: config.temperature,
                 max_tokens: Some(config.max_output_tokens as u32),
                 stream: true,
