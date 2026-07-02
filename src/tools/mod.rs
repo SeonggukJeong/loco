@@ -1,6 +1,7 @@
 pub mod path;
 pub mod read_file;
 pub mod list_files;
+pub mod grep;
 
 use std::path::PathBuf;
 
@@ -74,6 +75,15 @@ impl Registry {
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
         tool.run(args, ctx)
     }
+
+    /// M2 읽기 전용 툴 세트. finish는 agent 루프가 직접 처리한다 (스펙 §4)
+    pub fn read_only() -> Self {
+        Self::new(vec![
+            Box::new(read_file::ReadFile),
+            Box::new(list_files::ListFiles),
+            Box::new(grep::Grep),
+        ])
+    }
 }
 
 #[cfg(test)]
@@ -119,5 +129,11 @@ mod tests {
         let reg = Registry::new(vec![Box::new(Echo)]);
         assert_eq!(reg.names(), vec!["echo"]);
         assert!(reg.docs().contains("- echo(text)"));
+    }
+
+    #[test]
+    fn read_only_registry_has_the_three_read_tools() {
+        let reg = Registry::read_only();
+        assert_eq!(reg.names(), vec!["read_file", "list_files", "grep"]);
     }
 }
