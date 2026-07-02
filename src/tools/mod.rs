@@ -1,4 +1,5 @@
 pub mod path;
+pub mod read_file;
 
 use std::path::PathBuf;
 
