@@ -161,4 +161,49 @@ mod tests {
         let out = run(&ctx, serde_json::json!({"pattern": "one", "path": "src/a.rs"})).unwrap();
         assert!(out.contains("src/a.rs:1"), "{out}");
     }
+
+    #[test]
+    fn separator_between_non_adjacent_match_groups() {
+        let dir = tempfile::tempdir().unwrap();
+        // Two matches separated enough that their context blocks (2 lines each) don't overlap
+        let lines = vec![
+            "filler 0",
+            "filler 1",
+            "filler 2",
+            "MATCH_A",      // index 3, context: indices 1-5 (lines 2-6 in 1-indexed)
+            "filler 4",
+            "filler 5",
+            // Gap to ensure no overlap
+            "filler 6", "filler 7", "filler 8", "filler 9",
+            "filler 10", "filler 11", "filler 12", "filler 13",
+            "filler 14",
+            "filler 15",
+            "MATCH_B",      // index 16, context: indices 14-18 (lines 15-19 in 1-indexed)
+            "filler 17",
+            "filler 18",
+        ];
+        std::fs::write(dir.path().join("multi.txt"), lines.join("\n")).unwrap();
+        let ctx = ToolCtx { root: dir.path().to_path_buf() };
+
+        let out = run(&ctx, serde_json::json!({"pattern": "MATCH"})).unwrap();
+
+        // Both matches in expected format
+        assert!(out.contains("multi.txt:4: MATCH_A"), "first match: {out}");
+        assert!(out.contains("multi.txt:17: MATCH_B"), "second match: {out}");
+
+        // Separator line exists
+        assert!(out.lines().any(|l| l == "--"), "separator line: {out}");
+
+        // Separator is between the two groups
+        let all_lines: Vec<&str> = out.lines().collect();
+        let sep_idx = all_lines.iter().position(|l| *l == "--").expect("separator not found");
+        assert!(
+            all_lines[..sep_idx].iter().any(|l| l.contains("MATCH_A")),
+            "MATCH_A before separator: {out}"
+        );
+        assert!(
+            all_lines[sep_idx + 1..].iter().any(|l| l.contains("MATCH_B")),
+            "MATCH_B after separator: {out}"
+        );
+    }
 }
