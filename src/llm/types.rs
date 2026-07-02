@@ -99,6 +99,19 @@ mod tests {
     }
 
     #[test]
+    fn request_serializes_max_tokens_when_set() {
+        let req = ChatRequest {
+            model: "gemma-4b".into(),
+            messages: vec![ChatMessage::user("hi")],
+            temperature: 0.1,
+            max_tokens: Some(2048),
+            stream: false,
+        };
+        let v: serde_json::Value = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["max_tokens"], 2048, "Some이면 값이 그대로 직렬화되어야 함");
+    }
+
+    #[test]
     fn response_deserializes_openai_shape() {
         let body = r#"{
             "id": "chatcmpl-1", "object": "chat.completion", "created": 1,

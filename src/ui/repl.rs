@@ -92,7 +92,7 @@ pub async fn run_repl(
                     model: model.to_string(),
                     messages: history.clone(),
                     temperature: config.temperature,
-                    max_tokens: None,
+                    max_tokens: Some(config.max_output_tokens as u32),
                     stream: true,
                 };
                 let result = client
@@ -103,8 +103,14 @@ pub async fn run_repl(
                     .await;
                 match result {
                     Ok(full) => {
-                        println!();
-                        history.push(ChatMessage::assistant(full));
+                        if full.is_empty() {
+                            // 빈 응답은 히스토리를 오염시키므로 사용자 턴을 되돌린다 (에러 처리와 동일 패턴)
+                            history.pop();
+                            println!("(빈 응답 — 히스토리에 남기지 않음)");
+                        } else {
+                            println!();
+                            history.push(ChatMessage::assistant(full));
+                        }
                     }
                     Err(e) => {
                         // 실패한 사용자 턴은 히스토리에서 제거 (재입력 가능하게)

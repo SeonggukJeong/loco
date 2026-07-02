@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
                 model,
                 messages: vec![ChatMessage::system(SYSTEM_PROMPT), ChatMessage::user(prompt)],
                 temperature: config.temperature,
-                max_tokens: None,
+                max_tokens: Some(config.max_output_tokens as u32),
                 stream: true,
             };
             client
