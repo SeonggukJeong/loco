@@ -1,9 +1,11 @@
 use std::time::Duration;
 
 use futures_util::StreamExt;
+use serde::Deserialize;
 
 use super::sse::SseParser;
 use super::types::{ChatRequest, ChatResponse, StreamChunk};
+use crate::config::Config;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
@@ -126,6 +128,50 @@ impl OpenAiClient {
         }
         Ok(full)
     }
+
+    pub async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        #[derive(Deserialize)]
+        struct ModelList {
+            data: Vec<ModelEntry>,
+        }
+        #[derive(Deserialize)]
+        struct ModelEntry {
+            id: String,
+        }
+
+        let url = format!("{}/models", self.base_url);
+        let mut rb = self.http.get(&url);
+        if let Some(key) = &self.api_key {
+            rb = rb.bearer_auth(key);
+        }
+        let resp = rb.send().await.map_err(|e| {
+            if e.is_connect() {
+                LlmError::Connect { base_url: self.base_url.clone(), source: e }
+            } else {
+                LlmError::Http(e)
+            }
+        })?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(LlmError::Api { status: status.as_u16(), body });
+        }
+        let body = resp.text().await?;
+        let list: ModelList =
+            serde_json::from_str(&body).map_err(|e| LlmError::Parse(format!("{e}: {body}")))?;
+        Ok(list.data.into_iter().map(|m| m.id).collect())
+    }
+}
+
+/// 설정에 모델이 지정돼 있으면 그대로 쓰고, 없으면 서버의 첫 모델을 쓴다.
+pub async fn resolve_model(client: &OpenAiClient, config: &Config) -> anyhow::Result<String> {
+    if !config.model.is_empty() {
+        return Ok(config.model.clone());
+    }
+    let models = client.list_models().await?;
+    models.into_iter().next().ok_or_else(|| {
+        anyhow::anyhow!("서버에 로드된 모델이 없습니다. LM Studio에서 모델을 로드하거나 설정 파일에 model을 지정하세요.")
+    })
 }
 
 #[cfg(test)]
@@ -269,5 +315,70 @@ mod tests {
             .unwrap();
         assert_eq!(seen, vec!["안녕".to_string(), "하세요".to_string()]);
         assert_eq!(full, "안녕하세요");
+    }
+
+    #[tokio::test]
+    async fn list_models_parses_ids() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [{"id": "gemma-4b", "object": "model"}, {"id": "qwen-4b", "object": "model"}]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiClient::new(&format!("{}/v1", server.uri()), None);
+        let models = client.list_models().await.unwrap();
+        assert_eq!(models, vec!["gemma-4b".to_string(), "qwen-4b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn resolve_model_prefers_config_value() {
+        // 이 주소는 실제로 다이얼되지 않는다 — config에 모델이 있으면
+        // 네트워크를 아예 안 탄다는 것을 검증하는 테스트라 하드코딩해도 안전
+        let client = OpenAiClient::new("http://127.0.0.1:9/v1", None);
+        let config = crate::config::Config {
+            model: "my-model".into(),
+            ..Default::default()
+        };
+        let m = resolve_model(&client, &config).await.unwrap();
+        assert_eq!(m, "my-model");
+    }
+
+    #[tokio::test]
+    async fn resolve_model_falls_back_to_first_server_model() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{"id": "loaded-model"}]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiClient::new(&format!("{}/v1", server.uri()), None);
+        let config = crate::config::Config::default();
+        let m = resolve_model(&client, &config).await.unwrap();
+        assert_eq!(m, "loaded-model");
+    }
+
+    #[tokio::test]
+    async fn resolve_model_errors_when_server_has_none() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"data": []})),
+            )
+            .mount(&server)
+            .await;
+
+        let client = OpenAiClient::new(&format!("{}/v1", server.uri()), None);
+        let config = crate::config::Config::default();
+        let err = resolve_model(&client, &config).await.unwrap_err();
+        assert!(err.to_string().contains("모델"));
     }
 }
