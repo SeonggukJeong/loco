@@ -37,6 +37,14 @@ pub trait Tool {
     fn is_mutating(&self) -> bool {
         false
     }
+    /// 확인 게이트에 보여줄 미리보기 (diff/명령어). mutating 툴은 재정의할 것.
+    /// Err이면 게이트를 건너뛰고 실행 경로가 같은 에러를 모델에 되먹인다.
+    /// 불변식: preview가 Err인 입력에서는 run도 반드시 실패해야 한다 —
+    /// run이 성공할 수 있는 입력에서 preview만 실패하면 확인 없이 변이가 실행된다.
+    /// (M3 세 툴은 preview가 run과 동일한 파싱·경로 확인·매칭을 먼저 수행해 충족)
+    fn preview(&self, args: &serde_json::Value, _ctx: &ToolCtx) -> Result<String, ToolError> {
+        Ok(args.to_string())
+    }
     fn run(&self, args: &serde_json::Value, ctx: &ToolCtx) -> Result<String, ToolError>;
 }
 
@@ -60,6 +68,10 @@ impl Registry {
             .map(|t| format!("- {}", t.doc()))
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
+        self.tools.iter().find(|t| t.name() == name).map(|b| b.as_ref())
     }
 
     pub fn dispatch(

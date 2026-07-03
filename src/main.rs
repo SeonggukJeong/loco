@@ -3,6 +3,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
+use loco::agent::approval::AutoApprover;
 use loco::agent::{Agent, AgentEvent, AgentOutcome, PARSE_ATTEMPTS};
 use loco::config::Config;
 use loco::llm::client::{resolve_model, OpenAiClient};
@@ -76,7 +77,9 @@ async fn run_oneshot(
         }
         *spinner.borrow_mut() = Spinner::start("생각 중");
     };
-    let outcome = agent.run(&mut history, prompt, &mut on_event).await;
+    // 레지스트리가 아직 read_only라 게이트는 발동 불가 — Task 8에서 TtyApprover로 교체
+    let mut approver = AutoApprover;
+    let outcome = agent.run(&mut history, prompt, &mut approver, &mut on_event).await;
     spinner.borrow_mut().stop();
 
     match outcome? {

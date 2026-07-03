@@ -1,3 +1,4 @@
+pub mod approval;
 pub mod protocol;
 pub mod prompt;
 
@@ -6,6 +7,7 @@ use crate::llm::LlmClient;
 use crate::llm::client::LlmError;
 use crate::llm::types::{ChatMessage, ChatRequest, ChatResponse};
 use crate::tools::{Registry, ToolCtx};
+pub use approval::{ApprovalRequest, Approver, Decision};
 use protocol::{parse_turn, response_format};
 
 /// run() 진행 상황 알림. UI가 렌더링을 담당한다 (agent는 출력하지 않음 — 테스트 용이성)
@@ -114,6 +116,7 @@ impl<C: LlmClient> Agent<C> {
         &mut self,
         history: &mut Vec<ChatMessage>,
         request: &str,
+        approver: &mut dyn Approver,
         on_event: &mut dyn FnMut(AgentEvent<'_>),
     ) -> Result<AgentOutcome, LlmError> {
         // 직전 실행이 MaxTurns로 끝났으면 히스토리 꼬리가 user(tool_result)다.
@@ -211,6 +214,28 @@ impl<C: LlmClient> Agent<C> {
                 tool: &turn.action.tool,
                 args: &turn.action.args,
             });
+
+            // 확인 게이트 (스펙 §5): mutating이고 미리보기가 가능할 때만.
+            // preview Err → 게이트 생략, 아래 디스패치가 같은 에러를 되먹인다
+            let gate_preview = self
+                .registry
+                .get(&turn.action.tool)
+                .filter(|t| t.is_mutating())
+                .map(|t| t.preview(&turn.action.args, &self.ctx));
+            if let Some(Ok(preview)) = gate_preview {
+                let req = ApprovalRequest { tool: &turn.action.tool, args: &turn.action.args, preview: &preview };
+                if let Decision::Deny { reason } = approver.approve(&req) {
+                    on_event(AgentEvent::Notice("(거부됨 — 모델에 전달)".to_string()));
+                    let mut msg = tool_result_message(&turn.action.tool, &format!("Denied: {reason}"));
+                    if repeat_count == 3 && !corrected {
+                        corrected = true;
+                        msg.content = format!("{}\n\n{}", msg.content, REPEAT_CORRECTION);
+                    }
+                    history.push(msg);
+                    turns += 1;
+                    continue;
+                }
+            }
             // 툴 에러도 모델에 되먹이는 데이터 — 루프는 계속 (스펙 §9)
             let body = match self.registry.dispatch(&turn.action.tool, &turn.action.args, &self.ctx) {
                 Ok(s) if s.is_empty() => "(no output)".to_string(),
@@ -362,7 +387,7 @@ mod tests {
         history: &mut Vec<ChatMessage>,
         request: &str,
     ) -> Result<AgentOutcome, LlmError> {
-        agent.run(history, request, &mut |_| {}).await
+        agent.run(history, request, &mut crate::agent::approval::AutoApprover, &mut |_| {}).await
     }
 
     #[tokio::test]
@@ -398,7 +423,7 @@ mod tests {
         let mut history = agent.initial_history();
         let mut events: Vec<String> = Vec::new();
         let outcome = agent
-            .run(&mut history, "hello.txt 읽어줘", &mut |ev| {
+            .run(&mut history, "hello.txt 읽어줘", &mut crate::agent::approval::AutoApprover, &mut |ev| {
                 events.push(match ev {
                     AgentEvent::Thought(t) => format!("thought:{t}"),
                     AgentEvent::Action { tool, .. } => format!("action:{tool}"),
@@ -558,7 +583,7 @@ mod tests {
         let mut history = agent.initial_history();
         let mut notices = Vec::new();
         let outcome = agent
-            .run(&mut history, "x", &mut |ev| {
+            .run(&mut history, "x", &mut crate::agent::approval::AutoApprover, &mut |ev| {
                 if let AgentEvent::Notice(n) = ev {
                     notices.push(n);
                 }
@@ -669,5 +694,98 @@ mod tests {
         run_quiet(&mut agent, &mut history, "x").await.unwrap();
         // 빈 assistant content를 거부하는 템플릿 대비 (파싱 실패 경로와 동일 정책)
         assert!(!history.iter().any(|m| m.role == "assistant" && m.content.is_empty()));
+    }
+
+    use crate::agent::approval::{ApprovalRequest, Approver, Decision};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// 실행 횟수를 세는 가짜 mutating 툴
+    struct MutTool(Arc<AtomicUsize>);
+    impl crate::tools::Tool for MutTool {
+        fn name(&self) -> &'static str { "mut_tool" }
+        fn doc(&self) -> &'static str { "mut_tool(): test." }
+        fn is_mutating(&self) -> bool { true }
+        fn preview(&self, _a: &serde_json::Value, _c: &ToolCtx) -> Result<String, crate::tools::ToolError> {
+            Ok("PREVIEW-TEXT".to_string())
+        }
+        fn run(&self, _a: &serde_json::Value, _c: &ToolCtx) -> Result<String, crate::tools::ToolError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok("mutated".to_string())
+        }
+    }
+
+    struct ScriptedApprover {
+        decisions: Mutex<VecDeque<Decision>>,
+        seen: Mutex<Vec<(String, String)>>, // (tool, preview)
+    }
+    impl Approver for &ScriptedApprover {
+        fn approve(&mut self, req: &ApprovalRequest<'_>) -> Decision {
+            self.seen.lock().unwrap().push((req.tool.to_string(), req.preview.to_string()));
+            self.decisions.lock().unwrap().pop_front().expect("결정 스크립트 소진")
+        }
+    }
+
+    fn mut_agent(script: &Scripted, hits: Arc<AtomicUsize>, root: std::path::PathBuf) -> Agent<&Scripted> {
+        let config = Config::default();
+        let reg = Registry::new(vec![Box::new(MutTool(hits))]);
+        Agent::new(script, reg, ToolCtx { root }, "test-model".into(), &config)
+    }
+
+    #[tokio::test]
+    async fn denied_action_is_not_executed_and_reason_reaches_the_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let script = Scripted::new(vec![ok(&turn("mut_tool", serde_json::json!({}))), ok(&finish("ok"))]);
+        let mut agent = mut_agent(&script, hits.clone(), dir.path().to_path_buf());
+        let approver = ScriptedApprover {
+            decisions: Mutex::new(vec![Decision::Deny { reason: "nope".into() }].into()),
+            seen: Mutex::new(Vec::new()),
+        };
+        let mut history = agent.initial_history();
+        let outcome = agent.run(&mut history, "x", &mut (&approver), &mut |_| {}).await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        assert_eq!(hits.load(Ordering::SeqCst), 0, "거부된 액션은 실행 금지");
+        assert!(history.iter().any(|m| m.role == "user" && m.content.contains("Denied: nope")));
+        let seen = approver.seen.lock().unwrap();
+        assert_eq!(seen[0], ("mut_tool".to_string(), "PREVIEW-TEXT".to_string()));
+    }
+
+    #[tokio::test]
+    async fn approved_action_executes() {
+        let dir = tempfile::tempdir().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let script = Scripted::new(vec![ok(&turn("mut_tool", serde_json::json!({}))), ok(&finish("ok"))]);
+        let mut agent = mut_agent(&script, hits.clone(), dir.path().to_path_buf());
+        let approver = ScriptedApprover {
+            decisions: Mutex::new(vec![Decision::Approve].into()),
+            seen: Mutex::new(Vec::new()),
+        };
+        let mut history = agent.initial_history();
+        agent.run(&mut history, "x", &mut (&approver), &mut |_| {}).await.unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        assert!(history.iter().any(|m| m.content.contains("mutated")));
+    }
+
+    /// 읽기 툴은 approver를 부르지 않는다 — 불리면 패닉
+    struct PanicApprover;
+    impl Approver for PanicApprover {
+        fn approve(&mut self, _r: &ApprovalRequest<'_>) -> Decision {
+            panic!("읽기 툴에 게이트가 걸림");
+        }
+    }
+
+    #[tokio::test]
+    async fn read_tools_bypass_the_gate() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "a.txt"}))),
+            ok(&finish("ok")),
+        ]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut history = agent.initial_history();
+        let outcome = agent.run(&mut history, "x", &mut PanicApprover, &mut |_| {}).await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
     }
 }

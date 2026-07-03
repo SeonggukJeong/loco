@@ -3,6 +3,7 @@ use std::io::Write;
 
 use rustyline::error::ReadlineError;
 
+use crate::agent::approval::AutoApprover;
 use crate::agent::{Agent, AgentEvent, AgentOutcome, PARSE_ATTEMPTS};
 use crate::config::Config;
 use crate::llm::client::OpenAiClient;
@@ -194,8 +195,10 @@ async fn run_agent_turn(
         }
         *spinner.borrow_mut() = Spinner::start("생각 중");
     };
+    // 레지스트리가 아직 read_only라 게이트는 발동 불가 — Task 8에서 TtyApprover로 교체
+    let mut approver = AutoApprover;
     let result = tokio::select! {
-        r = agent.run(history, text, &mut on_event) => Some(r),
+        r = agent.run(history, text, &mut approver, &mut on_event) => Some(r),
         _ = tokio::signal::ctrl_c() => None,
     };
     // on_event는 &RefCell만 캡처해 Copy — drop()은 clippy::dropping_copy_types에 걸리고
