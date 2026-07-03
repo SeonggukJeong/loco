@@ -130,7 +130,10 @@ impl Session {
             let m = &mut self.messages[i];
             if m.role == "user" && m.content.starts_with("<tool_result") && !m.content.contains(ELIDED) {
                 let first_line = m.content.lines().next().unwrap_or("<tool_result>").to_string();
-                m.content = format!("{first_line}\n{ELIDED}\n</tool_result>");
+                // 본문만 생략하고 `</tool_result>` 뒤에 병합된 내용(push_tool_result의 교정
+                // 노트, push_user_request의 후속 요청)은 보존한다 — 없으면 빈 문자열
+                let suffix = m.content.split_once("</tool_result>").map(|(_, s)| s).unwrap_or("");
+                m.content = format!("{first_line}\n{ELIDED}\n</tool_result>{suffix}");
             }
         }
         while self.total_tokens() > input_budget_tokens && self.messages.len() > 3 {
@@ -372,5 +375,27 @@ mod tests {
         s.push_tool_result("grep", &serde_json::json!({}), "body", Some("NOTE"));
         let last = s.messages().last().unwrap();
         assert!(last.content.contains("</tool_result>") && last.content.ends_with("NOTE"));
+    }
+
+    #[test]
+    fn elision_preserves_merged_user_request() {
+        let big = "x".repeat(4_000); // ≈1000토큰 — 생략 대상 크기
+        let mut s = sess(vec![ChatMessage::system("sys")]);
+        s.push(tool_msg(&big)); // MaxTurns 종료 시점의 마지막 tool_result라고 가정
+        s.push_user_request("이어서 이것도 해줘"); // 후속 요청이 꼬리 tool_result에 병합 (스펙 §3)
+        assert!(s.messages().last().unwrap().content.contains("이어서 이것도 해줘"), "전제: 병합됨");
+        // 세션이 이어지며 메시지가 더 쌓여, 병합된 메시지가 더 이상 "마지막"이 아니게 된다
+        s.push(ChatMessage::assistant("계속"));
+        s.push_tool_result("grep", &serde_json::json!({}), &"z".repeat(4_000), None);
+        s.push(ChatMessage::assistant("finish"));
+
+        s.pack(800); // 예산을 낮춰 오래된 tool_result 본문을 생략시킨다
+
+        let merged = s
+            .messages()
+            .iter()
+            .find(|m| m.content.contains("이어서 이것도 해줘"))
+            .expect("병합된 유저 요청이 담긴 메시지가 살아있어야 한다");
+        assert!(merged.content.contains(ELIDED), "본문은 생략되어야 한다: {}", merged.content);
     }
 }

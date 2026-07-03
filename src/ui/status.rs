@@ -3,7 +3,7 @@ use std::io::{IsTerminal, Write};
 use crate::agent::AgentEvent;
 
 /// 에이전트 턴 대기 표시 (스펙 §3 — 구조화 출력은 스트리밍 불가라 스피너).
-/// stderr에 그린다. stdout이 TTY가 아니면(-p 파이프 등) 아무것도 그리지 않는다 (스펙 §7)
+/// stderr에 그린다. stdout과 stderr 둘 다 TTY가 아니면(-p 파이프 등) 아무것도 그리지 않는다 (스펙 §7)
 pub struct Spinner {
     task: Option<tokio::task::JoinHandle<()>>,
 }

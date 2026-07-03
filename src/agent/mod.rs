@@ -195,6 +195,11 @@ impl<C: LlmClient> Agent<C> {
                             "(응답 파싱 실패 — 재시도 {attempts}/{PARSE_ATTEMPTS})"
                         )));
                         session.push(ChatMessage::user(feedback));
+                        // NOTE (M3 known gap): unlike the primary chat call above, this parse-retry is
+                        // NOT wrapped by the context-overflow shrink-retry loop. An overflow 400 here
+                        // propagates directly (clean error + rollback). Deferred to M4 — extract a
+                        // shared `chat_packed` helper wrapping both call sites. (plan-scoped: the plan
+                        // wrapped only "the turn's chat call".)
                         let retry = self.chat_with_fallback(session.messages(), on_event).await?;
                         text = retry.text().to_string();
                     }
@@ -327,7 +332,8 @@ impl<C: LlmClient> Agent<C> {
 }
 
 /// 서버 컨텍스트 초과 400 감지 휴리스틱 — LM Studio/llama.cpp/vLLM 모두 에러 메시지에
-/// "context"가 들어간다. 완전하지 않은 최선 노력이며, 자동 절삭 대응은 M3 (스펙 §9)
+/// "context"가 들어간다. 완전하지 않은 최선 노력이며, 자동 절삭 대응(pack + 재시도)은
+/// run()에 구현되어 있다 (스펙 §9)
 fn looks_like_context_overflow(body: &str) -> bool {
     body.to_lowercase().contains("context")
 }

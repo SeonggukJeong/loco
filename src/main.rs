@@ -55,7 +55,7 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
 }
 
 /// -p 출력 계약 (스펙 §7): 최종 답변만 stdout, 진행 표시는 전부 stderr.
-/// 스피너는 stdout이 TTY가 아니면 Spinner::start 내부에서 자동으로 꺼진다
+/// 스피너는 stdout과 stderr 둘 다 TTY가 아니면 Spinner::start 내부에서 자동으로 꺼진다
 async fn run_oneshot(
     client: &OpenAiClient,
     config: &Config,
