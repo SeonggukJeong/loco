@@ -2,6 +2,9 @@ pub mod path;
 pub mod read_file;
 pub mod list_files;
 pub mod grep;
+pub mod eol;
+pub mod diff;
+pub mod write_file;
 
 use std::path::PathBuf;
 

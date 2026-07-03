@@ -52,6 +52,58 @@ pub fn confine(root: &Path, raw: &str) -> Result<PathBuf, ToolError> {
     Ok(canon)
 }
 
+/// confine의 쓰기 변형 (스펙 §4): 대상이 아직 없어도 된다. 렉시컬 정규화는 동일하게
+/// 하고, **존재하는 가장 깊은 조상**을 canonicalize해 루트 안임을 검증한 뒤
+/// 나머지 미존재 꼬리를 렉시컬로 잇는다 (미존재 구간에는 심링크가 있을 수 없음)
+pub fn confine_for_write(root: &Path, raw: &str) -> Result<PathBuf, ToolError> {
+    let normalized = raw.replace('\\', "/");
+    if normalized.starts_with('/') || has_drive_prefix(&normalized) {
+        return Err(ToolError::PathViolation(format!("absolute paths are not allowed: {raw}")));
+    }
+    let mut parts: Vec<&std::ffi::OsStr> = Vec::new();
+    for comp in Path::new(&normalized).components() {
+        match comp {
+            Component::Normal(c) => parts.push(c),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if parts.pop().is_none() {
+                    return Err(ToolError::PathViolation(format!("path escapes the project root: {raw}")));
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err(ToolError::PathViolation(format!("absolute paths are not allowed: {raw}")));
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err(ToolError::PathViolation(format!("not a writable file path: {raw}")));
+    }
+    let canon_root = root.canonicalize()?;
+    // 존재하는 가장 깊은 조상 찾기
+    let mut existing = canon_root.clone();
+    let mut rest_start = 0;
+    for (i, p) in parts.iter().enumerate() {
+        let next = existing.join(p);
+        match next.canonicalize() {
+            Ok(c) => {
+                existing = c;
+                rest_start = i + 1;
+            }
+            Err(_) => break,
+        }
+    }
+    if !existing.starts_with(&canon_root) {
+        return Err(ToolError::PathViolation(format!(
+            "path resolves outside the project root (symlink?): {raw}"
+        )));
+    }
+    let mut out = existing;
+    for p in &parts[rest_start..] {
+        out.push(p);
+    }
+    Ok(out)
+}
+
 /// "C:/..." 또는 "c:x" 같은 드라이브 문자 접두를 감지 (Unix에서도 거부해야 함)
 fn has_drive_prefix(s: &str) -> bool {
     let b = s.as_bytes();
@@ -123,6 +175,36 @@ mod tests {
         std::os::unix::fs::symlink(outside.path().join("secret.txt"), dir.path().join("link.txt"))
             .unwrap();
         let err = confine(dir.path(), "link.txt").unwrap_err();
+        assert!(matches!(err, ToolError::PathViolation(_)));
+    }
+
+    #[test]
+    fn confine_for_write_allows_missing_target_inside_root() {
+        let dir = root();
+        let p = confine_for_write(dir.path(), "src/new_file.rs").unwrap();
+        assert!(p.ends_with("src/new_file.rs"));
+        let p2 = confine_for_write(dir.path(), "brand/new/dir/f.txt").unwrap();
+        assert!(p2.ends_with("brand/new/dir/f.txt"));
+    }
+
+    #[test]
+    fn confine_for_write_still_rejects_escapes() {
+        let dir = root();
+        for p in ["../x.txt", "/abs.txt", "C:/x", "src/../../x"] {
+            assert!(matches!(
+                confine_for_write(dir.path(), p).unwrap_err(),
+                ToolError::PathViolation(_)
+            ), "{p}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn confine_for_write_rejects_symlinked_dir_escape() {
+        let dir = root();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("out")).unwrap();
+        let err = confine_for_write(dir.path(), "out/new.txt").unwrap_err();
         assert!(matches!(err, ToolError::PathViolation(_)));
     }
 }
