@@ -1099,14 +1099,15 @@ fn splice(t_lines: &[&str], start: usize, window: usize, replacement: &[String])
 
 fn not_found_message(text: &str, s_lines: &[&str]) -> String {
     let first = s_lines.first().map(|l| l.trim()).unwrap_or("");
-    if !first.is_empty() {
-        if let Some(i) = text.split('\n').position(|l| l.contains(first)) {
-            return format!(
-                "search block not found. Line {} contains the first line of your block - \
-                 re-read the file and copy the exact text including whitespace",
-                i + 1
-            );
-        }
+    // let-chain: 단독 중첩 if는 clippy::collapsible_if가 -D warnings에서 거부한다 (edition 2024)
+    if !first.is_empty()
+        && let Some(i) = text.split('\n').position(|l| l.contains(first))
+    {
+        return format!(
+            "search block not found. Line {} contains the first line of your block - \
+             re-read the file and copy the exact text including whitespace",
+            i + 1
+        );
     }
     "search block not found - re-read the file and copy the exact text".to_string()
 }
@@ -1778,12 +1779,13 @@ impl AutoApprover {
 
 impl Approver for AutoApprover {
     fn approve(&mut self, req: &ApprovalRequest<'_>) -> Decision {
-        if req.tool == "run_command" {
-            if let Some(pat) = first_deny_match(&self.deny, req.args) {
-                return Decision::Deny {
-                    reason: format!("command blocked by auto_deny_patterns (matched `{pat}`)"),
-                };
-            }
+        // let-chain — 단독 중첩 if는 clippy::collapsible_if에 걸린다
+        if req.tool == "run_command"
+            && let Some(pat) = first_deny_match(&self.deny, req.args)
+        {
+            return Decision::Deny {
+                reason: format!("command blocked by auto_deny_patterns (matched `{pat}`)"),
+            };
         }
         Decision::Approve
     }
@@ -1936,10 +1938,11 @@ impl Approver for TtyApprover<'_> {
         self.spinner.borrow_mut().stop();
         println!("\n── 확인 필요: {} ──", req.tool);
         println!("{}", req.preview);
-        if req.tool == "run_command" {
-            if let Some(pat) = first_deny_match(self.deny, req.args) {
-                println!("[경고] 차단 패턴에 해당하는 명령입니다: {pat}"); // 비ASCII 기호는 CP949 레거시 콘솔에서 깨진다
-            }
+        // let-chain (clippy::collapsible_if). [경고]가 비ASCII 기호 대신인 이유: CP949 레거시 콘솔
+        if req.tool == "run_command"
+            && let Some(pat) = first_deny_match(self.deny, req.args)
+        {
+            println!("[경고] 차단 패턴에 해당하는 명령입니다: {pat}");
         }
         // 의도적 동기 블로킹: REPL select!가 이 사이 Ctrl+C를 소비해 고아 stdin
         // 리더를 만드는 것을 방지한다. rustyline은 raw mode라 Ctrl+C가 SIGINT가
@@ -2633,7 +2636,7 @@ Expected: FAIL (시그니처/패킹 미구현)
 (`overflow_shrinks: u32`는 `run()` 최상단 지역 변수 — 실행당 2회.)
 
 - 모든 `history.push(...)`를 Session API로: assistant/파싱 피드백은 `session.push(ChatMessage::...)`, 툴 결과는 `session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note)` (note = 반복 교정 or None). 게이트 거부도 `push_tool_result(tool, args, &format!("Denied: {reason}"), note)`.
-- `tool_result_message`/그 테스트는 session.rs로 이동, agent에서는 `use crate::session::tool_result_message;` (스키마 검증 등 기존 사용처 갱신).
+- agent의 private `fn tool_result_message`를 **삭제**하고 `use crate::session::tool_result_message;`로 전환 (Task 10이 session.rs에 이미 추가했고 포맷은 session 테스트가 커버 — agent 테스트는 옮기지 않고 그대로 둔다).
 
 - [ ] **Step 4: REPL/main 배선**
 
