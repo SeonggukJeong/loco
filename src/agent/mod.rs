@@ -867,4 +867,27 @@ mod tests {
         let outcome = agent.run(&mut session, "x", &mut PanicApprover, &mut |_| {}).await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
     }
+
+    struct EmptyTool;
+    impl crate::tools::Tool for EmptyTool {
+        fn name(&self) -> &'static str { "empty_tool" }
+        fn doc(&self) -> &'static str { "empty_tool(): returns nothing." }
+        fn run(&self, _a: &serde_json::Value, _c: &ToolCtx) -> Result<String, crate::tools::ToolError> {
+            Ok(String::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_tool_output_becomes_no_output_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![ok(&turn("empty_tool", serde_json::json!({}))), ok(&finish("ok"))]);
+        let config = Config::default();
+        let mut agent = Agent::new(
+            &script, Registry::new(vec![Box::new(EmptyTool)]),
+            ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config,
+        );
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(session.messages().iter().any(|m| m.content.contains("(no output)")));
+    }
 }

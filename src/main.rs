@@ -10,7 +10,7 @@ use loco::llm::client::{resolve_model, OpenAiClient};
 use loco::session::{Session, Transcript};
 use loco::tools::{Registry, ToolCtx};
 use loco::ui::repl::run_repl;
-use loco::ui::status::{format_action, Spinner};
+use loco::ui::status::{render_event, Spinner};
 
 #[derive(Parser)]
 #[command(name = "loco", version, about = "폐쇄망 소형모델 코딩 CLI")]
@@ -75,11 +75,7 @@ async fn run_oneshot(
     let spinner = RefCell::new(Spinner::start("생각 중"));
     let mut on_event = |ev: AgentEvent<'_>| {
         spinner.borrow_mut().stop();
-        match ev {
-            AgentEvent::Thought(t) => eprintln!("· {t}"),
-            AgentEvent::Action { tool, args } => eprintln!("{}", format_action(tool, args)),
-            AgentEvent::Notice(n) => eprintln!("{n}"),
-        }
+        render_event(&ev, true);
         *spinner.borrow_mut() = Spinner::start("생각 중");
     };
     // -p: --auto 없으면 게이트를 띄우지 않고 거부 (스펙 §7 — 비대화형)

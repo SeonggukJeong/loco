@@ -1,5 +1,7 @@
 use std::io::{IsTerminal, Write};
 
+use crate::agent::AgentEvent;
+
 /// 에이전트 턴 대기 표시 (스펙 §3 — 구조화 출력은 스트리밍 불가라 스피너).
 /// stderr에 그린다. stdout이 TTY가 아니면(-p 파이프 등) 아무것도 그리지 않는다 (스펙 §7)
 pub struct Spinner {
@@ -8,7 +10,7 @@ pub struct Spinner {
 
 impl Spinner {
     pub fn start(label: &str) -> Self {
-        if !std::io::stdout().is_terminal() {
+        if !(std::io::stdout().is_terminal() && std::io::stderr().is_terminal()) {
             return Self { task: None };
         }
         let label = label.to_string();
@@ -74,6 +76,16 @@ pub fn format_action(tool: &str, args: &serde_json::Value) -> String {
     format!("→ {tool} {detail}")
 }
 
+/// main(-p, stderr)과 repl(stdout)이 공유하는 이벤트 한 줄 렌더링
+pub fn render_event(ev: &AgentEvent<'_>, to_stderr: bool) {
+    let line = match ev {
+        AgentEvent::Thought(t) => format!("· {t}"),
+        AgentEvent::Action { tool, args } => format_action(tool, args),
+        AgentEvent::Notice(n) => n.clone(),
+    };
+    if to_stderr { eprintln!("{line}") } else { println!("{line}") }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,8 +133,19 @@ mod tests {
         // cargo test를 치면 TTY일 수 있으므로, 절대값 대신 is_terminal()과의 일치를 검증
         use std::io::IsTerminal;
         let mut s = Spinner::start("생각 중");
-        assert_eq!(s.is_active(), std::io::stdout().is_terminal());
+        assert_eq!(
+            s.is_active(),
+            std::io::stdout().is_terminal() && std::io::stderr().is_terminal()
+        );
         s.stop();
         assert!(!s.is_active(), "stop 후에는 항상 비활성");
+    }
+
+    #[tokio::test]
+    async fn spinner_stop_is_idempotent() {
+        let mut s = Spinner::start("x");
+        s.stop();
+        s.stop(); // 두 번째 stop은 no-op — 패닉/잔상 없음
+        assert!(!s.is_active());
     }
 }

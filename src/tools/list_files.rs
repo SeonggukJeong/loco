@@ -154,6 +154,18 @@ mod tests {
         assert!(out.contains("[truncated at 200 entries"), "{out}");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_dir_is_listed_as_symlink_not_followed() {
+        let (dir, ctx) = setup();
+        std::os::unix::fs::symlink(dir.path().join("src"), dir.path().join("alias")).unwrap();
+        let out = ListFiles.run(&serde_json::json!({}), &ctx).unwrap();
+        // ignore 워커는 심링크를 따라가지 않는다: 항목으로는 보이되 `/` 접미 없음,
+        // 내부 파일은 나열되지 않음 (file_type이 symlink라 is_dir false)
+        assert!(out.lines().any(|l| l == "alias"), "{out}");
+        assert!(!out.contains("alias/main.rs"), "{out}");
+    }
+
     #[test]
     fn escape_is_rejected() {
         let (_d, ctx) = setup();

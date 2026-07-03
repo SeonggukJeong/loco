@@ -118,6 +118,30 @@ mod tests {
     }
 
     #[test]
+    fn empty_file_says_so() {
+        let (_d, ctx) = setup("");
+        assert_eq!(run(&ctx, serde_json::json!({"path": "f.txt"})).unwrap(), "(empty file)");
+    }
+
+    #[test]
+    fn limit_is_clamped_to_max() {
+        let content: String = (1..=250).map(|i| format!("line{i}\n")).collect();
+        let (_d, ctx) = setup(&content);
+        let out = run(&ctx, serde_json::json!({"path": "f.txt", "limit": 9999})).unwrap();
+        assert!(out.contains("line200") && !out.contains("line201\n"), "limit도 200 상한");
+    }
+
+    #[test]
+    fn offset_and_limit_combine() {
+        let content: String = (1..=50).map(|i| format!("line{i}\n")).collect();
+        let (_d, ctx) = setup(&content);
+        let out = run(&ctx, serde_json::json!({"path": "f.txt", "offset": 10, "limit": 3})).unwrap();
+        assert!(out.starts_with("line10"));
+        assert!(out.contains("line12") && !out.contains("line13"));
+        assert!(out.contains("offset=13"), "이어 읽기 안내: {out}");
+    }
+
+    #[test]
     fn missing_file_and_escape_and_bad_args() {
         let (_d, ctx) = setup("x");
         assert!(matches!(

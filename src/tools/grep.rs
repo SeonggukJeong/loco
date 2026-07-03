@@ -163,6 +163,17 @@ mod tests {
     }
 
     #[test]
+    fn adjacent_matches_each_get_their_context_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let content: String = (1..=8).map(|i| format!("line{i}\n")).collect();
+        std::fs::write(dir.path().join("f.txt"), content.replace("line3", "hit3").replace("line4", "hit4")).unwrap();
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
+        let out = Grep.run(&serde_json::json!({"pattern": "hit"}), &ctx).unwrap();
+        assert!(out.contains("f.txt:3:") && out.contains("f.txt:4:"), "{out}");
+        assert!(out.contains("--"), "매치 블록 구분자: {out}");
+    }
+
+    #[test]
     fn separator_between_non_adjacent_match_groups() {
         let dir = tempfile::tempdir().unwrap();
         // Two matches separated enough that their context blocks (2 lines each) don't overlap

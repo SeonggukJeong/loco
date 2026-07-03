@@ -12,7 +12,7 @@ use crate::llm::types::{ChatMessage, ChatRequest};
 use crate::session::{Session, Transcript};
 use crate::tools::{Registry, ToolCtx};
 use crate::ui::gate::TtyApprover;
-use crate::ui::status::{format_action, Spinner};
+use crate::ui::status::{render_event, Spinner};
 
 /// /chat 경로(M1 스트리밍 채팅) 전용 시스템 프롬프트
 pub const CHAT_SYSTEM_PROMPT: &str = "You are loco, a concise coding assistant running on a local model. \
@@ -118,6 +118,7 @@ pub async fn run_repl(
             Input::Quit => break,
             Input::Help => print_help(),
             Input::Config => print_config(config, model),
+            Input::Unknown(cmd) if cmd == "chat" => println!("사용법: /chat <메시지>"),
             Input::Unknown(cmd) => println!("알 수 없는 명령: /{cmd} — /help 참고"),
             Input::Clear => {
                 // 에이전트/채팅 히스토리는 분리 운영 — 둘 다 초기화. 세션 기록도 새 파일로 (스펙 §7)
@@ -205,11 +206,7 @@ async fn run_agent_turn(
     let spinner = RefCell::new(Spinner::start("생각 중"));
     let mut on_event = |ev: AgentEvent<'_>| {
         spinner.borrow_mut().stop();
-        match ev {
-            AgentEvent::Thought(t) => println!("· {t}"),
-            AgentEvent::Action { tool, args } => println!("{}", format_action(tool, args)),
-            AgentEvent::Notice(n) => println!("{n}"),
-        }
+        render_event(&ev, false);
         *spinner.borrow_mut() = Spinner::start("생각 중");
     };
     let mut tty;
