@@ -9,6 +9,7 @@ use crate::agent::{Agent, AgentEvent, AgentOutcome, PARSE_ATTEMPTS};
 use crate::config::Config;
 use crate::llm::client::OpenAiClient;
 use crate::llm::types::{ChatMessage, ChatRequest};
+use crate::session::{Session, Transcript};
 use crate::tools::{Registry, ToolCtx};
 use crate::ui::gate::TtyApprover;
 use crate::ui::status::{format_action, Spinner};
@@ -86,12 +87,17 @@ pub async fn run_repl(
     auto: bool,
 ) -> anyhow::Result<()> {
     let root = std::env::current_dir()?;
-    let mut ctx = ToolCtx::new(root);
+    let mut ctx = ToolCtx::new(root.clone());
     ctx.command_timeout = std::time::Duration::from_secs(config.command_timeout_secs);
     let cancel = ctx.cancel.clone();
     let deny = compile_patterns(&config.auto_deny_patterns)?; // 셋업에서 1회 컴파일
     let mut agent = Agent::new(client, Registry::guided(), ctx, model.to_string(), config);
-    let mut agent_history = agent.initial_history();
+    // 셋업: 트랜스크립트 실패는 경고 후 비활성 (기록이 에이전트를 못 죽인다)
+    let transcript = Transcript::create_under(&root).unwrap_or_else(|e| {
+        println!("(세션 기록을 열지 못했습니다: {e} — 기록 없이 진행)");
+        Transcript::disabled()
+    });
+    let mut session = Session::new(agent.initial_history(), transcript);
     let mut chat_history = vec![ChatMessage::system(CHAT_SYSTEM_PROMPT)];
     let mut rl = rustyline::DefaultEditor::new()?;
     println!("loco — 로컬 모델 코딩 에이전트 (모델: {model}, /help 참고)");
@@ -114,16 +120,19 @@ pub async fn run_repl(
             Input::Config => print_config(config, model),
             Input::Unknown(cmd) => println!("알 수 없는 명령: /{cmd} — /help 참고"),
             Input::Clear => {
-                // 에이전트/채팅 히스토리는 분리 운영 — 둘 다 초기화
-                agent_history = agent.initial_history();
+                // 에이전트/채팅 히스토리는 분리 운영 — 둘 다 초기화. 세션 기록도 새 파일로 (스펙 §7)
+                session = Session::new(
+                    agent.initial_history(),
+                    Transcript::create_under(&root).unwrap_or_else(|_| Transcript::disabled()),
+                );
                 chat_history.truncate(1);
-                println!("(히스토리 초기화)");
+                println!("(히스토리 초기화 — 새 세션 파일)");
             }
             Input::Chat(text) => {
-                run_chat_turn(client, config, model, &mut chat_history, text).await;
+                run_chat_turn(client, config, model, &mut chat_history, &mut session, text).await;
             }
             Input::Agent(text) => {
-                run_agent_turn(&mut agent, &mut agent_history, config, &text, &cancel, auto, &deny)
+                run_agent_turn(&mut agent, &mut session, config, &text, &cancel, auto, &deny)
                     .await;
             }
         }
@@ -132,15 +141,16 @@ pub async fn run_repl(
     Ok(())
 }
 
-/// M1 스트리밍 채팅 경로 (/chat). Ctrl+C로 취소 가능
+/// M1 스트리밍 채팅 경로 (/chat). Ctrl+C로 취소 가능. 성공한 턴만 세션 기록에 남긴다
 async fn run_chat_turn(
     client: &OpenAiClient,
     config: &Config,
     model: &str,
     history: &mut Vec<ChatMessage>,
+    session: &mut Session,
     text: String,
 ) {
-    history.push(ChatMessage::user(text));
+    history.push(ChatMessage::user(text.clone()));
     let req = ChatRequest {
         model: model.to_string(),
         messages: history.clone(),
@@ -168,6 +178,8 @@ async fn run_chat_turn(
         }
         Ok(full) => {
             println!();
+            session.record_extra("user", &text);
+            session.record_extra("assistant", &full);
             history.push(ChatMessage::assistant(full));
         }
         Err(e) => {
@@ -177,10 +189,10 @@ async fn run_chat_turn(
     }
 }
 
-/// 에이전트 턴. Ctrl+C·에러·파싱 실패 시 히스토리를 요청 이전 상태로 되돌린다
+/// 에이전트 턴. Ctrl+C·에러·파싱 실패 시 세션을 요청 이전 상태로 되돌린다
 async fn run_agent_turn(
     agent: &mut Agent<&OpenAiClient>,
-    history: &mut Vec<ChatMessage>,
+    session: &mut Session,
     config: &Config,
     text: &str,
     cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -189,11 +201,7 @@ async fn run_agent_turn(
 ) {
     // 턴 시작 시 초기화 — 이전 턴에서 취소됐어도 이번 턴은 새로 시작
     cancel.store(false, std::sync::atomic::Ordering::SeqCst);
-    let snapshot_len = history.len();
-    // 직전 실행이 MaxTurns였다면 이번 요청은 push가 아니라 꼬리 user 메시지에
-    // in-place 병합된다(agent::run 진입부) — 길이가 안 변하므로 truncate만으로는
-    // 취소된 요청 텍스트가 남는다. 꼬리 내용까지 스냅샷해 원복한다
-    let snapshot_tail = history.last().cloned();
+    let snap = session.snapshot();
     let spinner = RefCell::new(Spinner::start("생각 중"));
     let mut on_event = |ev: AgentEvent<'_>| {
         spinner.borrow_mut().stop();
@@ -214,7 +222,7 @@ async fn run_agent_turn(
         &mut tty
     };
     let result = tokio::select! {
-        r = agent.run(history, text, approver, &mut on_event) => Some(r),
+        r = agent.run(session, text, approver, &mut on_event) => Some(r),
         _ = tokio::signal::ctrl_c() => {
             // 장기 실행 툴(run_command)이 폴링해 자진 중단하도록 신호만 세운다.
             // 이미 spawn_blocking에 들어간 동기 작업 자체를 강제로 끊지는 않는다
@@ -228,7 +236,7 @@ async fn run_agent_turn(
 
     match result {
         None => {
-            rollback(history, snapshot_len, snapshot_tail);
+            session.rollback(snap);
             println!("\n(중단됨 — 이번 요청은 히스토리에서 제거)");
         }
         Some(Ok(AgentOutcome::Finished(summary))) => println!("\n{summary}"),
@@ -237,26 +245,16 @@ async fn run_agent_turn(
             config.max_turns
         ),
         Some(Ok(AgentOutcome::ParseFailed(raw))) => {
-            rollback(history, snapshot_len, snapshot_tail);
+            session.rollback(snap);
             println!("(모델 응답을 {PARSE_ATTEMPTS}회 파싱하지 못했습니다. 마지막 원문:)\n{raw}");
         }
         Some(Ok(AgentOutcome::RepetitionStop)) => {
             println!("(같은 툴 호출을 반복해 조기 종료했습니다 — 요청을 바꿔보세요)");
         }
         Some(Err(e)) => {
-            rollback(history, snapshot_len, snapshot_tail);
+            session.rollback(snap);
             println!("오류: {e}");
         }
-    }
-}
-
-/// 실패/중단 롤백 — 길이 절단 + 꼬리 메시지 원복.
-/// 병합 경로(직전 MaxTurns)에선 길이가 그대로라 truncate만으로는 부족하다.
-/// snapshot_tail은 세 arm 중 하나에서만 소비되므로 move해도 안전
-fn rollback(history: &mut Vec<ChatMessage>, len: usize, tail: Option<ChatMessage>) {
-    history.truncate(len);
-    if let (Some(slot), Some(orig)) = (history.last_mut(), tail) {
-        *slot = orig;
     }
 }
 

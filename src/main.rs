@@ -7,6 +7,7 @@ use loco::agent::approval::{Approver, AutoApprover, NonInteractiveApprover};
 use loco::agent::{Agent, AgentEvent, AgentOutcome, PARSE_ATTEMPTS};
 use loco::config::Config;
 use loco::llm::client::{resolve_model, OpenAiClient};
+use loco::session::{Session, Transcript};
 use loco::tools::{Registry, ToolCtx};
 use loco::ui::repl::run_repl;
 use loco::ui::status::{format_action, Spinner};
@@ -63,10 +64,14 @@ async fn run_oneshot(
     auto: bool,
 ) -> anyhow::Result<ExitCode> {
     let root = std::env::current_dir()?;
-    let mut ctx = ToolCtx::new(root);
+    let mut ctx = ToolCtx::new(root.clone());
     ctx.command_timeout = std::time::Duration::from_secs(config.command_timeout_secs);
     let mut agent = Agent::new(client, Registry::guided(), ctx, model.to_string(), config);
-    let mut history = agent.initial_history();
+    let transcript = Transcript::create_under(&root).unwrap_or_else(|e| {
+        eprintln!("(세션 기록을 열지 못했습니다: {e} — 기록 없이 진행)");
+        Transcript::disabled()
+    });
+    let mut session = Session::new(agent.initial_history(), transcript);
     let spinner = RefCell::new(Spinner::start("생각 중"));
     let mut on_event = |ev: AgentEvent<'_>| {
         spinner.borrow_mut().stop();
@@ -86,7 +91,7 @@ async fn run_oneshot(
     } else {
         &mut non_interactive
     };
-    let outcome = agent.run(&mut history, prompt, approver, &mut on_event).await;
+    let outcome = agent.run(&mut session, prompt, approver, &mut on_event).await;
     spinner.borrow_mut().stop();
 
     match outcome? {

@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::llm::LlmClient;
 use crate::llm::client::LlmError;
 use crate::llm::types::{ChatMessage, ChatRequest, ChatResponse};
+use crate::session::{Session, tool_result_message};
 use crate::tools::{Registry, ToolCtx};
 pub use approval::{ApprovalRequest, Approver, Decision};
 use protocol::{parse_turn, response_format};
@@ -51,6 +52,7 @@ pub struct Agent<C: LlmClient> {
     temperature: f32,
     max_output_tokens: u32,
     max_turns: usize,
+    context_tokens: usize,
     /// json_schema 폴백 상태 — 400을 만나면 끈다 (스펙 §4). Task 10에서 사용
     use_json_schema: bool,
     /// system role 폴백 상태 — 400을 만나면 첫 user에 병합 (스펙 §3).
@@ -73,6 +75,7 @@ impl<C: LlmClient> Agent<C> {
             temperature: config.temperature,
             max_output_tokens: config.max_output_tokens as u32,
             max_turns: config.max_turns,
+            context_tokens: config.context_tokens,
             use_json_schema: true,
             inline_system: false,
         }
@@ -84,6 +87,11 @@ impl<C: LlmClient> Agent<C> {
             &self.registry.docs(),
             &self.ctx.root,
         ))]
+    }
+
+    /// 스펙 §6: (context − max_output) × 0.9
+    fn input_budget(&self) -> usize {
+        self.context_tokens.saturating_sub(self.max_output_tokens as usize) * 9 / 10
     }
 
     fn schema_tool_names(&self) -> Vec<&'static str> {
@@ -114,31 +122,48 @@ impl<C: LlmClient> Agent<C> {
 
     pub async fn run(
         &mut self,
-        history: &mut Vec<ChatMessage>,
+        session: &mut Session,
         request: &str,
         approver: &mut dyn Approver,
         on_event: &mut dyn FnMut(AgentEvent<'_>),
     ) -> Result<AgentOutcome, LlmError> {
-        // 직전 실행이 MaxTurns로 끝났으면 히스토리 꼬리가 user(tool_result)다.
-        // user를 연속으로 쌓으면 role 교대를 요구하는 템플릿이 깨지므로 병합한다 (스펙 §3)
-        match history.last_mut() {
-            Some(m) if m.role == "user" => m.content = format!("{}\n\n{}", m.content, request),
-            _ => history.push(ChatMessage::user(request)),
-        }
+        session.push_user_request(request);
         let mut turns = 0;
         let mut last_action_key: Option<String> = None;
         let mut repeat_count = 0usize;
         let mut corrected = false;
+        // 실행당(run 호출당) 최대 2회 — 턴을 넘나들며 누적, 턴마다 리셋하지 않는다 (스펙 §9)
+        let mut overflow_shrinks: u32 = 0;
         while turns < self.max_turns {
-            let resp = self.chat_with_fallback(history, on_event).await?;
+            session.pack(self.input_budget());
+            let resp = loop {
+                match self.chat_with_fallback(session.messages(), on_event).await {
+                    Err(LlmError::Api { status: 400, body })
+                        if looks_like_context_overflow(&body) && overflow_shrinks < 2 =>
+                    {
+                        overflow_shrinks += 1;
+                        on_event(AgentEvent::Notice(format!(
+                            "(컨텍스트 초과로 보임 — 히스토리 절삭 후 재시도 {overflow_shrinks}/2)"
+                        )));
+                        session.pack(self.input_budget() >> overflow_shrinks);
+                    }
+                    Err(LlmError::Api { status: 400, body }) if looks_like_context_overflow(&body) => {
+                        on_event(AgentEvent::Notice(
+                            "(컨텍스트 초과 — context_tokens 설정과 서버 로드 설정을 확인하세요)".to_string(),
+                        ));
+                        return Err(LlmError::Api { status: 400, body });
+                    }
+                    other => break other?,
+                }
+            };
 
             // 출력 잘림은 파싱 실패와 구분해 교정한다 (스펙 §9). 같은 요청 재시도는
             // 같은 지점에서 다시 잘리므로 "더 짧게"를 지시. 턴을 소모해 max_turns가
             // length 반복의 상한이 되게 한다 (스펙 §3 사각지대)
             if resp.finish_reason() == Some("length") {
                 let t = resp.text();
-                history.push(ChatMessage::assistant(if t.is_empty() { "(empty)" } else { t }));
-                history.push(ChatMessage::user(
+                session.push(ChatMessage::assistant(if t.is_empty() { "(empty)" } else { t }));
+                session.push(ChatMessage::user(
                     "Your previous response was cut off by the output token limit. \
                      Respond again with exactly one, much shorter JSON turn.",
                 ));
@@ -157,7 +182,7 @@ impl<C: LlmClient> Agent<C> {
                     Ok(t) => break t,
                     Err(feedback) => {
                         // 빈 assistant content를 거부하는 템플릿이 있어 자리표시자로 대체
-                        history.push(ChatMessage::assistant(if text.is_empty() {
+                        session.push(ChatMessage::assistant(if text.is_empty() {
                             "(empty)".to_string()
                         } else {
                             text.clone()
@@ -169,20 +194,20 @@ impl<C: LlmClient> Agent<C> {
                         on_event(AgentEvent::Notice(format!(
                             "(응답 파싱 실패 — 재시도 {attempts}/{PARSE_ATTEMPTS})"
                         )));
-                        history.push(ChatMessage::user(feedback));
-                        let retry = self.chat_with_fallback(history, on_event).await?;
+                        session.push(ChatMessage::user(feedback));
+                        let retry = self.chat_with_fallback(session.messages(), on_event).await?;
                         text = retry.text().to_string();
                     }
                 }
             };
-            history.push(ChatMessage::assistant(text));
+            session.push(ChatMessage::assistant(text));
             on_event(AgentEvent::Thought(&turn.thought));
 
             if turn.action.tool == "finish" {
                 match turn.action.args.get("summary").and_then(|v| v.as_str()) {
                     Some(s) => return Ok(AgentOutcome::Finished(s.to_string())),
                     None => {
-                        history.push(tool_result_message(
+                        session.push(tool_result_message(
                             "finish",
                             "Error: finish requires a string `summary` argument containing the final answer.",
                         ));
@@ -226,12 +251,13 @@ impl<C: LlmClient> Agent<C> {
                 let req = ApprovalRequest { tool: &turn.action.tool, args: &turn.action.args, preview: &preview };
                 if let Decision::Deny { reason } = approver.approve(&req) {
                     on_event(AgentEvent::Notice("(거부됨 — 모델에 전달)".to_string()));
-                    let mut msg = tool_result_message(&turn.action.tool, &format!("Denied: {reason}"));
-                    if repeat_count == 3 && !corrected {
+                    let note = if repeat_count == 3 && !corrected {
                         corrected = true;
-                        msg.content = format!("{}\n\n{}", msg.content, REPEAT_CORRECTION);
-                    }
-                    history.push(msg);
+                        Some(REPEAT_CORRECTION)
+                    } else {
+                        None
+                    };
+                    session.push_tool_result(&turn.action.tool, &turn.action.args, &format!("Denied: {reason}"), note);
                     turns += 1;
                     continue;
                 }
@@ -252,13 +278,14 @@ impl<C: LlmClient> Agent<C> {
                 Err(join) => format!("Error: tool execution panicked: {join}"),
             };
             // 교정은 툴 결과와 하나의 user 메시지로 병합 (스펙 §3 — 연속 user 금지)
-            let mut msg = tool_result_message(&turn.action.tool, &body);
-            if repeat_count == 3 && !corrected {
+            let note = if repeat_count == 3 && !corrected {
                 corrected = true;
-                msg.content = format!("{}\n\n{}", msg.content, REPEAT_CORRECTION);
                 on_event(AgentEvent::Notice("(반복 감지 — 교정 메시지 주입)".to_string()));
-            }
-            history.push(msg);
+                Some(REPEAT_CORRECTION)
+            } else {
+                None
+            };
+            session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note);
             turns += 1;
         }
         Ok(AgentOutcome::MaxTurns)
@@ -276,11 +303,9 @@ impl<C: LlmClient> Agent<C> {
             match self.client.chat(&req).await {
                 // 컨텍스트 초과 400은 폴백 대상이 아니다 — 사다리를 타면 use_json_schema가
                 // 세션 내내 꺼지는 오분류가 된다 (M2는 절삭이 없어 긴 세션에서 실제 발생).
-                // 휴리스틱 매치 시 안내와 함께 즉시 전파. 자동 절삭·재시도는 M3 (스펙 §9)
+                // 휴리스틱 매치 시 즉시 전파 — 절삭 후 재시도는 run()의 상위 루프가
+                // 처리한다(Notice도 거기서 낸다), 여기서는 그대로 반환만 (스펙 §9)
                 Err(LlmError::Api { status: 400, body }) if looks_like_context_overflow(&body) => {
-                    on_event(AgentEvent::Notice(
-                        "(컨텍스트 초과로 보입니다 — 히스토리를 비우거나(REPL: /clear) context_tokens 설정과 서버 로드 설정을 확인하세요)".to_string(),
-                    ));
                     return Err(LlmError::Api { status: 400, body });
                 }
                 Err(LlmError::Api { status: 400, .. }) if self.use_json_schema => {
@@ -299,12 +324,6 @@ impl<C: LlmClient> Agent<C> {
             }
         }
     }
-}
-
-/// 툴 결과를 role:"user" 메시지로 감싼다 — role:"tool"은 Gemma 챗템플릿에서
-/// 깨지므로 금지 (스펙 §3). 구분자는 <tool_result name="...">
-fn tool_result_message(tool: &str, body: &str) -> ChatMessage {
-    ChatMessage::user(format!("<tool_result name=\"{tool}\">\n{body}\n</tool_result>"))
 }
 
 /// 서버 컨텍스트 초과 400 감지 휴리스틱 — LM Studio/llama.cpp/vLLM 모두 에러 메시지에
@@ -333,6 +352,7 @@ fn inline_system_into_first_user(history: &[ChatMessage]) -> Vec<ChatMessage> {
 mod tests {
     use super::*;
     use crate::llm::types::{Choice, ResponseMessage};
+    use crate::session::{Session, Transcript};
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
@@ -391,12 +411,16 @@ mod tests {
         Agent::new(script, Registry::read_only(), ToolCtx::new(root), "test-model".into(), &config)
     }
 
+    fn new_session(agent: &Agent<&Scripted>) -> Session {
+        Session::new(agent.initial_history(), Transcript::disabled())
+    }
+
     async fn run_quiet(
         agent: &mut Agent<&Scripted>,
-        history: &mut Vec<ChatMessage>,
+        session: &mut Session,
         request: &str,
     ) -> Result<AgentOutcome, LlmError> {
-        agent.run(history, request, &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await
+        agent.run(session, request, &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await
     }
 
     #[tokio::test]
@@ -404,8 +428,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![ok(&finish("답변입니다"))]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "질문").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "질문").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(s) if s == "답변입니다"));
 
         let reqs = script.requests.lock().unwrap();
@@ -429,10 +453,10 @@ mod tests {
             ok(&finish("done")),
         ]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
+        let mut session = new_session(&agent);
         let mut events: Vec<String> = Vec::new();
         let outcome = agent
-            .run(&mut history, "hello.txt 읽어줘", &mut crate::agent::approval::AutoApprover::default(), &mut |ev| {
+            .run(&mut session, "hello.txt 읽어줘", &mut crate::agent::approval::AutoApprover::default(), &mut |ev| {
                 events.push(match ev {
                     AgentEvent::Thought(t) => format!("thought:{t}"),
                     AgentEvent::Action { tool, .. } => format!("action:{tool}"),
@@ -443,14 +467,14 @@ mod tests {
             .unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
 
-        let wrapped = history.iter().find(|m| m.content.contains("<tool_result")).unwrap();
+        let wrapped = session.messages().iter().find(|m| m.content.contains("<tool_result")).unwrap();
         assert_eq!(wrapped.role, "user", "role:'tool' 금지 (스펙 §3)");
         assert!(wrapped.content.contains("<tool_result name=\"read_file\">"));
         assert!(wrapped.content.contains("세계"));
         assert_eq!(events[0], "thought:t");
         assert_eq!(events[1], "action:read_file");
         // 히스토리 role 교대: system, user, assistant, user(tool_result), assistant(finish)
-        let roles: Vec<&str> = history.iter().map(|m| m.role.as_str()).collect();
+        let roles: Vec<&str> = session.messages().iter().map(|m| m.role.as_str()).collect();
         assert_eq!(roles, vec!["system", "user", "assistant", "user", "assistant"]);
     }
 
@@ -462,10 +486,10 @@ mod tests {
             ok(&finish("없네요")),
         ]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "읽어").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "읽어").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
-        let fed = history.iter().find(|m| m.content.contains("Error: not found")).unwrap();
+        let fed = session.messages().iter().find(|m| m.content.contains("Error: not found")).unwrap();
         assert_eq!(fed.role, "user", "툴 에러는 모델에 되먹이는 데이터 (스펙 §9)");
     }
 
@@ -477,10 +501,10 @@ mod tests {
             ok(&finish("ok")),
         ]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
-        assert!(history.iter().any(|m| m.content.contains("Error: unknown tool: teleport")));
+        assert!(session.messages().iter().any(|m| m.content.contains("Error: unknown tool: teleport")));
     }
 
     #[tokio::test]
@@ -489,8 +513,8 @@ mod tests {
         let list = || ok(&turn("list_files", serde_json::json!({})));
         let script = Scripted::new(vec![list(), list(), list()]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 2);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::MaxTurns));
         assert_eq!(script.requests.lock().unwrap().len(), 2, "max_turns=2면 호출도 2회");
     }
@@ -503,16 +527,16 @@ mod tests {
             ok(&finish("ok")),
         ]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 1);
-        let mut history = agent.initial_history();
-        let first = run_quiet(&mut agent, &mut history, "첫 요청").await.unwrap();
+        let mut session = new_session(&agent);
+        let first = run_quiet(&mut agent, &mut session, "첫 요청").await.unwrap();
         assert!(matches!(first, AgentOutcome::MaxTurns));
-        let second = run_quiet(&mut agent, &mut history, "이어서").await.unwrap();
+        let second = run_quiet(&mut agent, &mut session, "이어서").await.unwrap();
         assert!(matches!(second, AgentOutcome::Finished(_)));
         // role 교대 보존 (스펙 §3) — 연속 user 금지
-        for w in history.windows(2) {
+        for w in session.messages().windows(2) {
             assert!(!(w[0].role == "user" && w[1].role == "user"), "연속 user 메시지");
         }
-        let merged = history.iter().find(|m| m.content.contains("이어서")).unwrap();
+        let merged = session.messages().iter().find(|m| m.content.contains("이어서")).unwrap();
         assert!(merged.content.contains("</tool_result>"), "직전 툴 결과 메시지에 병합");
     }
 
@@ -524,10 +548,10 @@ mod tests {
             ok(&finish("이제 됐다")),
         ]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(s) if s == "이제 됐다"));
-        assert!(history.iter().any(|m| m.content.contains("`summary`")));
+        assert!(session.messages().iter().any(|m| m.content.contains("`summary`")));
     }
 
     fn api_400() -> Result<ChatResponse, LlmError> {
@@ -539,12 +563,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![ok("JSON 아님"), ok(&finish("복구"))]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(s) if s == "복구"));
         // 되먹임: assistant(원문) + user(형식 힌트 피드백)가 히스토리에 남는다
-        assert!(history.iter().any(|m| m.role == "assistant" && m.content == "JSON 아님"));
-        assert!(history.iter().any(|m| m.role == "user" && m.content.contains("JSON object")));
+        assert!(session.messages().iter().any(|m| m.role == "assistant" && m.content == "JSON 아님"));
+        assert!(session.messages().iter().any(|m| m.role == "user" && m.content.contains("JSON object")));
         assert_eq!(script.requests.lock().unwrap().len(), 2);
     }
 
@@ -553,8 +577,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![ok("쓰레기1"), ok("쓰레기2"), ok("쓰레기3")]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::ParseFailed(raw) if raw == "쓰레기3"));
         assert_eq!(script.requests.lock().unwrap().len(), 3, "총 3회 시도 (스펙 §9)");
     }
@@ -567,11 +591,11 @@ mod tests {
             ok(&finish("짧게 답함")),
         ]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
         // 파싱 재시도 피드백이 아니라 "잘렸으니 더 짧게" 교정 (스펙 §9)
-        assert!(history.iter().any(|m| m.role == "user" && m.content.contains("cut off")));
+        assert!(session.messages().iter().any(|m| m.role == "user" && m.content.contains("cut off")));
     }
 
     #[tokio::test]
@@ -579,8 +603,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![ok_with_reason("잘림", "length")]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 1);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::MaxTurns), "max_turns가 length 반복의 상한 (스펙 §3)");
     }
 
@@ -589,10 +613,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![api_400(), ok(&finish("ok"))]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
+        let mut session = new_session(&agent);
         let mut notices = Vec::new();
         let outcome = agent
-            .run(&mut history, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |ev| {
+            .run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |ev| {
                 if let AgentEvent::Notice(n) = ev {
                     notices.push(n);
                 }
@@ -611,8 +635,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![api_400(), api_400(), ok(&finish("ok"))]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "질문").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "질문").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
         let reqs = script.requests.lock().unwrap();
         let third = &reqs[2].messages;
@@ -627,26 +651,72 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![api_400(), api_400(), api_400()]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let err = run_quiet(&mut agent, &mut history, "x").await.unwrap_err();
+        let mut session = new_session(&agent);
+        let err = run_quiet(&mut agent, &mut session, "x").await.unwrap_err();
         assert!(matches!(err, LlmError::Api { status: 400, .. }));
     }
 
     #[tokio::test]
-    async fn context_overflow_400_propagates_without_touching_fallback_flags() {
+    async fn context_overflow_packs_and_retries_then_succeeds() {
         let dir = tempfile::tempdir().unwrap();
-        let script = Scripted::new(vec![Err(LlmError::Api {
-            status: 400,
-            body: "the request exceeds the available context size".into(),
-        })]);
+        let overflow = || Err(LlmError::Api { status: 400, body: "exceeds the available context size".into() });
+        let script = Scripted::new(vec![overflow(), ok(&finish("살아남"))]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let err = run_quiet(&mut agent, &mut history, "x").await.unwrap_err();
+        let mut session = new_session(&agent);
+        // 크기 산정 주의: 기본 예산 5529토큰은 "통과"하되 축소 예산(>>1 = 2764)은
+        // 초과하도록 심는다 — 첫 턴의 일반 패킹이 아니라 초과-재시도 경로가 절삭해야 함.
+        // "빅".repeat(5000) = 15000바이트 ≈ 3750토큰
+        session.push(ChatMessage::user("빅".repeat(5000)));
+        session.push(ChatMessage::assistant("이전 답"));
+        let outcome = run_quiet(&mut agent, &mut session, "질문").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "절삭 후 재시도로 회복");
+        assert_eq!(script.requests.lock().unwrap().len(), 2);
+        let reqs = script.requests.lock().unwrap();
+        assert!(reqs[1].messages.len() < reqs[0].messages.len(), "재시도는 절삭된 히스토리");
+    }
+
+    #[tokio::test]
+    async fn context_overflow_three_times_propagates_with_schema_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let overflow = || Err(LlmError::Api { status: 400, body: "context overflow".into() });
+        let script = Scripted::new(vec![overflow(), overflow(), overflow()]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let err = run_quiet(&mut agent, &mut session, "x").await.unwrap_err();
         assert!(matches!(err, LlmError::Api { status: 400, .. }));
-        assert_eq!(
-            script.requests.lock().unwrap().len(),
-            1,
-            "폴백 사다리를 타지 않고 즉시 전파 (json_schema 유지)"
+        assert_eq!(script.requests.lock().unwrap().len(), 3, "절삭 재시도 2회 후 전파 (스펙 §9)");
+        let reqs = script.requests.lock().unwrap();
+        assert!(reqs[2].response_format.is_some(), "폴백 사다리 오분류 금지 — json_schema 유지");
+    }
+
+    #[tokio::test]
+    async fn every_turn_packs_to_budget() {
+        // 툴 결과 2개를 쌓으면 세 번째 턴의 패킹이 "오래된" 쪽(마지막 메시지가 아닌)을
+        // 생략해야 한다. pack은 마지막 메시지(방금 받은 결과)는 건드리지 않으므로
+        // 결과가 하나뿐이면 이 테스트는 성립하지 않는다 — 반드시 두 번 읽는다.
+        // 수치: 결과 각 ≈1500토큰, 예산 = (2500−100)×0.9 = 2160 → 둘 다 온전히는 못 담음.
+        // 주의: 실측 시스템 프롬프트(~400토큰)도 예산에 계상된다 — 여유 ~230토큰.
+        // 후속 마일스톤에서 프롬프트가 크게 자라면 이 수치를 재조정해야 한다
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("big.txt"), "z".repeat(6_000)).unwrap();
+        let read = || ok(&turn("read_file", serde_json::json!({"path": "big.txt"})));
+        let script = Scripted::new(vec![read(), read(), ok(&finish("done"))]);
+        let config = Config { context_tokens: 2_500, max_output_tokens: 100, ..Default::default() };
+        let mut agent = Agent::new(
+            &script, Registry::read_only(), ToolCtx::new(dir.path().to_path_buf()),
+            "test-model".into(), &config,
+        );
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "읽어").await.unwrap();
+        let reqs = script.requests.lock().unwrap();
+        let third = &reqs[2].messages;
+        assert!(
+            third.iter().any(|m| m.content.contains(crate::session::ELIDED)),
+            "오래된 툴 결과는 생략된 채 전송"
+        );
+        assert!(
+            third.iter().filter(|m| m.content.contains("zzzz")).count() >= 1,
+            "최신 툴 결과는 온전히 유지"
         );
     }
 
@@ -655,10 +725,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![ok(""), ok(&finish("ok"))]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
-        assert!(history.iter().any(|m| m.content.contains("empty")));
+        assert!(session.messages().iter().any(|m| m.content.contains("empty")));
     }
 
     #[tokio::test]
@@ -667,12 +737,12 @@ mod tests {
         let same = || ok(&turn("list_files", serde_json::json!({})));
         let script = Scripted::new(vec![same(), same(), same(), same(), same()]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::RepetitionStop));
         assert_eq!(script.requests.lock().unwrap().len(), 5, "5회째 응답까지 받고 종료");
         // 교정은 3회째에 정확히 1번, 툴 결과와 같은 user 메시지에 병합 (스펙 §3 다중 피드백 병합)
-        let corrections: Vec<_> = history
+        let corrections: Vec<_> = session.messages()
             .iter()
             .filter(|m| m.content.contains("repeating the same tool call"))
             .collect();
@@ -688,10 +758,10 @@ mod tests {
         let b = || ok(&turn("list_files", serde_json::json!({"depth": 1})));
         let script = Scripted::new(vec![a(), a(), b(), a(), a(), ok(&finish("ok"))]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)), "교대하면 감지 안 됨");
-        assert!(!history.iter().any(|m| m.content.contains("repeating the same tool call")));
+        assert!(!session.messages().iter().any(|m| m.content.contains("repeating the same tool call")));
     }
 
     #[tokio::test]
@@ -699,10 +769,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![ok_with_reason("", "length"), ok(&finish("ok"))]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        run_quiet(&mut agent, &mut history, "x").await.unwrap();
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
         // 빈 assistant content를 거부하는 템플릿 대비 (파싱 실패 경로와 동일 정책)
-        assert!(!history.iter().any(|m| m.role == "assistant" && m.content.is_empty()));
+        assert!(!session.messages().iter().any(|m| m.role == "assistant" && m.content.is_empty()));
     }
 
     use crate::agent::approval::{ApprovalRequest, Approver, Decision};
@@ -751,11 +821,11 @@ mod tests {
             decisions: Mutex::new(vec![Decision::Deny { reason: "nope".into() }].into()),
             seen: Mutex::new(Vec::new()),
         };
-        let mut history = agent.initial_history();
-        let outcome = agent.run(&mut history, "x", &mut (&approver), &mut |_| {}).await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = agent.run(&mut session, "x", &mut (&approver), &mut |_| {}).await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
         assert_eq!(hits.load(Ordering::SeqCst), 0, "거부된 액션은 실행 금지");
-        assert!(history.iter().any(|m| m.role == "user" && m.content.contains("Denied: nope")));
+        assert!(session.messages().iter().any(|m| m.role == "user" && m.content.contains("Denied: nope")));
         let seen = approver.seen.lock().unwrap();
         assert_eq!(seen[0], ("mut_tool".to_string(), "PREVIEW-TEXT".to_string()));
     }
@@ -770,10 +840,10 @@ mod tests {
             decisions: Mutex::new(vec![Decision::Approve].into()),
             seen: Mutex::new(Vec::new()),
         };
-        let mut history = agent.initial_history();
-        agent.run(&mut history, "x", &mut (&approver), &mut |_| {}).await.unwrap();
+        let mut session = new_session(&agent);
+        agent.run(&mut session, "x", &mut (&approver), &mut |_| {}).await.unwrap();
         assert_eq!(hits.load(Ordering::SeqCst), 1);
-        assert!(history.iter().any(|m| m.content.contains("mutated")));
+        assert!(session.messages().iter().any(|m| m.content.contains("mutated")));
     }
 
     /// 읽기 툴은 approver를 부르지 않는다 — 불리면 패닉
@@ -793,8 +863,8 @@ mod tests {
             ok(&finish("ok")),
         ]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
-        let mut history = agent.initial_history();
-        let outcome = agent.run(&mut history, "x", &mut PanicApprover, &mut |_| {}).await.unwrap();
+        let mut session = new_session(&agent);
+        let outcome = agent.run(&mut session, "x", &mut PanicApprover, &mut |_| {}).await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
     }
 }
