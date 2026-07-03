@@ -59,6 +59,16 @@ pub fn format_action(tool: &str, args: &serde_json::Value) -> String {
                 None => format!("{pattern:?}"),
             }
         }
+        "write_file" | "edit_file" => args
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?")
+            .to_string(),
+        "run_command" => args
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?")
+            .to_string(),
         _ => args.to_string(),
     };
     format!("→ {tool} {detail}")
@@ -88,8 +98,20 @@ mod tests {
         );
         // 모르는 툴은 인자 원문 (M3에서 툴 늘어나도 동작)
         assert_eq!(
-            format_action("run_command", &serde_json::json!({"command": "ls"})),
-            "→ run_command {\"command\":\"ls\"}"
+            format_action("teleport", &serde_json::json!({"to": "moon"})),
+            "→ teleport {\"to\":\"moon\"}"
+        );
+        assert_eq!(
+            format_action("write_file", &serde_json::json!({"path": "a.rs", "content": "..."})),
+            "→ write_file a.rs"
+        );
+        assert_eq!(
+            format_action("edit_file", &serde_json::json!({"path": "a.rs", "search": "x", "replace": "y"})),
+            "→ edit_file a.rs"
+        );
+        assert_eq!(
+            format_action("run_command", &serde_json::json!({"command": "cargo test"})),
+            "→ run_command cargo test"
         );
     }
 

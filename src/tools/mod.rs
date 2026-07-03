@@ -116,6 +116,18 @@ impl Registry {
             Box::new(grep::Grep),
         ])
     }
+
+    /// M3 가이드형 툴 세트 (스펙 §4의 7툴 중 finish 제외 6개 — finish는 루프 담당)
+    pub fn guided() -> Self {
+        Self::new(vec![
+            Box::new(read_file::ReadFile),
+            Box::new(list_files::ListFiles),
+            Box::new(grep::Grep),
+            Box::new(write_file::WriteFile),
+            Box::new(edit_file::EditFile),
+            Box::new(run_command::RunCommand),
+        ])
+    }
 }
 
 #[cfg(test)]
@@ -167,6 +179,15 @@ mod tests {
     fn read_only_registry_has_the_three_read_tools() {
         let reg = Registry::read_only();
         assert_eq!(reg.names(), vec!["read_file", "list_files", "grep"]);
+    }
+
+    #[test]
+    fn guided_registry_has_all_six_tools() {
+        let reg = Registry::guided();
+        assert_eq!(
+            reg.names(),
+            vec!["read_file", "list_files", "grep", "write_file", "edit_file", "run_command"]
+        );
     }
 
     #[test]

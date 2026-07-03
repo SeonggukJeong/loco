@@ -1,14 +1,16 @@
 use std::cell::RefCell;
 use std::io::Write;
 
+use regex::Regex;
 use rustyline::error::ReadlineError;
 
-use crate::agent::approval::AutoApprover;
+use crate::agent::approval::{Approver, AutoApprover, compile_patterns};
 use crate::agent::{Agent, AgentEvent, AgentOutcome, PARSE_ATTEMPTS};
 use crate::config::Config;
 use crate::llm::client::OpenAiClient;
 use crate::llm::types::{ChatMessage, ChatRequest};
 use crate::tools::{Registry, ToolCtx};
+use crate::ui::gate::TtyApprover;
 use crate::ui::status::{format_action, Spinner};
 
 /// /chat 경로(M1 스트리밍 채팅) 전용 시스템 프롬프트
@@ -49,13 +51,15 @@ pub fn parse_input(line: &str) -> Input {
 }
 
 fn print_help() {
-    println!("입력한 내용은 에이전트가 툴(read_file/list_files/grep)로 조사해 답합니다.");
+    println!("입력한 내용은 에이전트가 툴로 조사하고, 확인을 거쳐 수정·실행까지 수행합니다.");
     println!("명령어:");
     println!("  /chat <메시지>  에이전트 없이 모델과 바로 대화 (스트리밍)");
     println!("  /clear          에이전트·채팅 히스토리 초기화");
     println!("  /config         현재 설정 표시");
     println!("  /quit           종료");
     println!("실행 중 Ctrl+C 는 진행 중인 요청을 취소합니다.");
+    println!("파일 수정·명령 실행은 미리보기 후 y/N 확인을 거칩니다 (--auto로 자동 승인).");
+    println!("사용 가능한 툴: read_file, list_files, grep, write_file, edit_file, run_command");
 }
 
 fn print_config(config: &Config, model: &str) {
@@ -79,18 +83,14 @@ pub async fn run_repl(
     client: &OpenAiClient,
     config: &Config,
     model: &str,
+    auto: bool,
 ) -> anyhow::Result<()> {
     let root = std::env::current_dir()?;
     let mut ctx = ToolCtx::new(root);
     ctx.command_timeout = std::time::Duration::from_secs(config.command_timeout_secs);
     let cancel = ctx.cancel.clone();
-    let mut agent = Agent::new(
-        client,
-        Registry::read_only(),
-        ctx,
-        model.to_string(),
-        config,
-    );
+    let deny = compile_patterns(&config.auto_deny_patterns)?; // 셋업에서 1회 컴파일
+    let mut agent = Agent::new(client, Registry::guided(), ctx, model.to_string(), config);
     let mut agent_history = agent.initial_history();
     let mut chat_history = vec![ChatMessage::system(CHAT_SYSTEM_PROMPT)];
     let mut rl = rustyline::DefaultEditor::new()?;
@@ -123,7 +123,8 @@ pub async fn run_repl(
                 run_chat_turn(client, config, model, &mut chat_history, text).await;
             }
             Input::Agent(text) => {
-                run_agent_turn(&mut agent, &mut agent_history, config, &text, &cancel).await;
+                run_agent_turn(&mut agent, &mut agent_history, config, &text, &cancel, auto, &deny)
+                    .await;
             }
         }
     }
@@ -183,6 +184,8 @@ async fn run_agent_turn(
     config: &Config,
     text: &str,
     cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    auto: bool,
+    deny: &[Regex],
 ) {
     // 턴 시작 시 초기화 — 이전 턴에서 취소됐어도 이번 턴은 새로 시작
     cancel.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -201,10 +204,17 @@ async fn run_agent_turn(
         }
         *spinner.borrow_mut() = Spinner::start("생각 중");
     };
-    // 레지스트리가 아직 read_only라 게이트는 발동 불가 — Task 8에서 TtyApprover로 교체
-    let mut approver = AutoApprover::default();
+    let mut tty;
+    let mut auto_approver;
+    let approver: &mut dyn Approver = if auto {
+        auto_approver = AutoApprover::from_compiled(deny.to_vec());
+        &mut auto_approver
+    } else {
+        tty = TtyApprover { spinner: &spinner, deny };
+        &mut tty
+    };
     let result = tokio::select! {
-        r = agent.run(history, text, &mut approver, &mut on_event) => Some(r),
+        r = agent.run(history, text, approver, &mut on_event) => Some(r),
         _ = tokio::signal::ctrl_c() => {
             // 장기 실행 툴(run_command)이 폴링해 자진 중단하도록 신호만 세운다.
             // 이미 spawn_blocking에 들어간 동기 작업 자체를 강제로 끊지는 않는다

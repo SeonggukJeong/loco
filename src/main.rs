@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use loco::agent::approval::AutoApprover;
+use loco::agent::approval::{Approver, AutoApprover, NonInteractiveApprover};
 use loco::agent::{Agent, AgentEvent, AgentOutcome, PARSE_ATTEMPTS};
 use loco::config::Config;
 use loco::llm::client::{resolve_model, OpenAiClient};
@@ -17,6 +17,9 @@ struct Cli {
     /// 단발 실행 프롬프트 (비대화형 에이전트 — 최종 답변만 stdout)
     #[arg(short, long)]
     prompt: Option<String>,
+    /// 확인 게이트 전부 자동 승인 (auto_deny_patterns 차단은 유지)
+    #[arg(long)]
+    auto: bool,
 }
 
 #[tokio::main]
@@ -42,9 +45,9 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     let client = OpenAiClient::new(&config.base_url, config.api_key.clone());
     let model = resolve_model(&client, &config).await?;
     match cli.prompt {
-        Some(prompt) => run_oneshot(&client, &config, &model, &prompt).await,
+        Some(prompt) => run_oneshot(&client, &config, &model, &prompt, cli.auto).await,
         None => {
-            run_repl(&client, &config, &model).await?;
+            run_repl(&client, &config, &model, cli.auto).await?;
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -57,17 +60,12 @@ async fn run_oneshot(
     config: &Config,
     model: &str,
     prompt: &str,
+    auto: bool,
 ) -> anyhow::Result<ExitCode> {
     let root = std::env::current_dir()?;
     let mut ctx = ToolCtx::new(root);
     ctx.command_timeout = std::time::Duration::from_secs(config.command_timeout_secs);
-    let mut agent = Agent::new(
-        client,
-        Registry::read_only(),
-        ctx,
-        model.to_string(),
-        config,
-    );
+    let mut agent = Agent::new(client, Registry::guided(), ctx, model.to_string(), config);
     let mut history = agent.initial_history();
     let spinner = RefCell::new(Spinner::start("생각 중"));
     let mut on_event = |ev: AgentEvent<'_>| {
@@ -79,9 +77,16 @@ async fn run_oneshot(
         }
         *spinner.borrow_mut() = Spinner::start("생각 중");
     };
-    // 레지스트리가 아직 read_only라 게이트는 발동 불가 — Task 8에서 TtyApprover로 교체
-    let mut approver = AutoApprover::default();
-    let outcome = agent.run(&mut history, prompt, &mut approver, &mut on_event).await;
+    // -p: --auto 없으면 게이트를 띄우지 않고 거부 (스펙 §7 — 비대화형)
+    let mut auto_approver;
+    let mut non_interactive = NonInteractiveApprover;
+    let approver: &mut dyn Approver = if auto {
+        auto_approver = AutoApprover::new(&config.auto_deny_patterns)?;
+        &mut auto_approver
+    } else {
+        &mut non_interactive
+    };
+    let outcome = agent.run(&mut history, prompt, approver, &mut on_event).await;
     spinner.borrow_mut().stop();
 
     match outcome? {
