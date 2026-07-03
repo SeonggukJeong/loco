@@ -80,7 +80,7 @@ async fn run_oneshot(
         *spinner.borrow_mut() = Spinner::start("생각 중");
     };
     // 레지스트리가 아직 read_only라 게이트는 발동 불가 — Task 8에서 TtyApprover로 교체
-    let mut approver = AutoApprover;
+    let mut approver = AutoApprover::default();
     let outcome = agent.run(&mut history, prompt, &mut approver, &mut on_event).await;
     spinner.borrow_mut().stop();
 

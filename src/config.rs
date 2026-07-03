@@ -13,8 +13,7 @@ pub struct Config {
     pub max_output_tokens: usize,
     pub max_turns: usize,
     pub command_timeout_secs: u64,
-    /// M1에서는 파싱만 하고 사용하지 않음 (M3의 --auto 가드레일용).
-    /// 스펙 §7에 문서화된 키를 deny_unknown_fields가 거부하지 않도록 지금 받는다.
+    /// --auto 가드레일 차단 패턴 (스펙 §5). 기본값은 [`default_deny_patterns`] 참고
     pub auto_deny_patterns: Vec<String>,
 }
 
@@ -29,9 +28,24 @@ impl Default for Config {
             max_output_tokens: 2048,
             max_turns: 25,
             command_timeout_secs: 60,
-            auto_deny_patterns: Vec::new(),
+            auto_deny_patterns: default_deny_patterns(),
         }
     }
+}
+
+/// --auto 가드레일 기본 차단 목록 (스펙 §5 원문 그대로 — 크로스플랫폼, 최선 노력).
+/// 대소문자 무시로 컴파일된다 (PowerShell/cmd 관례)
+pub fn default_deny_patterns() -> Vec<String> {
+    [
+        // Unix
+        "sudo", r"rm\s+-\w*[rf]", "mkfs", r"dd\s+if=", "shutdown",
+        // Windows
+        r"rd\s+/s", r"del\s+/[fsq]", r"format\s", r"Remove-Item\s+.*-Recurse", r"reg\s+delete",
+        // 공통
+        r"git\s+push",
+    ]
+    .map(String::from)
+    .to_vec()
 }
 
 /// 설정 파일 하나에서 읽는 부분 설정. 없는 키는 이전 레이어 값을 유지한다.
@@ -127,7 +141,10 @@ mod tests {
         assert_eq!(c.max_output_tokens, 2048);
         assert_eq!(c.max_turns, 25);
         assert_eq!(c.command_timeout_secs, 60);
-        assert!(c.auto_deny_patterns.is_empty()); // 기본 차단 목록은 M3에서 도입
+        // 기본 차단 목록 내장 (스펙 §5 — M3)
+        assert!(c.auto_deny_patterns.iter().any(|p| p.contains("sudo")));
+        assert!(c.auto_deny_patterns.iter().any(|p| p.contains("git")));
+        assert!(c.auto_deny_patterns.len() >= 11);
     }
 
     #[test]

@@ -396,7 +396,7 @@ mod tests {
         history: &mut Vec<ChatMessage>,
         request: &str,
     ) -> Result<AgentOutcome, LlmError> {
-        agent.run(history, request, &mut crate::agent::approval::AutoApprover, &mut |_| {}).await
+        agent.run(history, request, &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await
     }
 
     #[tokio::test]
@@ -432,7 +432,7 @@ mod tests {
         let mut history = agent.initial_history();
         let mut events: Vec<String> = Vec::new();
         let outcome = agent
-            .run(&mut history, "hello.txt 읽어줘", &mut crate::agent::approval::AutoApprover, &mut |ev| {
+            .run(&mut history, "hello.txt 읽어줘", &mut crate::agent::approval::AutoApprover::default(), &mut |ev| {
                 events.push(match ev {
                     AgentEvent::Thought(t) => format!("thought:{t}"),
                     AgentEvent::Action { tool, .. } => format!("action:{tool}"),
@@ -592,7 +592,7 @@ mod tests {
         let mut history = agent.initial_history();
         let mut notices = Vec::new();
         let outcome = agent
-            .run(&mut history, "x", &mut crate::agent::approval::AutoApprover, &mut |ev| {
+            .run(&mut history, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |ev| {
                 if let AgentEvent::Notice(n) = ev {
                     notices.push(n);
                 }

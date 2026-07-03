@@ -202,7 +202,7 @@ async fn run_agent_turn(
         *spinner.borrow_mut() = Spinner::start("생각 중");
     };
     // 레지스트리가 아직 read_only라 게이트는 발동 불가 — Task 8에서 TtyApprover로 교체
-    let mut approver = AutoApprover;
+    let mut approver = AutoApprover::default();
     let result = tokio::select! {
         r = agent.run(history, text, &mut approver, &mut on_event) => Some(r),
         _ = tokio::signal::ctrl_c() => {
