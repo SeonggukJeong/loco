@@ -1291,7 +1291,9 @@ Expected: PASS (기존 에이전트/툴 테스트가 회귀 게이트)
 git add -A && git commit -m "refactor: 툴 디스패치를 spawn_blocking으로 — 취소 플래그 기반 마련"
 ```
 
----### Task 6: run_command 툴
+---
+
+### Task 6: run_command 툴
 
 스펙 §4·§10: cwd 고정, 타임아웃(설정), 출력 절삭, UTF-8→CP949 손실 디코딩, 프로세스 트리 킬.
 
