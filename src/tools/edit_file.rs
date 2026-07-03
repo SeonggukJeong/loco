@@ -204,7 +204,7 @@ mod tests {
     fn setup(content: &str) -> (tempfile::TempDir, ToolCtx) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("f.rs"), content).unwrap();
-        let ctx = ToolCtx { root: dir.path().to_path_buf() };
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
         (dir, ctx)
     }
 

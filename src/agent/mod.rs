@@ -45,8 +45,8 @@ Its result will not change. Try a different action, or call `finish` with your a
 
 pub struct Agent<C: LlmClient> {
     client: C,
-    registry: Registry,
-    ctx: ToolCtx,
+    registry: std::sync::Arc<Registry>,
+    ctx: std::sync::Arc<ToolCtx>,
     model: String,
     temperature: f32,
     max_output_tokens: u32,
@@ -67,8 +67,8 @@ impl<C: LlmClient> Agent<C> {
     ) -> Self {
         Self {
             client,
-            registry,
-            ctx,
+            registry: std::sync::Arc::new(registry),
+            ctx: std::sync::Arc::new(ctx),
             model,
             temperature: config.temperature,
             max_output_tokens: config.max_output_tokens as u32,
@@ -236,11 +236,20 @@ impl<C: LlmClient> Agent<C> {
                     continue;
                 }
             }
-            // 툴 에러도 모델에 되먹이는 데이터 — 루프는 계속 (스펙 §9)
-            let body = match self.registry.dispatch(&turn.action.tool, &turn.action.args, &self.ctx) {
-                Ok(s) if s.is_empty() => "(no output)".to_string(),
-                Ok(s) => s,
-                Err(e) => format!("Error: {e}"),
+            // 툴 에러도 모델에 되먹이는 데이터 — 루프는 계속 (스펙 §9).
+            // 디스패치는 spawn_blocking으로 — 동기 툴(향후 run_command 등)이 async
+            // 런타임을 막지 않고, Ctrl+C가 REPL 쪽에서 즉시 select! 밖으로 빠질 수 있게 한다
+            let registry = std::sync::Arc::clone(&self.registry);
+            let ctx = std::sync::Arc::clone(&self.ctx);
+            let tool_name = turn.action.tool.clone();
+            let tool_args = turn.action.args.clone();
+            let dispatched =
+                tokio::task::spawn_blocking(move || registry.dispatch(&tool_name, &tool_args, &ctx)).await;
+            let body = match dispatched {
+                Ok(Ok(s)) if s.is_empty() => "(no output)".to_string(),
+                Ok(Ok(s)) => s,
+                Ok(Err(e)) => format!("Error: {e}"),
+                Err(join) => format!("Error: tool execution panicked: {join}"),
             };
             // 교정은 툴 결과와 하나의 user 메시지로 병합 (스펙 §3 — 연속 user 금지)
             let mut msg = tool_result_message(&turn.action.tool, &body);
@@ -379,7 +388,7 @@ mod tests {
 
     fn make_agent(script: &Scripted, root: std::path::PathBuf, max_turns: usize) -> Agent<&Scripted> {
         let config = Config { max_turns, ..Default::default() };
-        Agent::new(script, Registry::read_only(), ToolCtx { root }, "test-model".into(), &config)
+        Agent::new(script, Registry::read_only(), ToolCtx::new(root), "test-model".into(), &config)
     }
 
     async fn run_quiet(
@@ -729,7 +738,7 @@ mod tests {
     fn mut_agent(script: &Scripted, hits: Arc<AtomicUsize>, root: std::path::PathBuf) -> Agent<&Scripted> {
         let config = Config::default();
         let reg = Registry::new(vec![Box::new(MutTool(hits))]);
-        Agent::new(script, reg, ToolCtx { root }, "test-model".into(), &config)
+        Agent::new(script, reg, ToolCtx::new(root), "test-model".into(), &config)
     }
 
     #[tokio::test]

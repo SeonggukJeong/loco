@@ -104,7 +104,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(dir.path().join("src/b.rs"), "nothing here\n").unwrap();
-        let ctx = ToolCtx { root: dir.path().to_path_buf() };
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
         (dir, ctx)
     }
 
@@ -127,7 +127,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let body: String = (1..=60).map(|i| format!("hit {i}\n")).collect();
         std::fs::write(dir.path().join("many.txt"), body).unwrap();
-        let ctx = ToolCtx { root: dir.path().to_path_buf() };
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
         let out = run(&ctx, serde_json::json!({"pattern": "hit"})).unwrap();
         assert_eq!(out.matches("many.txt:").count(), MAX_MATCHES, "{out}");
         assert!(out.contains("[more matches truncated at 50]"), "{out}");
@@ -183,7 +183,7 @@ mod tests {
             "filler 18",
         ];
         std::fs::write(dir.path().join("multi.txt"), lines.join("\n")).unwrap();
-        let ctx = ToolCtx { root: dir.path().to_path_buf() };
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
 
         let out = run(&ctx, serde_json::json!({"pattern": "MATCH"})).unwrap();
 

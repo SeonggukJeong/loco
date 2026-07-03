@@ -73,7 +73,7 @@ mod tests {
     use super::WriteFile;
 
     fn ctx(dir: &tempfile::TempDir) -> ToolCtx {
-        ToolCtx { root: dir.path().to_path_buf() }
+        ToolCtx::new(dir.path().to_path_buf())
     }
 
     #[test]

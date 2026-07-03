@@ -59,10 +59,12 @@ async fn run_oneshot(
     prompt: &str,
 ) -> anyhow::Result<ExitCode> {
     let root = std::env::current_dir()?;
+    let mut ctx = ToolCtx::new(root);
+    ctx.command_timeout = std::time::Duration::from_secs(config.command_timeout_secs);
     let mut agent = Agent::new(
         client,
         Registry::read_only(),
-        ToolCtx { root },
+        ctx,
         model.to_string(),
         config,
     );

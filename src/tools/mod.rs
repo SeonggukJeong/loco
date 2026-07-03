@@ -8,6 +8,9 @@ pub mod write_file;
 pub mod edit_file;
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 /// 툴 실행 에러 — 크래시가 아니라 모델에게 되먹이는 데이터 (스펙 §9).
 /// 표시 메시지는 영어: 모델 대상 텍스트이기 때문 (스펙 §4).
@@ -32,6 +35,16 @@ pub enum ToolError {
 /// 툴 실행 문맥. 모든 경로는 이 루트 기준 (스펙 §4 경로 확인)
 pub struct ToolCtx {
     pub root: PathBuf,
+    /// Ctrl+C 시 REPL이 true로 — 장기 실행 툴(run_command)이 폴링해 자진 중단
+    pub cancel: Arc<AtomicBool>,
+    /// run_command 타임아웃 (config.command_timeout_secs)
+    pub command_timeout: Duration,
+}
+
+impl ToolCtx {
+    pub fn new(root: PathBuf) -> Self {
+        Self { root, cancel: Arc::new(AtomicBool::new(false)), command_timeout: Duration::from_secs(60) }
+    }
 }
 
 pub trait Tool {
@@ -55,11 +68,11 @@ pub trait Tool {
 }
 
 pub struct Registry {
-    tools: Vec<Box<dyn Tool>>,
+    tools: Vec<Box<dyn Tool + Send + Sync>>,
 }
 
 impl Registry {
-    pub fn new(tools: Vec<Box<dyn Tool>>) -> Self {
+    pub fn new(tools: Vec<Box<dyn Tool + Send + Sync>>) -> Self {
         Self { tools }
     }
 
@@ -77,7 +90,7 @@ impl Registry {
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn Tool> {
-        self.tools.iter().find(|t| t.name() == name).map(|b| b.as_ref())
+        self.tools.iter().find(|t| t.name() == name).map(|b| b.as_ref() as &dyn Tool)
     }
 
     pub fn dispatch(
@@ -122,7 +135,7 @@ mod tests {
     }
 
     fn ctx() -> ToolCtx {
-        ToolCtx { root: PathBuf::from(".") }
+        ToolCtx::new(PathBuf::from("."))
     }
 
     #[test]
@@ -153,5 +166,19 @@ mod tests {
     fn read_only_registry_has_the_three_read_tools() {
         let reg = Registry::read_only();
         assert_eq!(reg.names(), vec!["read_file", "list_files", "grep"]);
+    }
+
+    #[test]
+    fn registry_and_ctx_are_send_sync_for_spawn_blocking() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<Registry>();
+        assert_send_sync::<ToolCtx>();
+    }
+
+    #[test]
+    fn tool_ctx_new_defaults() {
+        let c = ToolCtx::new(std::path::PathBuf::from("."));
+        assert!(!c.cancel.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(c.command_timeout, std::time::Duration::from_secs(60));
     }
 }

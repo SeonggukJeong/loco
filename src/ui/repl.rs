@@ -81,10 +81,13 @@ pub async fn run_repl(
     model: &str,
 ) -> anyhow::Result<()> {
     let root = std::env::current_dir()?;
+    let mut ctx = ToolCtx::new(root);
+    ctx.command_timeout = std::time::Duration::from_secs(config.command_timeout_secs);
+    let cancel = ctx.cancel.clone();
     let mut agent = Agent::new(
         client,
         Registry::read_only(),
-        ToolCtx { root },
+        ctx,
         model.to_string(),
         config,
     );
@@ -120,7 +123,7 @@ pub async fn run_repl(
                 run_chat_turn(client, config, model, &mut chat_history, text).await;
             }
             Input::Agent(text) => {
-                run_agent_turn(&mut agent, &mut agent_history, config, &text).await;
+                run_agent_turn(&mut agent, &mut agent_history, config, &text, &cancel).await;
             }
         }
     }
@@ -179,7 +182,10 @@ async fn run_agent_turn(
     history: &mut Vec<ChatMessage>,
     config: &Config,
     text: &str,
+    cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
+    // 턴 시작 시 초기화 — 이전 턴에서 취소됐어도 이번 턴은 새로 시작
+    cancel.store(false, std::sync::atomic::Ordering::SeqCst);
     let snapshot_len = history.len();
     // 직전 실행이 MaxTurns였다면 이번 요청은 push가 아니라 꼬리 user 메시지에
     // in-place 병합된다(agent::run 진입부) — 길이가 안 변하므로 truncate만으로는
@@ -199,7 +205,12 @@ async fn run_agent_turn(
     let mut approver = AutoApprover;
     let result = tokio::select! {
         r = agent.run(history, text, &mut approver, &mut on_event) => Some(r),
-        _ = tokio::signal::ctrl_c() => None,
+        _ = tokio::signal::ctrl_c() => {
+            // 장기 실행 툴(run_command)이 폴링해 자진 중단하도록 신호만 세운다.
+            // 이미 spawn_blocking에 들어간 동기 작업 자체를 강제로 끊지는 않는다
+            cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+            None
+        }
     };
     // on_event는 &RefCell만 캡처해 Copy — drop()은 clippy::dropping_copy_types에 걸리고
     // 애초에 불필요하다 (NLL이 차용을 끝낸다)

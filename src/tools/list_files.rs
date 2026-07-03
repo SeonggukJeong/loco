@@ -103,7 +103,7 @@ mod tests {
         std::fs::write(dir.path().join("src/deep/a.rs"), "").unwrap();
         std::fs::write(dir.path().join("src/deep/deeper/b.rs"), "").unwrap();
         std::fs::write(dir.path().join("README.md"), "").unwrap();
-        let ctx = ToolCtx { root: dir.path().to_path_buf() };
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
         (dir, ctx)
     }
 
@@ -148,7 +148,7 @@ mod tests {
         for i in 0..210 {
             std::fs::write(dir.path().join(format!("f{i:03}.txt")), "").unwrap();
         }
-        let ctx = ToolCtx { root: dir.path().to_path_buf() };
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
         let out = ListFiles.run(&serde_json::json!({}), &ctx).unwrap();
         assert_eq!(out.lines().filter(|l| l.ends_with(".txt")).count(), MAX_ENTRIES);
         assert!(out.contains("[truncated at 200 entries"), "{out}");
