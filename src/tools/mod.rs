@@ -6,6 +6,7 @@ pub mod eol;
 pub mod diff;
 pub mod write_file;
 pub mod edit_file;
+pub mod run_command;
 
 use std::path::PathBuf;
 use std::sync::Arc;
