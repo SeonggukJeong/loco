@@ -19,6 +19,7 @@ Respond with exactly ONE JSON object per turn and nothing else:\n\
 \n\
 Rules:\n\
 - One tool call per turn.\n\
+- Never repeat a tool call that already returned a result - reuse that result. As soon as you have enough information, call `finish`.\n\
 - File paths are relative to the project root. Explore with list_files or grep before reading whole files.\n\
 - When you know the answer (or cannot proceed), call `finish`. Its `summary` is the ONLY text shown to the user - put the complete answer there, written in the user's language.\n\
 \n\

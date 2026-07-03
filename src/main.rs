@@ -92,5 +92,9 @@ async fn run_oneshot(
             eprintln!("(모델 응답을 {PARSE_ATTEMPTS}회 파싱하지 못했습니다. 마지막 원문:)\n{raw}");
             Ok(ExitCode::from(1))
         }
+        AgentOutcome::RepetitionStop => {
+            eprintln!("(같은 툴 호출 반복으로 조기 종료 — 요청을 바꿔 다시 시도하세요)");
+            Ok(ExitCode::from(2))
+        }
     }
 }

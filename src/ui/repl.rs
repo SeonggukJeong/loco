@@ -216,6 +216,9 @@ async fn run_agent_turn(
             rollback(history, snapshot_len, snapshot_tail);
             println!("(모델 응답을 {PARSE_ATTEMPTS}회 파싱하지 못했습니다. 마지막 원문:)\n{raw}");
         }
+        Some(Ok(AgentOutcome::RepetitionStop)) => {
+            println!("(같은 툴 호출을 반복해 조기 종료했습니다 — 요청을 바꿔보세요)");
+        }
         Some(Err(e)) => {
             rollback(history, snapshot_len, snapshot_tail);
             println!("오류: {e}");
