@@ -5,6 +5,7 @@ pub mod grep;
 pub mod eol;
 pub mod diff;
 pub mod write_file;
+pub mod edit_file;
 
 use std::path::PathBuf;
 
@@ -20,6 +21,8 @@ pub enum ToolError {
     NotFound(String),
     #[error("not a UTF-8 text file: {0}")]
     NotUtf8(String),
+    #[error("edit failed: {0}")]
+    EditFailed(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("unknown tool: {0}")]
