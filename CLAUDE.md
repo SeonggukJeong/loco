@@ -10,6 +10,7 @@ M1-M3 done (guided agent complete — v1 goal); M4 (eval harness) is next.
 - `cargo run` — agent REPL (default input runs the tool loop; /chat for plain streaming chat); `cargo run -- -p "question"` — one-shot agent; summary to stdout, progress to stderr, exit codes 0/1/2
 - `cargo run -- --auto` (or `-p ... --auto`) — auto-approve the confirmation gate (still blocked by `auto_deny_patterns`); without it, mutating actions prompt `적용할까요? [y/N]` interactively, or are denied outright in `-p` non-interactive mode
 - Session transcripts: one JSONL file per run at `./.loco/sessions/*.jsonl` (best-effort; `.loco/.gitignore` keeps them out of commits)
+- Tunable config (defaults): `max_turns`=25, `max_output_tokens`=2048, `context_tokens`=8192, `command_timeout_secs`=60, `auto_deny_patterns`; unknown keys rejected (`deny_unknown_fields`)
 - Server-down smoke: temp dir with `.loco/config.toml` pointing `base_url` at `http://127.0.0.1:1/v1` (port 1 is reliably closed; ephemeral ports may be occupied)
 
 ## Hard constraints (from spec)
@@ -35,3 +36,4 @@ M1-M3 done (guided agent complete — v1 goal); M4 (eval harness) is next.
 - No git remote — local-only repo
 - Live smoke needs LM Studio running with a model loaded; `model = ""` in config auto-selects the server's first model
 - `TtyApprover` is intentionally synchronous-blocking on `readline()`, not polled/async — an async stdin reader left running during the prompt would steal the Ctrl+C keystroke meant for the REPL's `select!`, orphaning the reader task
+- Small local models (e.g. gemma-4-e4b) can loop on `finish_reason: length` for long outputs (summaries, etc.) until `max_turns` → exit 2 (spec §3 v1 blind spot, bounded, not a hang). Mitigate: raise `max_output_tokens` in `./.loco/config.toml` (git-ignored via `.loco/.gitignore` = `*`, so local-only) or load a larger model
