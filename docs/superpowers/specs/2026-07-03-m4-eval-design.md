@@ -37,6 +37,12 @@
 - 종료: stderr에 "(중단됨)" 메시지, 종료 코드 2 (조기 종료 계열, §7)
 - eval의 과제 타임아웃도 같은 메커니즘 재사용: 타임아웃 발화 → cancel 세트 →
   유예 await → 실행을 `timeout`으로 기록
+- eval의 Ctrl+C는 **장수 SIGINT 리스너 + 공유 플래그**로 감시한다 — tokio의
+  `ctrl_c()`는 첫 폴링에서 프로세스 기본 SIGINT 동작을 영구 대체하고 등록 이후의
+  신호만 보므로, select! 창 밖 구간(샌드박스 복사·protected 동기화·check 실행)의
+  Ctrl+C가 유실되지 않으려면 리스너가 계속 살아 있어야 한다. 공유 플래그는 check
+  실행의 cancel로도 전달돼 check 중 Ctrl+C가 프로세스 그룹을 죽인다; check가
+  중단으로 잘리면 그 실행은 기록하지 않는다(잘린 판정은 측정 오염)
 
 ## 2. CLI
 
@@ -143,8 +149,8 @@ loco eval <tasks-dir> [--repeats N] [--seed N] [--timeout-scale F]
 - `report.rs`: 집계 산술(통과율·평균), JSON 직렬화 스키마
 - 시드 파생: base_seed + repeat_index
 - 통합: 스크립트된 가짜 `LlmClient`로 미니 fixture 과제의 eval 전체 흐름
-  (통과·실패·타임아웃·protected 복원) — 실서버 불필요. check는 크로스플랫폼
-  무해 명령(예: `cargo --version` 수준 또는 파일 존재 검사) 사용
+  (통과·실패·타임아웃·protected 복원) — 실서버 불필요. check가 sh 명령이라
+  기존 관례대로 `#[cfg(unix)]` 게이트 (윈도우 러너 검증은 라이브 스모크에 위임)
 - 선행 수정 ①: run_oneshot 취소 경로는 기존 agent 테스트 패턴(스크립트된
   클라이언트)으로 커버 가능한 범위까지; 실 Ctrl+C는 라이브 스모크로
 - 실모델 검증: 기준선 측정이 겸함 (§11)

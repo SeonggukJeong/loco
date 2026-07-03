@@ -212,7 +212,8 @@ async fn cancel_during_tool_stops_before_next_llm_call() {
 - Modify: `src/main.rs` (run_oneshot 배선)
 
 **Interfaces:**
-- Produces: `pub enum Stopped { TimedOut, Interrupted }`, `pub async fn run_bounded<F: Future>(fut: F, cancel: &AtomicBool, limit: Option<Duration>, grace: Duration) -> Result<F::Output, Stopped>` — Task 8의 러너가 과제 타임아웃에 재사용
+- Produces: `pub enum Stopped { TimedOut, Interrupted }`, `pub async fn run_bounded<F: Future, I: Future>(fut: F, cancel: &AtomicBool, limit: Option<Duration>, grace: Duration, interrupt: I) -> Result<F::Output, Stopped>`, `pub async fn watch_flag(flag: &AtomicBool)` — Task 8의 러너가 과제 타임아웃·공유 인터럽트 플래그에 재사용
+- interrupt를 퓨처 파라미터로 받는 이유: tokio의 `ctrl_c()`는 첫 폴링에서 프로세스 기본 SIGINT 동작을 영구 대체하고 **등록 이후의 신호만** 본다. -p처럼 실행 전체가 하나의 select! 창인 호출자는 `ctrl_c()`를 그대로 넘기면 되지만, eval처럼 select! 창 밖 구간(샌드박스 복사·check 실행)이 있는 호출자는 장수 리스너+공유 플래그(`watch_flag`)를 써야 SIGINT가 유실되지 않는다
 
 - [ ] **Step 1: 실패하는 테스트와 함께 파일 생성** — `src/agent/bounded.rs`:
 
@@ -230,20 +231,33 @@ pub enum Stopped {
     Interrupted,
 }
 
-/// Ctrl+C(항상)와 시간 상한(limit이 Some일 때)을 감시하며 퓨처를 실행한다.
+/// 플래그가 설 때까지 폴링(50ms) — eval의 공유 인터럽트 플래그를 run_bounded의
+/// interrupt 퓨처로 바꾸는 어댑터
+pub async fn watch_flag(flag: &AtomicBool) {
+    while !flag.load(Ordering::SeqCst) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// 중단 신호(interrupt 퓨처 완료)와 시간 상한(limit이 Some일 때)을 감시하며 퓨처를
+/// 실행한다. interrupt는 호출자가 정한다: -p는 tokio::signal::ctrl_c(), eval은
+/// watch_flag(장수 리스너가 세우는 공유 플래그) — ctrl_c()는 등록 이후의 신호만
+/// 보므로 select! 창 밖 구간이 있는 호출자가 그대로 쓰면 SIGINT가 유실된다.
 /// 발화 시 cancel 플래그를 세우고 유예(grace) 동안 퓨처의 자연 종료를 기다린다 —
 /// 즉시 드롭하면 run_command의 자식 프로세스 그룹을 죽일 기회가 없어 고아가 남는다.
 /// 유예 안에 완료돼도 결과는 버린다: 호출자에게는 중단 사실이 결과보다 중요하다.
-pub async fn run_bounded<F: Future>(
+pub async fn run_bounded<F: Future, I: Future>(
     fut: F,
     cancel: &AtomicBool,
     limit: Option<Duration>,
     grace: Duration,
+    interrupt: I,
 ) -> Result<F::Output, Stopped> {
     tokio::pin!(fut);
+    tokio::pin!(interrupt);
     let stopped = tokio::select! {
         out = &mut fut => return Ok(out),
-        _ = tokio::signal::ctrl_c() => Stopped::Interrupted,
+        _ = &mut interrupt => Stopped::Interrupted,
         _ = sleep_limit(limit) => Stopped::TimedOut,
     };
     cancel.store(true, Ordering::SeqCst);
@@ -263,10 +277,15 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
+    /// 완료되지 않는 interrupt — Ctrl+C가 없는 상황
+    fn never() -> std::future::Pending<()> {
+        std::future::pending()
+    }
+
     #[tokio::test]
     async fn completed_future_passes_through() {
         let cancel = AtomicBool::new(false);
-        let r = run_bounded(async { 42 }, &cancel, Some(Duration::from_secs(5)), Duration::from_millis(10)).await;
+        let r = run_bounded(async { 42 }, &cancel, Some(Duration::from_secs(5)), Duration::from_millis(10), never()).await;
         assert_eq!(r.unwrap(), 42);
         assert!(!cancel.load(Ordering::SeqCst), "정상 완료는 플래그를 건드리지 않음");
     }
@@ -279,10 +298,27 @@ mod tests {
             &cancel,
             Some(Duration::from_millis(20)),
             Duration::from_millis(10),
+            never(),
         )
         .await;
         assert_eq!(r.unwrap_err(), Stopped::TimedOut);
         assert!(cancel.load(Ordering::SeqCst), "타임아웃은 cancel 플래그를 세운다");
+    }
+
+    #[tokio::test]
+    async fn interrupt_future_stops_and_sets_cancel() {
+        let cancel = AtomicBool::new(false);
+        let flag = AtomicBool::new(true); // 이미 선 플래그 — watch_flag가 즉시 완료
+        let r = run_bounded(
+            std::future::pending::<()>(),
+            &cancel,
+            None,
+            Duration::from_millis(10),
+            watch_flag(&flag),
+        )
+        .await;
+        assert_eq!(r.unwrap_err(), Stopped::Interrupted);
+        assert!(cancel.load(Ordering::SeqCst), "중단도 cancel 플래그를 세운다");
     }
 
     #[tokio::test]
@@ -295,7 +331,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(80)).await;
             c2.store(true, Ordering::SeqCst);
         };
-        let r = run_bounded(fut, &cancel, Some(Duration::from_millis(20)), Duration::from_secs(1)).await;
+        let r = run_bounded(fut, &cancel, Some(Duration::from_millis(20)), Duration::from_secs(1), never()).await;
         assert_eq!(r.unwrap_err(), Stopped::TimedOut, "결과는 버려진다");
         assert!(cleaned.load(Ordering::SeqCst), "유예 동안 자연 종료가 완료됨");
     }
@@ -304,7 +340,7 @@ mod tests {
 
 `src/agent/mod.rs` 상단(기존 `pub mod approval;` 옆)에 `pub mod bounded;` 추가.
 
-- [ ] **Step 2: 테스트 실행** — Run: `cargo test bounded` → 기대: 3개 통과
+- [ ] **Step 2: 테스트 실행** — Run: `cargo test bounded` → 기대: 4개 통과
 
 - [ ] **Step 3: run_oneshot 배선** — `src/main.rs`:
   - import 추가: `use loco::agent::bounded::{run_bounded, Stopped};`
@@ -321,12 +357,16 @@ mod tests {
   를 다음으로 교체:
 
 ```rust
-    // Ctrl+C: cancel 플래그 → 유예 대기 (자식 프로세스 그룹 정리 후 종료 — 백로그 ①)
+    // Ctrl+C: cancel 플래그 → 유예 대기 (자식 프로세스 그룹 정리 후 종료 — 백로그 ①).
+    // -p는 실행 전체가 하나의 select! 창이라 ctrl_c()를 그대로 interrupt로 쓴다
     let bounded = run_bounded(
         agent.run(&mut session, prompt, approver, &mut on_event),
         &cancel,
         None,
         std::time::Duration::from_secs(5),
+        async {
+            let _ = tokio::signal::ctrl_c().await;
+        },
     )
     .await;
     spinner.borrow_mut().stop();
@@ -510,7 +550,7 @@ use super::{Tool, ToolCtx, ToolError};
     }
 ```
 
-run_command.rs의 기존 unix 서브모듈 테스트는 그대로 둔다(리팩터 후에도 통과해야 함 — 이것이 동작 보존 증명).
+run_command.rs의 기존 unix 서브모듈 테스트는 그대로 둔다(리팩터 후에도 통과해야 함 — 이것이 동작 보존 증명). 단, 외부 `mod tests`는 decode/truncate 테스트가 exec.rs로 떠나면 `use super::*;`와 그 위의 안내 주석이 unused가 되어 `-D warnings` 게이트에 걸린다 — 외부 tests 모듈을 `#[cfg(unix)] mod unix` 서브모듈만 남게 정리할 것.
 
 - [ ] **Step 3: 검증** — Run: `cargo test && cargo clippy --all-targets -- -D warnings` → 기대: 전체 통과 (특히 run_command unix 테스트 6개)
 
@@ -753,7 +793,11 @@ impl Sandbox {
             let root = base.join(format!("loco-eval-{}-{n}", std::process::id()));
             match std::fs::create_dir(&root) {
                 Ok(()) => {
-                    copy_tree(fixture, &root)?;
+                    if let Err(e) = copy_tree(fixture, &root) {
+                        // 부분 복사 잔재를 남기지 않는다 — 에러 경로 샌드박스 누수 방지
+                        let _ = std::fs::remove_dir_all(&root);
+                        return Err(e);
+                    }
                     return Ok(Sandbox { root });
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -813,7 +857,11 @@ fn copy_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
 }
 
 fn remove_any(p: &Path) -> std::io::Result<()> {
-    if p.is_dir() { std::fs::remove_dir_all(p) } else { std::fs::remove_file(p) }
+    // is_dir()은 심링크를 따라간다 — 모델이 protected 경로를 심링크로 바꿔치기해도
+    // 하네스가 죽지 않게 symlink_metadata의 파일타입으로 분기한다 (심링크 자체는
+    // remove_file 대상; remove_dir_all은 심링크 루트를 거부한다)
+    let meta = p.symlink_metadata()?;
+    if meta.file_type().is_dir() { std::fs::remove_dir_all(p) } else { std::fs::remove_file(p) }
 }
 
 #[cfg(test)]
@@ -855,6 +903,19 @@ mod tests {
         let fx = fixture_with(&[("real.txt", "x")]);
         std::os::unix::fs::symlink(fx.path().join("real.txt"), fx.path().join("link.txt")).unwrap();
         assert!(Sandbox::create(fx.path()).unwrap_err().to_string().contains("심링크"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_replaces_symlinked_protected_path() {
+        // 보상 해킹 변형: 모델이 run_command로 protected 디렉터리를 심링크로 바꿔치기
+        let fx = fixture_with(&[("tests/t.rs", "ORIGINAL"), ("decoy.txt", "D")]);
+        let sb = Sandbox::create(fx.path()).unwrap();
+        std::fs::remove_dir_all(sb.root.join("tests")).unwrap();
+        std::os::unix::fs::symlink(sb.root.join("decoy.txt"), sb.root.join("tests")).unwrap();
+        sb.sync_protected(fx.path(), &["tests".to_string()]).unwrap();
+        assert_eq!(std::fs::read_to_string(sb.root.join("tests/t.rs")).unwrap(), "ORIGINAL");
+        sb.cleanup();
     }
 
     #[test]
@@ -911,7 +972,7 @@ mod tests {
 
 `src/eval/mod.rs`에 `pub mod sandbox;` 추가.
 
-- [ ] **Step 2: 검증** — Run: `cargo test sandbox && cargo clippy --all-targets -- -D warnings` → 기대: 7개 통과
+- [ ] **Step 2: 검증** — Run: `cargo test sandbox && cargo clippy --all-targets -- -D warnings` → 기대: 8개 통과
 
 - [ ] **Step 3: 커밋** — `git commit -m "feat: eval 샌드박스 — fixture 복사·protected 동기화"`
 
@@ -1008,7 +1069,8 @@ impl Report {
         passed as f64 / total as f64
     }
 
-    /// stdout용 한국어 표 (스펙 §8 리포트)
+    /// stdout용 한국어 표 (스펙 §8 리포트). 폭 계산이 char 수 기준이라 한글
+    /// 헤더(전각)와 ASCII 행의 열이 약간 어긋난다 — 과제명이 ASCII라 수용(의도적)
     pub fn render_table(&self) -> String {
         let mut out = String::new();
         out.push_str(&format!("{:<28} {:>7} {:>9} {:>10}\n", "과제", "통과", "평균 턴", "평균 시간"));
@@ -1123,7 +1185,7 @@ mod tests {
 - Modify: `src/eval/mod.rs` (러너 본체 + 통합 테스트)
 
 **Interfaces:**
-- Consumes: Task 1 `set_seed` / Task 2 `AgentOutcome::Cancelled` / Task 3 `run_bounded, Stopped` / Task 4 `exec_shell, ExecEnd` / Task 5 `load_tasks` / Task 6 `Sandbox` / Task 7 리포트 타입
+- Consumes: Task 1 `set_seed` / Task 2 `AgentOutcome::Cancelled` / Task 3 `run_bounded, watch_flag, Stopped` / Task 4 `exec_shell, ExecEnd` / Task 5 `load_tasks` / Task 6 `Sandbox` / Task 7 리포트 타입
 - Produces: `pub struct EvalOptions { tasks_dir: PathBuf, repeats: usize, base_seed: u64, timeout_scale: f64, cancel_grace: Duration }`, `pub struct EvalRun { report: Report, report_path: PathBuf }`, `pub async fn run_eval<C: LlmClient>(client: &C, config: &Config, model: &str, opts: &EvalOptions, project_root: &Path) -> anyhow::Result<EvalRun>` — Task 9의 CLI가 호출
 - 계약: LLM 에러는 즉시 `Err`(하네스 중단), Ctrl+C는 `interrupted: true`인 부분 리포트, 타임아웃은 `outcome: timeout`으로 기록하고 계속. check는 outcome과 무관하게 항상 실행. 리포트는 `<project_root>/.loco/eval/<stamp>/report.json` + 실행별 `run-<과제>-<반복>.jsonl`
 
@@ -1171,7 +1233,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 
 use crate::agent::approval::AutoApprover;
-use crate::agent::bounded::{run_bounded, Stopped};
+use crate::agent::bounded::{run_bounded, watch_flag, Stopped};
 use crate::agent::{Agent, AgentEvent, AgentOutcome};
 use crate::config::Config;
 use crate::llm::LlmClient;
@@ -1208,6 +1270,20 @@ pub async fn run_eval<C: LlmClient>(
     let started_at = utc_stamp(now_secs());
     let report_dir = create_report_dir(project_root, &started_at)?;
 
+    // 장수 SIGINT 리스너 + 공유 플래그. tokio의 ctrl_c()는 첫 폴링에서 프로세스
+    // 기본 SIGINT 동작을 영구 대체하고 등록 이후의 신호만 보므로, select! 창 밖
+    // 구간(샌드박스 복사·protected 동기화·check 실행)의 Ctrl+C가 유실되지 않게
+    // 리스너 하나를 계속 살려 두고 플래그로 전달한다
+    let interrupt = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let listener = tokio::spawn({
+        let flag = interrupt.clone();
+        async move {
+            while tokio::signal::ctrl_c().await.is_ok() {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    });
+
     let mut task_reports = Vec::new();
     let mut interrupted = false;
     for t in &tasks {
@@ -1216,9 +1292,15 @@ pub async fn run_eval<C: LlmClient>(
         }
         let mut runs = Vec::new();
         for repeat in 0..opts.repeats {
+            // 페이즈 간(직전 run의 판정/정리 중) 들어온 Ctrl+C도 여기서 잡는다
+            if interrupt.load(std::sync::atomic::Ordering::SeqCst) {
+                eprintln!("(중단됨 — 지금까지의 결과로 부분 리포트를 만듭니다)");
+                interrupted = true;
+                break;
+            }
             let seed = opts.base_seed + repeat as u64;
             eprintln!("[{}] {}/{} 실행 중… (시드 {seed})", t.name, repeat + 1, opts.repeats);
-            match run_once(client, config, model, t, seed, repeat, opts, &report_dir).await? {
+            match run_once(client, config, model, t, seed, repeat, opts, &report_dir, &interrupt).await? {
                 Some(rec) => {
                     eprintln!(
                         "[{}] {}/{} — {} ({:?}, {}턴, {:.1}s)",
@@ -1237,6 +1319,7 @@ pub async fn run_eval<C: LlmClient>(
         }
         task_reports.push(TaskReport::from_runs(t.name.clone(), runs));
     }
+    listener.abort();
 
     let report = Report {
         model: model.to_string(),
@@ -1256,6 +1339,7 @@ pub async fn run_eval<C: LlmClient>(
 }
 
 /// 과제 1회 실행 → 판정. Ok(None) = Ctrl+C (하네스 중단 신호)
+#[allow(clippy::too_many_arguments)]
 async fn run_once<C: LlmClient>(
     client: &C,
     config: &Config,
@@ -1265,6 +1349,7 @@ async fn run_once<C: LlmClient>(
     repeat: usize,
     opts: &EvalOptions,
     report_dir: &Path,
+    interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<Option<RunRecord>> {
     let sb = Sandbox::create(&t.fixture)?;
     let mut cfg = config.clone();
@@ -1298,6 +1383,7 @@ async fn run_once<C: LlmClient>(
         &cancel,
         Some(limit),
         opts.cancel_grace,
+        watch_flag(interrupt),
     )
     .await;
     let elapsed = start.elapsed();
@@ -1313,9 +1399,9 @@ async fn run_once<C: LlmClient>(
             return Ok(None);
         }
         Err(Stopped::TimedOut) => {
-            let rec = judge(&sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat).await?;
-            sb.cleanup();
-            return Ok(Some(rec));
+            let rec = judge(&sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat, interrupt).await;
+            sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
+            return rec;
         }
     };
     let kind = match outcome {
@@ -1326,13 +1412,14 @@ async fn run_once<C: LlmClient>(
         // eval에선 도달하지 않음(플래그는 run_bounded만 세우고 그 경로는 위에서 반환) — 방어적 매핑
         AgentOutcome::Cancelled => RunOutcome::Timeout,
     };
-    let rec = judge(&sb, t, opts, kind, turns, elapsed, seed, repeat).await?;
-    sb.cleanup();
-    Ok(Some(rec))
+    let rec = judge(&sb, t, opts, kind, turns, elapsed, seed, repeat, interrupt).await;
+    sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
+    rec
 }
 
 /// protected 동기화(check보다 먼저 — 스펙 §8) 후 check 종료코드로 판정.
-/// outcome과 무관하게 항상 실행된다 (MaxTurns라도 작업이 됐으면 통과가 공정)
+/// outcome과 무관하게 항상 실행된다 (MaxTurns라도 작업이 됐으면 통과가 공정).
+/// Ok(None) = check 실행 중 Ctrl+C — 잘린 판정은 기록하지 않는다 (측정 오염 방지)
 #[allow(clippy::too_many_arguments)]
 async fn judge(
     sb: &Sandbox,
@@ -1343,21 +1430,24 @@ async fn judge(
     elapsed: Duration,
     seed: u64,
     repeat: usize,
-) -> anyhow::Result<RunRecord> {
+    interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> anyhow::Result<Option<RunRecord>> {
     sb.sync_protected(&t.fixture, &t.spec.protected)?;
     let check_timeout = Duration::from_secs_f64(t.spec.check_timeout_secs as f64 * opts.timeout_scale);
     let check = t.spec.check.clone();
     let root = sb.root.clone();
-    // exec_shell은 블로킹(폴링 루프) — 런타임과 Ctrl+C 감시를 막지 않게 워커로
-    let exec = tokio::task::spawn_blocking(move || {
-        let cancel = std::sync::atomic::AtomicBool::new(false);
-        exec_shell(&check, &root, check_timeout, &cancel)
-    })
-    .await
-    .context("check 실행 태스크가 패닉")?
-    .with_context(|| format!("과제 {}: check 명령 실행 실패", t.name))?;
+    // exec_shell은 블로킹(폴링 루프) — 런타임과 인터럽트 리스너를 막지 않게 워커로.
+    // cancel로 공유 인터럽트 플래그를 넘겨 check 실행 중 Ctrl+C도 프로세스 그룹을 죽인다
+    let cancel = interrupt.clone();
+    let exec = tokio::task::spawn_blocking(move || exec_shell(&check, &root, check_timeout, &cancel))
+        .await
+        .context("check 실행 태스크가 패닉")?
+        .with_context(|| format!("과제 {}: check 명령 실행 실패", t.name))?;
+    if matches!(exec.end, ExecEnd::Cancelled) {
+        return Ok(None);
+    }
     let passed = matches!(exec.end, ExecEnd::Done(s) if s.success());
-    Ok(RunRecord { repeat, seed, passed, outcome, turns, duration_secs: elapsed.as_secs_f64() })
+    Ok(Some(RunRecord { repeat, seed, passed, outcome, turns, duration_secs: elapsed.as_secs_f64() }))
 }
 
 /// `<root>/.loco/eval/<stamp>/` 생성 + `.loco/.gitignore` 보장 (스펙 §7과 동일 정책)
@@ -1635,6 +1725,13 @@ enum Command {
 
 ```rust
     if let Some(Command::Eval { tasks_dir, repeats, seed, timeout_scale }) = cli.command {
+        // Duration::from_secs_f64는 음수/비유한 값에 패닉 — 하네스 에러(exit 1)로 선검증
+        if !(timeout_scale.is_finite() && timeout_scale > 0.0) {
+            anyhow::bail!("--timeout-scale은 0보다 큰 유한한 값이어야 합니다 (받은 값: {timeout_scale})");
+        }
+        if repeats == 0 {
+            anyhow::bail!("--repeats는 1 이상이어야 합니다");
+        }
         let opts = loco::eval::EvalOptions {
             tasks_dir,
             repeats,
@@ -1761,7 +1858,7 @@ S=/tmp/loco-fixture-check && rm -rf $S && cp -R tasks/find-definition/fixture $S
 `tasks/count-usages/task.toml`:
 
 ```toml
-prompt = "src/lib.rs 안에서 `normalize` 함수가 호출되는 횟수를 세어, 그 숫자만 answer.txt에 한 줄로 저장해줘. use/pub use 선언은 호출이 아니야."
+prompt = "src/lib.rs 안에서 `normalize` 함수가 호출되는 횟수(호출 표현식의 개수 — 한 줄에 두 번 나오면 2회)를 세어, 그 숫자만 answer.txt에 한 줄로 저장해줘. use/pub use 선언은 호출이 아니야."
 check = "cargo test"
 protected = ["tests", "Cargo.toml"]
 ```
@@ -2451,6 +2548,7 @@ Run: `cargo test shipped_task_set && cargo clippy --all-targets -- -D warnings` 
 
 **Files:**
 - Modify: `CLAUDE.md`
+- Modify: `README.md` (한국어 사용자 문서 — 설계 완료 기준 5 "CLAUDE.md·사용법 문서 갱신")
 
 - [ ] **Step 1: CLAUDE.md 갱신** (영문 유지 — 사용자 선호):
   - 헤더의 `M1-M3 done … M4 (eval harness) is next` → M4 상태로 갱신 (구현 완료, 기준선 측정은 Task 14 이후 반영)
@@ -2462,9 +2560,14 @@ Run: `cargo test shipped_task_set && cargo clippy --all-targets -- -D warnings` 
     - `tasks/`: 12 zero-dependency cargo-crate tasks, `check = "cargo test"`, `protected = ["tests", "Cargo.toml"]`; `tasks/.gitattributes` keeps the CRLF fixture byte-exact
   - Notes에 추가: eval integration tests are `#[cfg(unix)]`-gated (sh-based checks); fixture crates are ignored by root cargo (not a workspace)
 
-- [ ] **Step 2: 검증** — CLAUDE.md의 명령이 실제로 동작하는 형태인지 눈으로 재확인 (`cargo run -- eval tasks/ --repeats 3` 문법 등)
+- [ ] **Step 2: README.md 갱신** (한국어):
+  - `loco eval` 사용법 섹션 추가: `loco eval tasks/ [--repeats N] [--seed N] [--timeout-scale F]`, 판정 방식 한 줄(샌드박스 + protected 복원 + check 종료코드), 리포트 위치(`./.loco/eval/<타임스탬프>/report.json` + 실행별 기록), 종료 코드(정상 완료 0 — 통과율 무관, 하네스 에러 1, Ctrl+C 부분 리포트 1)
+  - `-p` 모드 설명 갱신: Ctrl+C 시 실행 중이던 명령(자식 프로세스)까지 정리하고 종료 코드 2 — 기존 종료 코드 표와 일관되게
+  - 기존 문서 톤·구성 유지 (M3에서 갱신된 형식 따름)
 
-- [ ] **Step 3: 커밋** — `git commit -m "docs: CLAUDE.md에 M4 eval 하네스 반영"`
+- [ ] **Step 3: 검증** — CLAUDE.md·README의 명령이 실제로 동작하는 형태인지 눈으로 재확인 (`cargo run -- eval tasks/ --repeats 3` 문법 등)
+
+- [ ] **Step 4: 커밋** — `git commit -m "docs: CLAUDE.md·README에 M4 eval 하네스 반영"`
 
 ---
 
