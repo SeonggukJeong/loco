@@ -57,7 +57,8 @@ loco eval <tasks-dir> [--repeats N] [--seed N] [--timeout-scale F]
   반복마다 다른 시드)
 - `--timeout-scale F`: 기본 1.0. 과제 `timeout_secs`·check 타임아웃에 곱함
 - 종료 코드: 하네스 정상 완료 0(통과율 무관), 하네스 에러(과제 정의 오류, 서버
-  접속 불가, fixture 복사 실패 등) 1
+  접속 불가, fixture 복사 실패 등) 1. Ctrl+C 중단은 부분 리포트
+  (`interrupted: true`)를 저장한 뒤 1
 
 ## 3. 모듈 구조 (`src/eval/`)
 
@@ -106,7 +107,7 @@ loco eval <tasks-dir> [--repeats N] [--seed N] [--timeout-scale F]
   ```json
   {
     "model": "...", "base_seed": 0, "repeats": 3, "timeout_scale": 1.0,
-    "started_at": "...", "duration_secs": 0,
+    "started_at": "...", "duration_secs": 0, "interrupted": false,
     "tasks": [{
       "name": "add-function", "pass_rate": 0.67,
       "avg_turns": 5.3, "avg_duration_secs": 41.2,

@@ -1286,40 +1286,47 @@ pub async fn run_eval<C: LlmClient>(
 
     let mut task_reports = Vec::new();
     let mut interrupted = false;
-    for t in &tasks {
-        if interrupted {
-            break;
-        }
-        let mut runs = Vec::new();
-        for repeat in 0..opts.repeats {
-            // 페이즈 간(직전 run의 판정/정리 중) 들어온 Ctrl+C도 여기서 잡는다
-            if interrupt.load(std::sync::atomic::Ordering::SeqCst) {
-                eprintln!("(중단됨 — 지금까지의 결과로 부분 리포트를 만듭니다)");
-                interrupted = true;
+    // run_once의 에러(LLM 에러 → 하네스 중단)로 조기 반환해도 리스너가 정리되도록
+    // 루프를 블록으로 감싸 결과를 받은 뒤 abort → 전파 순서로 처리한다
+    let loop_result: anyhow::Result<()> = async {
+        for t in &tasks {
+            if interrupted {
                 break;
             }
-            let seed = opts.base_seed + repeat as u64;
-            eprintln!("[{}] {}/{} 실행 중… (시드 {seed})", t.name, repeat + 1, opts.repeats);
-            match run_once(client, config, model, t, seed, repeat, opts, &report_dir, &interrupt).await? {
-                Some(rec) => {
-                    eprintln!(
-                        "[{}] {}/{} — {} ({:?}, {}턴, {:.1}s)",
-                        t.name, repeat + 1, opts.repeats,
-                        if rec.passed { "통과" } else { "실패" },
-                        rec.outcome, rec.turns, rec.duration_secs,
-                    );
-                    runs.push(rec);
-                }
-                None => {
+            let mut runs = Vec::new();
+            for repeat in 0..opts.repeats {
+                // 페이즈 간(직전 run의 판정/정리 중) 들어온 Ctrl+C도 여기서 잡는다
+                if interrupt.load(std::sync::atomic::Ordering::SeqCst) {
                     eprintln!("(중단됨 — 지금까지의 결과로 부분 리포트를 만듭니다)");
                     interrupted = true;
                     break;
                 }
+                let seed = opts.base_seed + repeat as u64;
+                eprintln!("[{}] {}/{} 실행 중… (시드 {seed})", t.name, repeat + 1, opts.repeats);
+                match run_once(client, config, model, t, seed, repeat, opts, &report_dir, &interrupt).await? {
+                    Some(rec) => {
+                        eprintln!(
+                            "[{}] {}/{} — {} ({:?}, {}턴, {:.1}s)",
+                            t.name, repeat + 1, opts.repeats,
+                            if rec.passed { "통과" } else { "실패" },
+                            rec.outcome, rec.turns, rec.duration_secs,
+                        );
+                        runs.push(rec);
+                    }
+                    None => {
+                        eprintln!("(중단됨 — 지금까지의 결과로 부분 리포트를 만듭니다)");
+                        interrupted = true;
+                        break;
+                    }
+                }
             }
+            task_reports.push(TaskReport::from_runs(t.name.clone(), runs));
         }
-        task_reports.push(TaskReport::from_runs(t.name.clone(), runs));
+        Ok(())
     }
+    .await;
     listener.abort();
+    loop_result?;
 
     let report = Report {
         model: model.to_string(),
@@ -1725,9 +1732,10 @@ enum Command {
 
 ```rust
     if let Some(Command::Eval { tasks_dir, repeats, seed, timeout_scale }) = cli.command {
-        // Duration::from_secs_f64는 음수/비유한 값에 패닉 — 하네스 에러(exit 1)로 선검증
-        if !(timeout_scale.is_finite() && timeout_scale > 0.0) {
-            anyhow::bail!("--timeout-scale은 0보다 큰 유한한 값이어야 합니다 (받은 값: {timeout_scale})");
+        // Duration::from_secs_f64는 음수/비유한 값뿐 아니라 u64::MAX초 초과에도
+        // 패닉 — 하네스 에러(exit 1)로 선검증. 상한 1e6이면 300초 과제가 ~9.5년
+        if !(timeout_scale.is_finite() && timeout_scale > 0.0 && timeout_scale <= 1_000_000.0) {
+            anyhow::bail!("--timeout-scale은 0보다 크고 1000000 이하여야 합니다 (받은 값: {timeout_scale})");
         }
         if repeats == 0 {
             anyhow::bail!("--repeats는 1 이상이어야 합니다");
