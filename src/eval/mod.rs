@@ -137,11 +137,13 @@ async fn run_once<C: LlmClient>(
     report_dir: &Path,
     interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<Option<RunRecord>> {
-    let sb = Sandbox::create(&t.fixture)?;
     let mut cfg = config.clone();
     if let Some(mt) = t.spec.max_turns {
         cfg.max_turns = mt;
     }
+    // eval은 --auto 의미 — config의 auto_deny_patterns 적용 (스펙 §5·§8)
+    let mut approver = AutoApprover::new(&cfg.auto_deny_patterns)?;
+    let sb = Sandbox::create(&t.fixture)?;
     let mut ctx = ToolCtx::new(sb.root.clone());
     ctx.command_timeout = Duration::from_secs(cfg.command_timeout_secs);
     let cancel = ctx.cancel.clone();
@@ -153,8 +155,6 @@ async fn run_once<C: LlmClient>(
         Transcript::disabled()
     });
     let mut session = Session::new(agent.initial_history(), transcript);
-    // eval은 --auto 의미 — config의 auto_deny_patterns 적용 (스펙 §5·§8)
-    let mut approver = AutoApprover::new(&cfg.auto_deny_patterns)?;
     let mut turns = 0usize;
     let mut on_event = |ev: AgentEvent<'_>| {
         // 턴 수 = 파싱된 턴(Thought) 수 — 패킹 절삭과 무관하게 정확 (설계 결정)
