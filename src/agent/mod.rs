@@ -35,6 +35,9 @@ pub enum AgentOutcome {
     ParseFailed(String),
     /// 동일 (tool, args) 5회 연속 — 조기 종료 (스펙 §3), -p 종료 코드 2
     RepetitionStop,
+    /// 취소 플래그 감지 후 자발 종료 (M4 — -p Ctrl+C·eval 타임아웃).
+    /// REPL은 퓨처 드롭으로 취소하므로 보통 이 변형을 보지 않는다
+    Cancelled,
 }
 
 /// 턴당 파싱 총 시도 횟수 (초기 1 + 재시도 2, 스펙 §9). max_turns에 계상 안 됨
@@ -144,6 +147,12 @@ impl<C: LlmClient> Agent<C> {
         // 실행당(run 호출당) 최대 2회 — 턴을 넘나들며 누적, 턴마다 리셋하지 않는다 (스펙 §9)
         let mut overflow_shrinks: u32 = 0;
         while turns < self.max_turns {
+            // 취소 신호 후에는 새 LLM 호출을 만들지 않는다 — run_bounded의 유예가
+            // 이 경로로 빠르게 끝난다 (설계 §1). 진행 중이던 run_command는 자체
+            // 폴링으로 이미 프로세스 그룹을 정리했다
+            if self.ctx.cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                return Ok(AgentOutcome::Cancelled);
+            }
             session.pack(self.input_budget());
             let resp = loop {
                 match self.chat_with_fallback(session.messages(), on_event).await {
@@ -804,6 +813,7 @@ mod tests {
     use crate::agent::approval::{ApprovalRequest, Approver, Decision};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     /// 실행 횟수를 세는 가짜 mutating 툴
     struct MutTool(Arc<AtomicUsize>);
@@ -915,5 +925,46 @@ mod tests {
         let mut session = new_session(&agent);
         run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(session.messages().iter().any(|m| m.content.contains("(no output)")));
+    }
+
+    #[tokio::test]
+    async fn preset_cancel_flag_returns_cancelled_without_llm_calls() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![]); // 호출되면 스크립트 고갈로 패닉
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
+        ctx.cancel.store(true, Ordering::SeqCst);
+        let config = Config::default();
+        let mut agent = Agent::new(&script, Registry::read_only(), ctx, "test-model".into(), &config);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "질문").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Cancelled));
+        assert_eq!(script.requests.lock().unwrap().len(), 0, "LLM 호출 없이 반환");
+    }
+
+    /// 실행되면 cancel 플래그를 세우는 가짜 툴 — 툴 실행 후 다음 LLM 호출 전에 멈추는지 검증
+    struct CancelTool(Arc<AtomicBool>);
+    impl crate::tools::Tool for CancelTool {
+        fn name(&self) -> &'static str { "cancel_tool" }
+        fn doc(&self) -> &'static str { "cancel_tool(): test." }
+        fn run(&self, _a: &serde_json::Value, _c: &ToolCtx) -> Result<String, crate::tools::ToolError> {
+            self.0.store(true, Ordering::SeqCst);
+            Ok("ok".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_during_tool_stops_before_next_llm_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![ok(&turn("cancel_tool", serde_json::json!({})))]); // 응답 1개뿐
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
+        let flag = ctx.cancel.clone();
+        let config = Config::default();
+        let mut agent = Agent::new(
+            &script, Registry::new(vec![Box::new(CancelTool(flag))]), ctx, "test-model".into(), &config,
+        );
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "질문").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Cancelled));
+        assert_eq!(script.requests.lock().unwrap().len(), 1, "취소 후 추가 LLM 호출 금지");
     }
 }

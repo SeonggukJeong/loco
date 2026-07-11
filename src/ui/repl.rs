@@ -249,6 +249,10 @@ async fn run_agent_turn(
         Some(Ok(AgentOutcome::RepetitionStop)) => {
             println!("(같은 툴 호출을 반복해 조기 종료했습니다 — 요청을 바꿔보세요)");
         }
+        Some(Ok(AgentOutcome::Cancelled)) => {
+            session.rollback(snap);
+            println!("\n(중단됨 — 이번 요청은 히스토리에서 제거)");
+        }
         Some(Err(e)) => {
             session.rollback(snap);
             println!("오류: {e}");

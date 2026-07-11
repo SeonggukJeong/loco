@@ -107,5 +107,9 @@ async fn run_oneshot(
             eprintln!("(같은 툴 호출 반복으로 조기 종료 — 요청을 바꿔 다시 시도하세요)");
             Ok(ExitCode::from(2))
         }
+        AgentOutcome::Cancelled => {
+            eprintln!("(중단됨)");
+            Ok(ExitCode::from(2))
+        }
     }
 }
