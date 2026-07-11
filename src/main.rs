@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use loco::agent::approval::{Approver, AutoApprover, NonInteractiveApprover};
+use loco::agent::bounded::{run_bounded, Stopped};
 use loco::agent::{Agent, AgentEvent, AgentOutcome, PARSE_ATTEMPTS};
 use loco::config::Config;
 use loco::llm::client::{resolve_model, OpenAiClient};
@@ -66,6 +67,7 @@ async fn run_oneshot(
     let root = std::env::current_dir()?;
     let mut ctx = ToolCtx::new(root.clone());
     ctx.command_timeout = std::time::Duration::from_secs(config.command_timeout_secs);
+    let cancel = ctx.cancel.clone();
     let mut agent = Agent::new(client, Registry::guided(), ctx, model.to_string(), config);
     let transcript = Transcript::create_under(&root).unwrap_or_else(|e| {
         eprintln!("(세션 기록을 열지 못했습니다: {e} — 기록 없이 진행)");
@@ -87,10 +89,29 @@ async fn run_oneshot(
     } else {
         &mut non_interactive
     };
-    let outcome = agent.run(&mut session, prompt, approver, &mut on_event).await;
+    // Ctrl+C: cancel 플래그 → 유예 대기 (자식 프로세스 그룹 정리 후 종료 — 백로그 ①).
+    // -p는 실행 전체가 하나의 select! 창이라 ctrl_c()를 그대로 interrupt로 쓴다
+    let bounded = run_bounded(
+        agent.run(&mut session, prompt, approver, &mut on_event),
+        &cancel,
+        None,
+        std::time::Duration::from_secs(5),
+        async {
+            let _ = tokio::signal::ctrl_c().await;
+        },
+    )
+    .await;
     spinner.borrow_mut().stop();
+    let outcome = match bounded {
+        Ok(r) => r?,
+        Err(Stopped::Interrupted) | Err(Stopped::TimedOut) => {
+            // limit이 None이므로 실제로는 Interrupted만 온다
+            eprintln!("(중단됨 — 실행 중이던 명령까지 정리했습니다)");
+            return Ok(ExitCode::from(2));
+        }
+    };
 
-    match outcome? {
+    match outcome {
         AgentOutcome::Finished(summary) => {
             println!("{summary}");
             Ok(ExitCode::SUCCESS)

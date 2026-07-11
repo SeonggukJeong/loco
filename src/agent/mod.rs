@@ -1,4 +1,5 @@
 pub mod approval;
+pub mod bounded;
 pub mod protocol;
 pub mod prompt;
 
