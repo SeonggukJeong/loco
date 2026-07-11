@@ -27,7 +27,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-fn now_secs() -> u64 {
+pub(crate) fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -214,6 +214,15 @@ impl Transcript {
             "tool": tool, "args": args,
         }));
     }
+
+    /// 지정 경로에 트랜스크립트 생성 — eval이 리포트 디렉터리에 실행별 기록을 남긴다
+    pub fn create_at(path: &Path) -> std::io::Result<Transcript> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = File::create_new(path)?;
+        Ok(Transcript { file: Some(file), path: Some(path.to_path_buf()) })
+    }
 }
 
 #[cfg(test)]
@@ -270,6 +279,15 @@ mod tests {
         let a = Transcript::create_under(dir.path()).unwrap();
         let b = Transcript::create_under(dir.path()).unwrap();
         assert_ne!(a.path().unwrap(), b.path().unwrap());
+    }
+
+    #[test]
+    fn create_at_writes_to_the_given_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("sub/run-x-0.jsonl");
+        let mut t = Transcript::create_at(&p).unwrap();
+        t.record("user", "질문");
+        assert!(std::fs::read_to_string(&p).unwrap().contains("질문"));
     }
 
     use crate::llm::types::ChatMessage;
