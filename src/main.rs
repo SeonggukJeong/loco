@@ -22,6 +22,26 @@ struct Cli {
     /// 확인 게이트 전부 자동 승인 (auto_deny_patterns 차단은 유지)
     #[arg(long)]
     auto: bool,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(clap::Subcommand)]
+enum Command {
+    /// 평가 하네스 — 과제 세트를 실행해 통과율 리포트 생성 (스펙 §8)
+    Eval {
+        /// 과제 디렉터리 (과제 하나 = 하위 디렉터리 하나)
+        tasks_dir: std::path::PathBuf,
+        /// 과제당 반복 횟수 (권장 3~5 — 1회 비교는 노이즈)
+        #[arg(long, default_value_t = 1)]
+        repeats: usize,
+        /// 기본 시드 — 반복 i의 시드는 seed + i
+        #[arg(long, default_value_t = 0)]
+        seed: u64,
+        /// 모든 과제·check 타임아웃에 곱하는 배수 (느린 머신 대응)
+        #[arg(long, default_value_t = 1.0)]
+        timeout_scale: f64,
+    },
 }
 
 #[tokio::main]
@@ -46,6 +66,28 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     let config = Config::load_default()?;
     let client = OpenAiClient::new(&config.base_url, config.api_key.clone());
     let model = resolve_model(&client, &config).await?;
+    if let Some(Command::Eval { tasks_dir, repeats, seed, timeout_scale }) = cli.command {
+        // Duration::from_secs_f64는 음수/비유한 값뿐 아니라 u64::MAX초 초과에도
+        // 패닉 — 하네스 에러(exit 1)로 선검증. 상한 1e6이면 300초 과제가 ~9.5년
+        if !(timeout_scale.is_finite() && timeout_scale > 0.0 && timeout_scale <= 1_000_000.0) {
+            anyhow::bail!("--timeout-scale은 0보다 크고 1000000 이하여야 합니다 (받은 값: {timeout_scale})");
+        }
+        if repeats == 0 {
+            anyhow::bail!("--repeats는 1 이상이어야 합니다");
+        }
+        let opts = loco::eval::EvalOptions {
+            tasks_dir,
+            repeats,
+            base_seed: seed,
+            timeout_scale,
+            cancel_grace: std::time::Duration::from_secs(5),
+        };
+        let root = std::env::current_dir()?;
+        let run = loco::eval::run_eval(&client, &config, &model, &opts, &root).await?;
+        println!("{}", run.report.render_table());
+        println!("리포트: {}", run.report_path.display());
+        return Ok(if run.report.interrupted { ExitCode::from(1) } else { ExitCode::SUCCESS });
+    }
     match cli.prompt {
         Some(prompt) => run_oneshot(&client, &config, &model, &prompt, cli.auto).await,
         None => {
