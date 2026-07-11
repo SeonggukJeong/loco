@@ -211,6 +211,7 @@ mod tests {
             max_tokens: None,
             stream: false,
             response_format: None,
+            seed: None,
         }
     }
 

@@ -29,6 +29,9 @@ pub struct ChatRequest {
     /// 에이전트 턴의 json_schema 강제 (스펙 §4). None이면 필드 자체를 보내지 않는다.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<serde_json::Value>,
+    /// 평가 하네스의 재현성용 (스펙 §8). None이면 필드 자체를 보내지 않는다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
 }
 
 /// 응답의 message는 content가 null일 수 있어 요청용 ChatMessage와 분리
@@ -98,6 +101,7 @@ mod tests {
             max_tokens: None,
             stream: false,
             response_format: None,
+            seed: None,
         };
         let v: serde_json::Value = serde_json::to_value(&req).unwrap();
         assert_eq!(v["model"], "gemma-4b");
@@ -116,6 +120,7 @@ mod tests {
             max_tokens: Some(2048),
             stream: false,
             response_format: None,
+            seed: None,
         };
         let v: serde_json::Value = serde_json::to_value(&req).unwrap();
         assert_eq!(v["max_tokens"], 2048, "Some이면 값이 그대로 직렬화되어야 함");
@@ -130,6 +135,7 @@ mod tests {
             max_tokens: None,
             stream: false,
             response_format: None,
+            seed: None,
         };
         let v: serde_json::Value = serde_json::to_value(&req).unwrap();
         assert!(v.get("response_format").is_none());
@@ -144,6 +150,7 @@ mod tests {
             max_tokens: None,
             stream: false,
             response_format: Some(serde_json::json!({"type": "json_schema"})),
+            seed: None,
         };
         let v: serde_json::Value = serde_json::to_value(&req).unwrap();
         assert_eq!(v["response_format"]["type"], "json_schema");
@@ -193,5 +200,23 @@ mod tests {
         let chunk: StreamChunk = serde_json::from_str(done).unwrap();
         assert_eq!(chunk.choices[0].delta.content, None);
         assert_eq!(chunk.choices[0].finish_reason.as_deref(), Some("stop"));
+    }
+
+    #[test]
+    fn seed_is_omitted_when_none_and_serialized_when_set() {
+        let mut req = ChatRequest {
+            model: "m".into(),
+            messages: vec![ChatMessage::user("hi")],
+            temperature: 0.1,
+            max_tokens: None,
+            stream: false,
+            response_format: None,
+            seed: None,
+        };
+        let v: serde_json::Value = serde_json::to_value(&req).unwrap();
+        assert!(v.get("seed").is_none(), "None이면 필드 생략 (기존 경로 무영향)");
+        req.seed = Some(42);
+        let v: serde_json::Value = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["seed"], 42);
     }
 }

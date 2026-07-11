@@ -159,6 +159,7 @@ async fn run_chat_turn(
         max_tokens: Some(config.max_output_tokens as u32),
         stream: true,
         response_format: None,
+        seed: None,
     };
     let mut on_delta = |delta: &str| {
         print!("{delta}");

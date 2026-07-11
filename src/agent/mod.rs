@@ -57,6 +57,8 @@ pub struct Agent<C: LlmClient> {
     use_json_schema: bool,
     /// system role 폴백 상태 — 400을 만나면 첫 user에 병합 (스펙 §3).
     inline_system: bool,
+    /// 평가 하네스가 반복마다 다른 시드를 주입한다 (스펙 §8)
+    seed: Option<u64>,
 }
 
 impl<C: LlmClient> Agent<C> {
@@ -78,6 +80,7 @@ impl<C: LlmClient> Agent<C> {
             context_tokens: config.context_tokens,
             use_json_schema: true,
             inline_system: false,
+            seed: None,
         }
     }
 
@@ -87,6 +90,11 @@ impl<C: LlmClient> Agent<C> {
             &self.registry.docs(),
             &self.ctx.root,
         ))]
+    }
+
+    /// 평가 하네스가 반복마다 다른 시드를 주입한다 (스펙 §8)
+    pub fn set_seed(&mut self, seed: u64) {
+        self.seed = Some(seed);
     }
 
     /// 스펙 §6: (context − max_output) × 0.9
@@ -117,6 +125,7 @@ impl<C: LlmClient> Agent<C> {
             response_format: self
                 .use_json_schema
                 .then(|| response_format(&self.schema_tool_names())),
+            seed: self.seed,
         }
     }
 
@@ -427,6 +436,17 @@ mod tests {
         request: &str,
     ) -> Result<AgentOutcome, LlmError> {
         agent.run(session, request, &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await
+    }
+
+    #[tokio::test]
+    async fn set_seed_reaches_the_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![ok(&finish("done"))]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        agent.set_seed(7);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "질문").await.unwrap();
+        assert_eq!(script.requests.lock().unwrap()[0].seed, Some(7));
     }
 
     #[tokio::test]
