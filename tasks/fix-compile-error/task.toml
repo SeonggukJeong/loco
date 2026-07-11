@@ -1,0 +1,3 @@
+prompt = "이 프로젝트는 컴파일이 안 돼. cargo build나 cargo test를 실행해서 에러를 확인하고, 동작 의도는 바꾸지 않는 최소 수정으로 고쳐줘."
+check = "cargo test"
+protected = ["tests", "Cargo.toml"]

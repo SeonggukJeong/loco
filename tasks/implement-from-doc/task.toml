@@ -1,0 +1,3 @@
+prompt = "src/lib.rs의 `rle` 함수를 doc 주석 명세대로 구현해줘."
+check = "cargo test"
+protected = ["tests", "Cargo.toml"]

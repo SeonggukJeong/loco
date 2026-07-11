@@ -166,4 +166,16 @@ protected = ["keep.txt"]
         let dir = tempfile::tempdir().unwrap();
         assert!(load_tasks(dir.path()).is_err());
     }
+
+    /// 리포지토리에 커밋된 실제 과제 세트가 로더 검증을 통과하는지
+    #[test]
+    fn shipped_task_set_is_valid() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tasks");
+        let tasks = load_tasks(&dir).unwrap();
+        assert_eq!(tasks.len(), 12, "초기 과제 세트 12개");
+        for t in &tasks {
+            assert!(t.spec.protected.contains(&"tests".to_string()) || t.spec.protected.contains(&"Cargo.toml".to_string()),
+                "{}: 판정 자산 보호 가이드 (스펙 §8)", t.name);
+        }
+    }
 }
