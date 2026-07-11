@@ -7,6 +7,7 @@ pub mod diff;
 pub mod write_file;
 pub mod edit_file;
 pub mod run_command;
+pub(crate) mod exec;
 
 use std::path::PathBuf;
 use std::sync::Arc;
