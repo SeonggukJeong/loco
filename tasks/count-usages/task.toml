@@ -1,0 +1,3 @@
+prompt = "src/lib.rs 안에서 `normalize` 함수가 호출되는 횟수(호출 표현식의 개수 — 한 줄에 두 번 나오면 2회)를 세어, 그 숫자만 answer.txt에 한 줄로 저장해줘. use/pub use 선언은 호출이 아니야."
+check = "cargo test"
+protected = ["tests", "Cargo.toml"]

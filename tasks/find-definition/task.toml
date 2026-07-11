@@ -1,0 +1,3 @@
+prompt = "이 프로젝트에서 `area` 함수가 정의된 파일을 찾아, 그 경로(프로젝트 루트 기준 상대 경로)를 answer.txt 파일에 한 줄로 저장해줘."
+check = "cargo test"
+protected = ["tests", "Cargo.toml"]
