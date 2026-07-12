@@ -62,3 +62,14 @@
 ## 각주: 측정 전 픽스처 수정 (e7b2f1b)
 
 최초 스모크 2회가 fix-failing-test에서 LM Studio 400(n_keep > context length)으로 중단됐다. 원인: `cargo test`가 만든 `target/`을 인자 없는 `list_files`가 나열(픽스처에 `.gitignore` 부재) → 14KB 툴 결과가 마지막 메시지가 되어 `pack()` 축소 불가 → 프롬프트+max_tokens가 ctx 초과. 12개 픽스처에 `/target` `.gitignore`를 추가해 해결(실제 크레이트와 동일한 형태 — 측정 타당성 개선). 이 수정 이전의 부분 실행 기록은 `.loco/eval/20260711T{161615,161826,163141}Z`에 남아 있으며 기준선에 포함하지 않는다.
+
+## M5 경과 (배치별 qwen 측정)
+
+측정 조건은 기준선과 동일(qwen3-vl-4b 단독, ctx 8192, `max_output_tokens=4096`, seed 0, `--repeats 3`). 지표는 `run-*.jsonl` grep 집계(missing field / `exit code:` 발생 수 / search block not found)와 report.json의 outcome 분포·거짓 성공 finish(passed=false & finished) 수.
+
+| 배치 | 통과 | missing field | run_command 실행 | not found | 거짓 성공 finish | outcome 분포 | 판정 |
+|---|---|---|---|---|---|---|---|
+| 기준선 (20260711T235558Z) | 12/36 | 80 | 12 | 73 | 6 | F12/M17/R7 | — |
+| Batch 1 (20260712T054353Z) | 15/36 | 27 | 110 | 76 | 3 | F14/M8/R14 | keep |
+
+**Batch 1 판정 근거 (keep):** 통과 +3런(스펙 §3의 -2런 기준 반대 방향), 타깃 지표 전부 개선 — missing field 80→27(스키마 에코·salvage 효과), run_command 실행 12→110(검증 규칙 효과), 거짓 성공 finish 6→3. salvage 노트 발동 10회(신규 메커니즘 작동 확인). 관찰: fix-compile-error 0/3→3/3(공통 0% 6종 중 첫 탈출, 스펙 §2 성공 기준 1의 절반); 안정 4종(create-module·edit-crlf-file·find-definition·fix-off-by-one) 전부 3/3 유지; not found는 76으로 정체(Batch 2 대상); RepetitionStop 7→14 — MaxTurns 소진(17→8) 대신 기존 5회 동일 반복 정지가 더 일찍 걸리는 쪽으로 이동(multiline-string-edit·rename-function이 9~12턴 조기 종료), Batch 3의 (호출,결과) 윈도 개편이 이 루프들의 교정 대상.
