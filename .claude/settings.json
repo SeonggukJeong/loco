@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(Cargo.toml)",
+      "Write(Cargo.toml)",
+      "Edit(Cargo.lock)",
+      "Write(Cargo.lock)",
+      "Bash(cargo add *)",
+      "Bash(cargo remove *)"
+    ],
+    "ask": [
+      "Edit(tasks/*/fixture/**)",
+      "Write(tasks/*/fixture/**)"
+    ]
+  }
+}
