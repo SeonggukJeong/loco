@@ -29,6 +29,12 @@ impl Tool for ReadFile {
         let args: Args = serde_json::from_value(args.clone())
             .map_err(|e| ToolError::BadArgs(e.to_string()))?;
         let path = confine(&ctx.root, &args.path)?;
+        if path.is_dir() {
+            return Err(ToolError::BadArgs(format!(
+                "{} is a directory, not a file - use list_files for directories",
+                args.path
+            )));
+        }
         let bytes = std::fs::read(&path)?;
         let text =
             String::from_utf8(bytes).map_err(|_| ToolError::NotUtf8(args.path.clone()))?;
@@ -139,6 +145,18 @@ mod tests {
         assert!(out.starts_with("line10"));
         assert!(out.contains("line12") && !out.contains("line13"));
         assert!(out.contains("offset=13"), "이어 읽기 안내: {out}");
+    }
+
+    #[test]
+    fn directory_path_gets_a_helpful_error_not_os_error() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
+        let err = run(&ctx, serde_json::json!({"path": "src"})).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("is a directory"), "{msg}");
+        assert!(msg.contains("list_files"), "대안 안내: {msg}");
+        assert!(!msg.contains("os error"), "날 OS 에러 노출 금지: {msg}");
     }
 
     #[test]

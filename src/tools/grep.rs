@@ -31,8 +31,22 @@ impl Tool for Grep {
     fn run(&self, args: &serde_json::Value, ctx: &ToolCtx) -> Result<String, ToolError> {
         let args: Args = serde_json::from_value(args.clone())
             .map_err(|e| ToolError::BadArgs(e.to_string()))?;
-        let re = regex::Regex::new(&args.pattern)
-            .map_err(|e| ToolError::BadArgs(format!("invalid regex: {e}")))?;
+        let (re, fallback_reason) = match regex::Regex::new(&args.pattern) {
+            Ok(re) => (re, None),
+            Err(e) => {
+                // 코드 조각({user_name} 등)이 정규식 파싱에 실패하면 리터럴로 폴백 (M5 §5.3)
+                let literal = regex::Regex::new(&regex::escape(&args.pattern))
+                    .map_err(|e2| ToolError::BadArgs(format!("invalid regex: {e2}")))?;
+                let reason: String = e.to_string().split_whitespace().collect::<Vec<_>>().join(" ");
+                // char 경계 패닉 방지 — regex 에러 메시지는 ASCII지만 방어적으로 chars() 사용
+                let reason = if reason.chars().count() > 120 {
+                    format!("{}...", reason.chars().take(120).collect::<String>())
+                } else {
+                    reason
+                };
+                (literal, Some(reason))
+            }
+        };
         let base = confine(&ctx.root, args.path.as_deref().unwrap_or(""))?;
         let canon_root = ctx.root.canonicalize()?;
 
@@ -80,13 +94,20 @@ impl Tool for Grep {
                 }
             }
         }
-        if matches == 0 {
+        if matches == 0 && fallback_reason.is_none() {
             return Ok("no matches".to_string());
         }
         if truncated {
             out.push_str(&format!("[more matches truncated at {MAX_MATCHES}]\n"));
         }
-        Ok(out.trim_end().to_string())
+        let body = out.trim_end().to_string();
+        if let Some(reason) = fallback_reason {
+            let header = format!(
+                "invalid regex ({reason}); searched for the literal text instead - {matches} matches"
+            );
+            return Ok(if body.is_empty() { header } else { format!("{header}\n{body}") });
+        }
+        Ok(body)
     }
 }
 
@@ -134,11 +155,30 @@ mod tests {
     }
 
     #[test]
-    fn invalid_regex_is_bad_args() {
+    fn invalid_regex_falls_back_to_literal_search() {
+        // gemma multiline-string-edit 실측: 리터럴 {user_name}가 정규식 파싱 실패
         let (_d, ctx) = setup();
-        let err = run(&ctx, serde_json::json!({"pattern": "["})).unwrap_err();
-        assert!(matches!(err, ToolError::BadArgs(_)));
-        assert!(err.to_string().contains("invalid regex"));
+        std::fs::write(_d.path().join("src/c.rs"), "user: {user_name}\n").unwrap();
+        let out = Grep.run(&serde_json::json!({"pattern": "{user_name}"}), &ctx).unwrap();
+        assert!(out.contains("invalid regex"), "{out}");
+        assert!(out.contains("literal"), "{out}");
+        assert!(out.contains("c.rs"), "리터럴 매치 발견: {out}");
+    }
+
+    #[test]
+    fn invalid_regex_with_zero_matches_still_reports_the_fallback() {
+        let (_d, ctx) = setup();
+        let out = Grep.run(&serde_json::json!({"pattern": "{no_such_thing}"}), &ctx).unwrap();
+        assert!(out.contains("invalid regex"), "{out}");
+        assert!(out.contains("0 matches"), "0매치도 원인 병기 (스펙 §5.3): {out}");
+    }
+
+    #[test]
+    fn invalid_regex_is_no_longer_an_error_but_a_literal_fallback() {
+        let (_d, ctx) = setup();
+        let out = Grep.run(&serde_json::json!({"pattern": "["}), &ctx).unwrap();
+        assert!(out.starts_with("invalid regex"), "{out}");
+        assert!(out.contains("literal"), "{out}");
     }
 
     #[test]
