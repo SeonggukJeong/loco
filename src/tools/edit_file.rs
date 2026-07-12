@@ -12,6 +12,8 @@ struct Args {
     path: String,
     search: String,
     replace: String,
+    #[serde(default)]
+    replace_all: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -52,7 +54,7 @@ struct EditOutcome {
 
 /// 매칭 사다리 (스펙 §4). text/search/replace는 이미 \n 정규화된 상태.
 /// Err 문자열은 모델에게 가는 영어 메시지
-fn apply_edit(text: &str, search: &str, replace: &str) -> Result<EditOutcome, String> {
+fn apply_edit(text: &str, search: &str, replace: &str, replace_all: bool) -> Result<EditOutcome, String> {
     // 1단계: 정확 일치
     let exact_positions: Vec<usize> = text.match_indices(search).map(|(i, _)| i).collect();
     match exact_positions.len() {
@@ -65,6 +67,16 @@ fn apply_edit(text: &str, search: &str, replace: &str) -> Result<EditOutcome, St
                 start_line,
                 replaced_lines,
                 occurrences: 1,
+            });
+        }
+        n if n >= 2 && replace_all => {
+            let start_line = text[..exact_positions[0]].matches('\n').count();
+            return Ok(EditOutcome {
+                new_text: text.replace(search, replace),
+                mode: MatchMode::Exact,
+                start_line,
+                replaced_lines: replace.split('\n').count().max(1),
+                occurrences: n,
             });
         }
         n if n >= 2 => {
@@ -109,6 +121,28 @@ fn apply_edit(text: &str, search: &str, replace: &str) -> Result<EditOutcome, St
                 occurrences: 1,
             });
         }
+        n if n >= 2 && replace_all => {
+            // 비중첩 탐욕: 시작이 직전 창의 끝 이전이면 건너뜀 (M5 §6.4)
+            let mut kept: Vec<usize> = Vec::new();
+            for &i in &stage2 {
+                if kept.last().is_none_or(|&p| i >= p + window) {
+                    kept.push(i);
+                }
+            }
+            let mut lines: Vec<String> = t_lines.iter().map(|s| s.to_string()).collect();
+            for &i in kept.iter().rev() {
+                let repl = replace_lines(replace, "");
+                lines.splice(i..i + window, repl);
+            }
+            let replaced_lines = replace_lines(replace, "").len().max(1);
+            return Ok(EditOutcome {
+                new_text: lines.join("\n"),
+                mode: MatchMode::IgnoreTrailingWs,
+                start_line: kept[0],
+                replaced_lines,
+                occurrences: kept.len(),
+            });
+        }
         n if n >= 2 => {
             return Err(ambiguity_message(n, "ignoring trailing whitespace", &stage2, &t_lines));
         }
@@ -131,6 +165,29 @@ fn apply_edit(text: &str, search: &str, replace: &str) -> Result<EditOutcome, St
                 start_line: *i,
                 replaced_lines,
                 occurrences: 1,
+            })
+        }
+        n if n >= 2 && replace_all => {
+            // 비중첩 탐욕 + 위치별 indent 적용 (M5 §6.4) — 각 창은 자기 indent로 재적용
+            let mut kept: Vec<(usize, String)> = Vec::new();
+            for (i, indent) in &stage3 {
+                if kept.last().is_none_or(|(p, _)| *i >= p + window) {
+                    kept.push((*i, indent.clone()));
+                }
+            }
+            let mut lines: Vec<String> = t_lines.iter().map(|s| s.to_string()).collect();
+            for (i, indent) in kept.iter().rev() {
+                let repl = replace_lines(replace, indent);
+                lines.splice(*i..*i + window, repl);
+            }
+            let (start_line, first_indent) = kept[0].clone();
+            let replaced_lines = replace_lines(replace, &first_indent).len().max(1);
+            Ok(EditOutcome {
+                new_text: lines.join("\n"),
+                mode: MatchMode::IndentShift(first_indent),
+                start_line,
+                replaced_lines,
+                occurrences: kept.len(),
             })
         }
         n if n >= 2 => {
@@ -258,7 +315,7 @@ impl EditFile {
                 "search and replace are identical - no change would be made".to_string(),
             ));
         }
-        let outcome = apply_edit(&text, &search, &replace).map_err(ToolError::EditFailed)?;
+        let outcome = apply_edit(&text, &search, &replace, args.replace_all).map_err(ToolError::EditFailed)?;
         Ok((text, outcome, crlf))
     }
 }
@@ -286,7 +343,7 @@ impl Tool for EditFile {
     }
 
     fn doc(&self) -> &'static str {
-        "edit_file(path, search, replace): Replace one occurrence of `search` with `replace` in an existing file. `search` must match exactly one location; include a few surrounding lines to make it unique."
+        "edit_file(path, search, replace, replace_all?): Replace one occurrence of `search` with `replace` in an existing file. `search` must match exactly one location; include a few surrounding lines to make it unique. Set replace_all=true to replace every occurrence (plain-text match - it also matches inside longer identifiers)."
     }
 
     fn is_mutating(&self) -> bool {
@@ -476,8 +533,63 @@ mod tests {
         // 2단계(후행 공백 무시) 매칭에서 replace가 빈 문자열이면 replace_lines()가
         // 빈 Vec을 반환 — replaced_lines가 0이 될 수 있다. 필드 계약(최소 1, 문서
         // 주석 참조)을 지키려면 stage 1처럼 .max(1)로 보정되어야 한다.
-        let outcome = super::apply_edit("a;  \nb;\nc\n", "a;\nb;", "").unwrap();
+        let outcome = super::apply_edit("a;  \nb;\nc\n", "a;\nb;", "", false).unwrap();
         assert_eq!(outcome.replaced_lines, 1, "삭제(빈 치환)도 replaced_lines는 최소 1이어야 함");
         assert_eq!(outcome.new_text, "c\n");
+    }
+
+    #[test]
+    fn replace_all_replaces_every_exact_occurrence() {
+        let (dir, ctx) = setup("total_price(a);\nmid\ntotal_price(b);\n");
+        let out = EditFile
+            .run(&serde_json::json!({"path": "f.rs", "search": "total_price", "replace": "total", "replace_all": true}), &ctx)
+            .unwrap();
+        assert!(out.contains("replaced 2 occurrences"), "{out}");
+        let t = std::fs::read_to_string(dir.path().join("f.rs")).unwrap();
+        assert_eq!(t, "total(a);\nmid\ntotal(b);\n");
+    }
+
+    #[test]
+    fn replace_all_with_single_match_still_works() {
+        let (dir, ctx) = setup("only_one();\n");
+        EditFile
+            .run(&serde_json::json!({"path": "f.rs", "search": "only_one", "replace": "renamed", "replace_all": true}), &ctx)
+            .unwrap();
+        assert!(std::fs::read_to_string(dir.path().join("f.rs")).unwrap().contains("renamed"));
+    }
+
+    #[test]
+    fn replace_all_at_stage_two_handles_trailing_whitespace_locations() {
+        // 여러 줄 블록 + 후행 공백 — 1단계(부분문자열)로는 못 잡고 2단계 비중첩 탐욕이 처리
+        let (dir, ctx) = setup("x;  \ny;\nmid\nx;  \ny;\n");
+        let out = EditFile
+            .run(&serde_json::json!({"path": "f.rs", "search": "x;\ny;", "replace": "z;", "replace_all": true}), &ctx)
+            .unwrap();
+        assert!(out.contains("replaced 2 occurrences"), "{out}");
+        let t = std::fs::read_to_string(dir.path().join("f.rs")).unwrap();
+        assert_eq!(t, "z;\nmid\nz;\n");
+    }
+
+    #[test]
+    fn replace_all_applies_per_location_indent_at_stage_three() {
+        // 들여쓰기가 다른 두 위치의 여러 줄 블록 — 1·2단계로는 못 잡고 3단계가 각자 indent 적용 (스펙 §6.4)
+        let (dir, ctx) = setup("fn a() {\n    if x {\n        one();\n    }\n}\nfn b() {\n            if x {\n                one();\n            }\n}\n");
+        let out = EditFile
+            .run(&serde_json::json!({"path": "f.rs", "search": "if x {\n    one();\n}", "replace": "if y {\n    two();\n}", "replace_all": true}), &ctx)
+            .unwrap();
+        assert!(out.contains("replaced 2 occurrences"), "{out}");
+        let t = std::fs::read_to_string(dir.path().join("f.rs")).unwrap();
+        assert!(t.contains("    if y {\n        two();\n    }"), "4칸 위치에 자기 indent: {t}");
+        assert!(t.contains("            if y {\n                two();\n            }"), "12칸 위치에 자기 indent: {t}");
+    }
+
+    #[test]
+    fn replace_all_on_crlf_file_preserves_crlf() {
+        let (dir, ctx) = setup("x\r\ndup\r\ny\r\ndup\r\n");
+        EditFile
+            .run(&serde_json::json!({"path": "f.rs", "search": "dup", "replace": "D", "replace_all": true}), &ctx)
+            .unwrap();
+        let t = String::from_utf8(std::fs::read(dir.path().join("f.rs")).unwrap()).unwrap();
+        assert_eq!(t, "x\r\nD\r\ny\r\nD\r\n");
     }
 }
