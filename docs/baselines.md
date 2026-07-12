@@ -79,3 +79,59 @@
 | Batch 3 (20260712T103250Z) | 18/36 | 50 | 100 | 50 | 2 | F16/M8/R12 | keep |
 
 **Batch 3 판정 근거 (keep, 스펙 §3 ±1런 규칙):** 통과 -1런(19→18)은 keep 범위. 신규 메커니즘 발동 확인 — 검증 넛지 3회, 전략 교정 5회, Timeout 재발 0(Batch 2의 1건 소멸). count-usages 1/3→2/3. 악화 항목의 원인: missing field 10→50은 특정 런 편중(create-module 시드1 단독 12건 — 해당 과제는 3/3 통과, 통과 무관 원자료 노이즈), not found 32→50도 유사 분산. chain-edits 2/3→0/3이 -1런의 실체 — 시드0이 새 (호출,결과) 윈도의 RepetitionStop에 12턴에서 걸림(시드1·2는 MaxTurns 25턴 소진, Batch 2에서도 실패하던 시드 구성과 변동 혼재). 시드 단위 분산과 신규 정지의 구분은 Task 17 최종 측정에서 재관찰.
+
+## M5 최종 결과 (2026-07-12)
+
+측정 조건은 기준선과 동일(각 모델 단독 로드 ctx 8192, `max_output_tokens=4096`, seed 0, `--repeats 3`), 하네스는 feat/m5-scaffolding `70a9f1a`(구현 완료 시점 — qwen 최종치는 Batch 3 측정을 재사용, 이후 코드 무변경).
+
+### 전체 통과율 (기준선 대비)
+
+| 모델 | 기준선 | M5 최종 | report.json |
+|---|---|---|---|
+| google/gemma-4-e4b | 11.1% (4/36) | **66.7% (24/36)** | `.loco/eval/20260712T110845Z/report.json` |
+| qwen/qwen3-vl-4b | 33.3% (12/36) | **50.0% (18/36)** | `.loco/eval/20260712T103250Z/report.json` |
+
+### 과제별 (통과 / 평균 턴 / 평균 시간)
+
+| 과제 | gemma-4-e4b | qwen3-vl-4b |
+|---|---|---|
+| add-function | **2/3** · 13.7턴 · 82.3s | 0/3 · 15.0턴 · 81.0s |
+| chain-edits | **3/3** · 11.0턴 · 44.2s | 0/3 · 20.7턴 · 53.7s |
+| count-usages | 1/3 · 4.3턴 · 10.7s | **2/3** · 11.7턴 · 22.6s |
+| create-module | 2/3 · 14.7턴 · 30.7s | **3/3** · 13.7턴 · 17.6s |
+| edit-crlf-file | **3/3** · 5.7턴 · 13.5s | **3/3** · 9.0턴 · 11.1s |
+| find-definition | 0/3 · 3.0턴 · 5.7s | **3/3** · 5.3턴 · 5.7s |
+| fix-compile-error | **3/3** · 14.7턴 · 77.5s | **3/3** · 8.7턴 · 54.3s |
+| fix-failing-test | **3/3** · 12.7턴 · 74.9s | 0/3 · 17.3턴 · 139.3s |
+| fix-off-by-one | **3/3** · 9.3턴 · 37.3s | **3/3** · 6.3턴 · 10.3s |
+| implement-from-doc | 1/3 · 16.7턴 · 95.7s | 0/3 · 24.0턴 · 176.9s |
+| multiline-string-edit | 0/3 · 25.0턴 · 158.8s | 0/3 · 15.3턴 · 43.5s |
+| rename-function | **3/3** · 11.3턴 · 43.3s | 1/3 · 15.3턴 · 31.2s |
+
+### outcome 분포 (36회 실행)
+
+| 모델 | Finished | MaxTurns | RepetitionStop | Timeout | 거짓 성공 finish |
+|---|---|---|---|---|---|
+| gemma-4-e4b (기준선) | 23 | 7 | 6 | 0 | — |
+| gemma-4-e4b (M5) | 30 | 5 | 1 | 0 | 6 |
+| qwen3-vl-4b (기준선) | 12 | 17 | 7 | 0 | 6 |
+| qwen3-vl-4b (M5) | 16 | 8 | 12 | 0 | 2 |
+
+### 성공 기준 판정 (M5 스펙 §2 — 3항 모두 충족)
+
+1. **공통 0% 6종 중 ≥2종 탈출: ✓ (5종)** — add-function(gemma 2/3), chain-edits(gemma 3/3; qwen은 Batch 2에서 2/3 후 Batch 3에서 0/3 — 시드 분산), implement-from-doc(gemma 1/3), rename-function(gemma 3/3, qwen 1/3), fix-compile-error(양쪽 3/3). 잔존은 multiline-string-edit 1종(양쪽 0/3 — 이스케이프 심층, 후속 마일스톤 타깃).
+2. **qwen 안정 4종 각각 ≥2/3: ✓** — create-module·edit-crlf-file·find-definition·fix-off-by-one 전부 3/3.
+3. **모델별 전체 통과율 ≥ 기준선: ✓** — gemma 66.7% ≥ 11.1% (+55.6%p, 6.0배), qwen 50.0% ≥ 33.3% (+16.7%p).
+
+### 관찰
+
+- **gemma의 도약은 salvage 파싱이 주도**: gemma 트랜스크립트에서 salvage 노트 285회 발동(qwen 52회) — 기준선 gemma의 지배적 실패였던 "args 밖 필드" 형태 오류가 파싱 계층에서 구제되며 Finished 23→30, RepetitionStop 6→1로 이동. 모델 순위가 역전됐다(기준선 gemma:qwen = 1:3 → M5 4:3).
+- **qwen -1런(Batch 2 19→Batch 3 18)은 keep 범위의 시드 분산**: chain-edits 시드0이 새 반복 윈도 정지에 12턴에서 걸린 것이 유일한 배치 간 후퇴. 나머지 지표는 전 배치 개선 유지(missing field 80→50, not found 73→50, 거짓 성공 6→2).
+- **gemma 거짓 성공 finish 6건 잔존**: find-definition 0/3(평균 3턴 — 짧고 자신 있는 오답), count-usages 계열. 기준선의 "자신 있는 오답" 패턴은 스캐폴딩으로 안 잡힌다 — 판정기 변별력(기준선 한계 7항)과 함께 후속 과제.
+- **검증 넛지·전략 교정은 저빈도 발동**(gemma 1·5회, qwen 3·5회) — 발동 시 finish 전 cargo test 실행을 유도한 트랜스크립트 확인. run_command 실행 수는 기준선 12(qwen)→100+로, 대부분 프롬프트의 검증 규칙 효과.
+- Timeout 0 유지(Batch 2의 1건은 재발 없음).
+
+### 잔여 한계 (기준선 "측정의 한계" 승계 + M5 추가)
+
+- 기준선 한계 1~3·5·7항은 그대로 유효. 4항(.cargo 판정 우회)은 M5에서 샌드박스 내부 벡터가 차단됐다(암묵 protected + 상위 경로 트립와이어) — 단 `$CARGO_HOME`/홈 디렉터리 벡터는 미차단 잔여 한계, 그리고 트립와이어는 temp_dir 상위에 `.cargo`가 우연히 존재하는 환경에서 하네스를 중단시킨다(감지만 하고 정리하지 않음 — 에러 메시지의 경로를 수동 제거).
+- 6항(config 미스냅샷)은 해소 — report.json이 `effective_config`(base_url·temperature·context_tokens·max_output_tokens·max_turns·command_timeout_secs·loco_version)를 기록한다.

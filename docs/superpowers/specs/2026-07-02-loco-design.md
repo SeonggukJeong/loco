@@ -357,3 +357,7 @@ protected에 포함할 것
   사다리 정밀화(EOL 정규화·다중매칭 즉시 에러), -p stdout 계약, /chat 커맨드 결정,
   protected 동기화 의미론, Gemma system role 폴백, 반복 감지 사각지대 명시, eval
   종료코드/타임아웃 산정
+- 2026-07-12: M5 반영 — §3 반복 감지를 (호출,결과 해시) 8턴 윈도로 일반화(교대·finish
+  반복 사각지대 해소), 무검증 finish 1회 반려, §4 salvage 파싱·edit_file replace_all·
+  에러 피드백 강화, §8 .cargo 암묵 protected·timeout 클램프·config 스냅샷.
+  상세: docs/superpowers/specs/2026-07-12-m5-scaffolding-design.md
