@@ -147,9 +147,7 @@ impl<C: LlmClient> Agent<C> {
     ) -> Result<AgentOutcome, LlmError> {
         session.push_user_request(request);
         let mut turns = 0;
-        let mut last_action_key: Option<String> = None;
-        let mut repeat_count = 0usize;
-        let mut corrected = false;
+        let mut tracker = repetition::RepetitionTracker::new();
         // 실행당(run 호출당) 최대 2회 — 턴을 넘나들며 누적, 턴마다 리셋하지 않는다 (스펙 §9)
         let mut overflow_shrinks: u32 = 0;
         while turns < self.max_turns {
@@ -236,32 +234,28 @@ impl<C: LlmClient> Agent<C> {
                 match turn.action.args.get("summary").and_then(|v| v.as_str()) {
                     Some(s) => return Ok(AgentOutcome::Finished(s.to_string())),
                     None => {
-                        session.push(tool_result_message(
-                            "finish",
-                            "Error: finish requires a string `summary` argument, e.g. {\"tool\": \"finish\", \"args\": {\"summary\": \"<your final answer>\"}}",
-                        ));
+                        const FINISH_ERR: &str = "Error: finish requires a string `summary` argument, e.g. {\"tool\": \"finish\", \"args\": {\"summary\": \"<your final answer>\"}}";
+                        // summary 없는 finish도 반복 계수에 편입 (M5 §7.3 — 기존 §3 사각지대 폐지)
+                        let key = format!("finish|{}", turn.action.args);
+                        let verdict = tracker.record(&key, FINISH_ERR);
+                        // InjectCorrection을 버리면 record()가 래치한 실행당 1회 교정 기회가
+                        // 소모된다 — 같은 user 메시지에 병합해 반드시 전달 (본선 스펙 §3 연속 user 금지)
+                        let body = match verdict {
+                            repetition::RepetitionVerdict::InjectCorrection => {
+                                on_event(AgentEvent::Notice("(반복 감지 — 교정 메시지 주입)".to_string()));
+                                format!("{FINISH_ERR}\n{REPEAT_CORRECTION}")
+                            }
+                            _ => FINISH_ERR.to_string(),
+                        };
+                        session.push(tool_result_message("finish", &body));
+                        if matches!(verdict, repetition::RepetitionVerdict::Stop) {
+                            on_event(AgentEvent::Notice("(같은 툴 호출이 반복돼 조기 종료합니다)".to_string()));
+                            return Ok(AgentOutcome::RepetitionStop);
+                        }
                         turns += 1;
                         continue;
                     }
                 }
-            }
-
-            // 반복 감지 (스펙 §3). finish는 위에서 이미 return/continue 했으므로
-            // 계수 대상이 아니다 — summary 없는 finish 반복은 max_turns가 상한
-            // (A/B 교대·length 반복과 함께 §3이 명시한 v1 사각지대, 의도된 것)
-            let key = format!("{}|{}", turn.action.tool, turn.action.args);
-            if last_action_key.as_deref() == Some(key.as_str()) {
-                repeat_count += 1;
-            } else {
-                last_action_key = Some(key);
-                repeat_count = 1;
-                corrected = false;
-            }
-            if repeat_count >= 5 {
-                on_event(AgentEvent::Notice(
-                    "(같은 툴 호출이 5회 반복돼 조기 종료합니다)".to_string(),
-                ));
-                return Ok(AgentOutcome::RepetitionStop);
             }
 
             on_event(AgentEvent::Action {
@@ -280,17 +274,12 @@ impl<C: LlmClient> Agent<C> {
                 let req = ApprovalRequest { tool: &turn.action.tool, args: &turn.action.args, preview: &preview };
                 if let Decision::Deny { reason } = approver.approve(&req) {
                     on_event(AgentEvent::Notice("(거부됨 — 모델에 전달)".to_string()));
-                    let mut notes: Vec<&str> = Vec::new();
-                    if turn.salvaged {
-                        notes.push(SALVAGE_NOTE);
+                    let body = format!("Denied: {reason}");
+                    let (note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+                    session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note.as_deref());
+                    if stop {
+                        return Ok(AgentOutcome::RepetitionStop);
                     }
-                    if repeat_count == 3 && !corrected {
-                        corrected = true;
-                        notes.push(REPEAT_CORRECTION);
-                    }
-                    let joined = notes.join("\n");
-                    let note = (!joined.is_empty()).then_some(joined.as_str());
-                    session.push_tool_result(&turn.action.tool, &turn.action.args, &format!("Denied: {reason}"), note);
                     turns += 1;
                     continue;
                 }
@@ -310,22 +299,46 @@ impl<C: LlmClient> Agent<C> {
                 Ok(Err(e)) => format!("Error: {e}"),
                 Err(join) => format!("Error: tool execution panicked: {join}"),
             };
-            // 교정은 툴 결과와 하나의 user 메시지로 병합 (스펙 §3 — 연속 user 금지)
-            let mut notes: Vec<&str> = Vec::new();
-            if turn.salvaged {
-                notes.push(SALVAGE_NOTE);
+            let (note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+            session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note.as_deref());
+            if stop {
+                return Ok(AgentOutcome::RepetitionStop);
             }
-            if repeat_count == 3 && !corrected {
-                corrected = true;
-                on_event(AgentEvent::Notice("(반복 감지 — 교정 메시지 주입)".to_string()));
-                notes.push(REPEAT_CORRECTION);
-            }
-            let joined = notes.join("\n");
-            let note = (!joined.is_empty()).then_some(joined.as_str());
-            session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note);
             turns += 1;
         }
         Ok(AgentOutcome::MaxTurns)
+    }
+
+    /// 디스패치 후 반복 계수 + 노트 조립 (M5 §7.2). 반환: (병합 노트, RepetitionStop 여부)
+    fn track_and_note(
+        &self,
+        tracker: &mut repetition::RepetitionTracker,
+        turn: &protocol::ModelTurn,
+        body: &str,
+        on_event: &mut dyn FnMut(AgentEvent<'_>),
+    ) -> (Option<String>, bool) {
+        let mut notes: Vec<&str> = Vec::new();
+        if turn.salvaged {
+            notes.push(SALVAGE_NOTE);
+        }
+        let key = format!("{}|{}", turn.action.tool, turn.action.args);
+        match tracker.record(&key, body) {
+            repetition::RepetitionVerdict::Stop => {
+                on_event(AgentEvent::Notice("(같은 툴 호출이 반복돼 조기 종료합니다)".to_string()));
+                return (None, true);
+            }
+            repetition::RepetitionVerdict::InjectCorrection => {
+                on_event(AgentEvent::Notice("(반복 감지 — 교정 메시지 주입)".to_string()));
+                notes.push(REPEAT_CORRECTION);
+            }
+            repetition::RepetitionVerdict::Ok => {}
+        }
+        if let Some(strategy) = tracker.error_correction(&turn.action.tool, body) {
+            on_event(AgentEvent::Notice("(동일 에러 반복 — 전략 교정 주입)".to_string()));
+            notes.push(strategy);
+        }
+        let joined = notes.join("\n");
+        ((!joined.is_empty()).then_some(joined), false)
     }
 
     /// 400 폴백 사다리 (스펙 §3·§4): 서버가 무엇을 거부했는지 표준적으로 알 수 없어
@@ -818,16 +831,66 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn different_args_reset_the_repeat_counter() {
+    async fn alternation_no_longer_resets_the_window() {
         let dir = tempfile::tempdir().unwrap();
         let a = || ok(&turn("list_files", serde_json::json!({})));
         let b = || ok(&turn("list_files", serde_json::json!({"depth": 1})));
-        let script = Scripted::new(vec![a(), a(), b(), a(), a(), ok(&finish("ok"))]);
+        let script = Scripted::new(vec![a(), a(), b(), a(), ok(&finish("ok"))]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
         let mut session = new_session(&agent);
         let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
-        assert!(matches!(outcome, AgentOutcome::Finished(_)), "교대하면 감지 안 됨");
-        assert!(!session.messages().iter().any(|m| m.content.contains("repeating the same tool call")));
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "3회는 교정, 정지는 아님");
+        assert_eq!(
+            session.messages().iter().filter(|m| m.content.contains("repeating the same tool call")).count(),
+            1,
+            "교대에도 불구하고 윈도가 3회째를 잡아 교정 1회"
+        );
+    }
+
+    #[tokio::test]
+    async fn four_reads_then_edit_then_reread_is_not_stopped() {
+        // 스펙 §7.2·§8: 결과 해시가 "편집 후 달라진 재읽기"를 정당한 반복으로 구제
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "old").unwrap();
+        let read = || ok(&turn("read_file", serde_json::json!({"path": "f.txt"})));
+        let write = ok(&turn("write_file", serde_json::json!({"path": "f.txt", "content": "CHANGED"})));
+        // finish 2개: Task 15의 검증 넛지가 1차 finish를 반려한다 (Task 14 시점엔 2번째가 남아도 무해)
+        let script = Scripted::new(vec![read(), read(), read(), read(), write, read(), ok(&finish("done")), ok(&finish("done"))]);
+        let config = Config { max_turns: 25, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
+        let mut session = new_session(&agent);
+        let outcome = agent.run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
+    }
+
+    #[tokio::test]
+    async fn summary_less_finish_loop_ends_in_repetition_stop() {
+        // gemma chain-edits-0 실측: summary 없는 finish 14연속 — 이제 5회째 정지 (스펙 §7.3)
+        let dir = tempfile::tempdir().unwrap();
+        let bad = || ok(&turn("finish", serde_json::json!({})));
+        let script = Scripted::new(vec![bad(), bad(), bad(), bad(), bad()]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::RepetitionStop), "{outcome:?}");
+    }
+
+    #[tokio::test]
+    async fn same_error_three_times_injects_strategy_correction() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "content").unwrap();
+        // 서로 다른 args의 edit_file이 같은 에러(첫 줄)를 3연속 수신
+        let e = |s: &str| ok(&turn("edit_file", serde_json::json!({"path": "f.txt", "search": s, "replace": "y"})));
+        let script = Scripted::new(vec![e("no1"), e("no2"), e("no3"), ok(&finish("giving up"))]);
+        let config = Config { max_turns: 25, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
+        let mut session = new_session(&agent);
+        let outcome = agent.run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        assert!(
+            session.messages().iter().any(|m| m.content.contains("rewrite it completely with write_file")),
+            "전략 교정 주입"
+        );
     }
 
     #[tokio::test]
