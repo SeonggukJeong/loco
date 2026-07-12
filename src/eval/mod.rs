@@ -18,7 +18,7 @@ use crate::llm::LlmClient;
 use crate::session::{now_secs, utc_stamp, Session, Transcript};
 use crate::tools::exec::{exec_shell, ExecEnd};
 use crate::tools::{Registry, ToolCtx};
-use report::{Report, RunOutcome, RunRecord, TaskReport};
+use report::{EffectiveConfig, Report, RunOutcome, RunRecord, TaskReport};
 use sandbox::Sandbox;
 use task::Task;
 
@@ -117,6 +117,15 @@ pub async fn run_eval<C: LlmClient>(
         interrupted,
         total_pass_rate: Report::total_of(&task_reports),
         tasks: task_reports,
+        effective_config: EffectiveConfig {
+            base_url: config.base_url.clone(),
+            temperature: config.temperature,
+            context_tokens: config.context_tokens,
+            max_output_tokens: config.max_output_tokens,
+            max_turns: config.max_turns,
+            command_timeout_secs: config.command_timeout_secs,
+            loco_version: env!("CARGO_PKG_VERSION").to_string(),
+        },
     };
     let report_path = report_dir.join("report.json");
     std::fs::write(&report_path, serde_json::to_string_pretty(&report)?)

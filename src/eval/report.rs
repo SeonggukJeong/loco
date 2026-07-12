@@ -14,6 +14,19 @@ pub enum RunOutcome {
     Timeout,
 }
 
+/// 측정 조건 재현용 유효 설정 스냅샷 (스펙 M5 §4.3). model은 Report 최상위에 이미 있음.
+/// api_key·auto_deny_patterns는 판정에 영향 없어 제외(비밀 유출 방지 겸)
+#[derive(Debug, Serialize)]
+pub struct EffectiveConfig {
+    pub base_url: String,
+    pub temperature: f32,
+    pub context_tokens: usize,
+    pub max_output_tokens: usize,
+    pub max_turns: usize,
+    pub command_timeout_secs: u64,
+    pub loco_version: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RunRecord {
     pub repeat: usize,
@@ -59,6 +72,7 @@ pub struct Report {
     pub interrupted: bool,
     pub tasks: Vec<TaskReport>,
     pub total_pass_rate: f64,
+    pub effective_config: EffectiveConfig,
 }
 
 impl Report {
@@ -147,13 +161,22 @@ mod tests {
             interrupted: false,
             total_pass_rate: Report::total_of(&tasks),
             tasks,
+            effective_config: EffectiveConfig {
+                base_url: "http://localhost:1234/v1".into(),
+                temperature: 0.1,
+                context_tokens: 8192,
+                max_output_tokens: 2048,
+                max_turns: 25,
+                command_timeout_secs: 60,
+                loco_version: "test".into(),
+            },
         }
     }
 
     #[test]
     fn report_json_has_design_schema_fields() {
         let v = serde_json::to_value(sample_report()).unwrap();
-        for key in ["model", "base_seed", "repeats", "timeout_scale", "started_at", "duration_secs", "interrupted", "tasks", "total_pass_rate"] {
+        for key in ["model", "base_seed", "repeats", "timeout_scale", "started_at", "duration_secs", "interrupted", "tasks", "total_pass_rate", "effective_config"] {
             assert!(v.get(key).is_some(), "리포트에 {key} 필드가 있어야 함");
         }
         assert_eq!(v["tasks"][0]["runs"][0]["seed"], 0, "시드 기록 (스펙 §8 재현성)");
@@ -170,5 +193,14 @@ mod tests {
         let mut interrupted = sample_report();
         interrupted.interrupted = true;
         assert!(interrupted.render_table().contains("중단됨"));
+    }
+
+    #[test]
+    fn report_json_snapshots_effective_config() {
+        let v = serde_json::to_value(sample_report()).unwrap();
+        let ec = v.get("effective_config").expect("유효 config 스냅샷 (스펙 M5 §4.3)");
+        for key in ["base_url", "temperature", "context_tokens", "max_output_tokens", "max_turns", "command_timeout_secs", "loco_version"] {
+            assert!(ec.get(key).is_some(), "effective_config에 {key}");
+        }
     }
 }
