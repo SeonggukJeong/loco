@@ -106,7 +106,19 @@ impl Registry {
             .iter()
             .find(|t| t.name() == name)
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
-        tool.run(args, ctx)
+        tool.run(args, ctx).map_err(|e| match e {
+            // serde 인자 실패에만 스키마 에코 (M5 §5.2) — 의미 오류(빈 search, offset 초과
+            // 등)는 이미 구체적이라 소음만 된다. serde 메시지 감지는 문구 기반(취약하지만
+            // serde_json 에러 타입을 구분할 다른 방법이 없음)
+            ToolError::BadArgs(msg) if msg.contains("missing field") || msg.contains("invalid type") => {
+                let keys = args
+                    .as_object()
+                    .map(|m| m.keys().cloned().collect::<Vec<_>>().join(", "))
+                    .unwrap_or_default();
+                ToolError::BadArgs(format!("{msg}. Expected: {}. You sent keys: [{keys}].", tool.doc()))
+            }
+            other => other,
+        })
     }
 
     /// M2 읽기 전용 툴 세트. finish는 agent 루프가 직접 처리한다 (스펙 §4)
@@ -203,5 +215,28 @@ mod tests {
         let c = ToolCtx::new(std::path::PathBuf::from("."));
         assert!(!c.cancel.load(std::sync::atomic::Ordering::SeqCst));
         assert_eq!(c.command_timeout, std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn serde_bad_args_echoes_schema_and_received_keys() {
+        let reg = Registry::guided();
+        let err = reg
+            .dispatch("edit_file", &serde_json::json!({"pattern": "median", "path": "src"}), &ctx())
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("missing field"), "{msg}");
+        assert!(msg.contains("edit_file(path, search, replace"), "기대 시그니처 에코: {msg}");
+        assert!(msg.contains("pattern") && msg.contains("path"), "수신 키 목록: {msg}");
+    }
+
+    #[test]
+    fn semantic_bad_args_are_not_wrapped() {
+        // read_file의 offset 초과는 이미 구체적 — 스키마 에코를 붙이지 않는다
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "one line").unwrap();
+        let reg = Registry::guided();
+        let c = ToolCtx::new(dir.path().to_path_buf());
+        let err = reg.dispatch("read_file", &serde_json::json!({"path": "f.txt", "offset": 99}), &c).unwrap_err();
+        assert!(!err.to_string().contains("Expected:"), "{err}");
     }
 }

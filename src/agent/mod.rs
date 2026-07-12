@@ -237,7 +237,7 @@ impl<C: LlmClient> Agent<C> {
                     None => {
                         session.push(tool_result_message(
                             "finish",
-                            "Error: finish requires a string `summary` argument containing the final answer.",
+                            "Error: finish requires a string `summary` argument, e.g. {\"tool\": \"finish\", \"args\": {\"summary\": \"<your final answer>\"}}",
                         ));
                         turns += 1;
                         continue;
