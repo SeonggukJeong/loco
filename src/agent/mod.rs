@@ -2,6 +2,7 @@ pub mod approval;
 pub mod bounded;
 pub mod protocol;
 pub mod prompt;
+pub mod repetition;
 
 use crate::config::Config;
 use crate::llm::LlmClient;
