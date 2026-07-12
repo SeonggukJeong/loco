@@ -48,6 +48,10 @@ pub const PARSE_ATTEMPTS: usize = 3;
 pub const REPEAT_CORRECTION: &str = "You are repeating the same tool call with the same arguments. \
 Its result will not change. Try a different action, or call `finish` with your answer.";
 
+/// salvage 발동 시 툴 결과에 붙이는 교정 노트 (M5 §5.1). 모델 대상 — 영어
+pub const SALVAGE_NOTE: &str =
+    "note: fields outside \"args\" were accepted this time - put them inside \"args\".";
+
 pub struct Agent<C: LlmClient> {
     client: C,
     registry: std::sync::Arc<Registry>,
@@ -275,12 +279,16 @@ impl<C: LlmClient> Agent<C> {
                 let req = ApprovalRequest { tool: &turn.action.tool, args: &turn.action.args, preview: &preview };
                 if let Decision::Deny { reason } = approver.approve(&req) {
                     on_event(AgentEvent::Notice("(거부됨 — 모델에 전달)".to_string()));
-                    let note = if repeat_count == 3 && !corrected {
+                    let mut notes: Vec<&str> = Vec::new();
+                    if turn.salvaged {
+                        notes.push(SALVAGE_NOTE);
+                    }
+                    if repeat_count == 3 && !corrected {
                         corrected = true;
-                        Some(REPEAT_CORRECTION)
-                    } else {
-                        None
-                    };
+                        notes.push(REPEAT_CORRECTION);
+                    }
+                    let joined = notes.join("\n");
+                    let note = (!joined.is_empty()).then_some(joined.as_str());
                     session.push_tool_result(&turn.action.tool, &turn.action.args, &format!("Denied: {reason}"), note);
                     turns += 1;
                     continue;
@@ -302,13 +310,17 @@ impl<C: LlmClient> Agent<C> {
                 Err(join) => format!("Error: tool execution panicked: {join}"),
             };
             // 교정은 툴 결과와 하나의 user 메시지로 병합 (스펙 §3 — 연속 user 금지)
-            let note = if repeat_count == 3 && !corrected {
+            let mut notes: Vec<&str> = Vec::new();
+            if turn.salvaged {
+                notes.push(SALVAGE_NOTE);
+            }
+            if repeat_count == 3 && !corrected {
                 corrected = true;
                 on_event(AgentEvent::Notice("(반복 감지 — 교정 메시지 주입)".to_string()));
-                Some(REPEAT_CORRECTION)
-            } else {
-                None
-            };
+                notes.push(REPEAT_CORRECTION);
+            }
+            let joined = notes.join("\n");
+            let note = (!joined.is_empty()).then_some(joined.as_str());
             session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note);
             turns += 1;
         }
@@ -446,6 +458,23 @@ mod tests {
         request: &str,
     ) -> Result<AgentOutcome, LlmError> {
         agent.run(session, request, &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await
+    }
+
+    #[tokio::test]
+    async fn salvaged_turn_gets_a_note_with_the_tool_result() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        // path를 action 레벨에 둔 salvage 대상 턴
+        let bad_shape = r#"{"thought": "read", "action": {"tool": "read_file", "args": {}, "path": "a.txt"}}"#;
+        let script = Scripted::new(vec![ok(bad_shape), ok(&finish("done"))]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        let note = session.messages().iter().find(|m| m.content.contains("fields outside"));
+        let note = note.expect("salvage 노트가 툴 결과에 병합");
+        assert_eq!(note.role, "user");
+        assert!(note.content.contains("hi"), "툴 결과(파일 내용)와 같은 메시지: {}", note.content);
     }
 
     #[tokio::test]
