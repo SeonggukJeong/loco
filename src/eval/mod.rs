@@ -218,7 +218,8 @@ async fn judge(
     repeat: usize,
     interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<Option<RunRecord>> {
-    sb.sync_protected(&t.fixture, &t.spec.protected)?;
+    sb.sync_protected(&t.fixture, &with_implicit_protected(&t.spec.protected))?;
+    cargo_tripwire(&sb.root)?;
     let check_timeout = scaled_timeout(t.spec.check_timeout_secs, opts.timeout_scale);
     let check = t.spec.check.clone();
     let root = sb.root.clone();
@@ -265,6 +266,41 @@ fn scaled_timeout(secs: u64, scale: f64) -> Duration {
     Duration::from_secs_f64(v)
 }
 
+/// check 판정 자산에 항상 포함되는 암묵 protected — .cargo/config.toml 가짜 러너로
+/// 판정을 우회하는 샌드박스 내부 벡터 차단 (스펙 M5 §4.1)
+fn with_implicit_protected(protected: &[String]) -> Vec<String> {
+    let mut out = protected.to_vec();
+    if !out.iter().any(|p| p == ".cargo") {
+        out.push(".cargo".to_string());
+    }
+    out
+}
+
+/// 샌드박스 상위 경로(base까지)에 .cargo가 있으면 판정 무결성 훼손으로 하네스 중단.
+/// cargo의 config 탐색이 cwd에서 루트로 상향하기 때문 — $CARGO_HOME/홈 벡터는
+/// 미차단 잔여 한계 (docs/baselines.md 한계 절 참고)
+fn cargo_tripwire_from(sandbox_root: &Path, base: &Path) -> anyhow::Result<()> {
+    let mut cur = sandbox_root.parent();
+    while let Some(dir) = cur {
+        let sus = dir.join(".cargo");
+        if sus.exists() {
+            anyhow::bail!(
+                "판정 무결성 경고: 샌드박스 상위 경로에 .cargo가 있습니다 ({}) — check가 가짜 러너 설정을 읽을 수 있어 중단합니다",
+                sus.display()
+            );
+        }
+        if dir == base {
+            break;
+        }
+        cur = dir.parent();
+    }
+    Ok(())
+}
+
+fn cargo_tripwire(sandbox_root: &Path) -> anyhow::Result<()> {
+    cargo_tripwire_from(sandbox_root, &std::env::temp_dir())
+}
+
 #[cfg(test)]
 mod unit_tests {
     use super::*;
@@ -279,6 +315,29 @@ mod unit_tests {
         assert_eq!(scaled_timeout(300, f64::INFINITY), Duration::from_secs(3600));
         assert_eq!(scaled_timeout(300, f64::NAN), Duration::from_secs(3600));
         assert_eq!(scaled_timeout(300, -1.0), Duration::from_secs(0));
+    }
+
+    #[test]
+    fn judge_deletes_agent_created_dot_cargo() {
+        // sync_protected에 .cargo가 암묵 합류하는지 — judge를 직접 부르지 않고
+        // 합집합 헬퍼를 검증한다 (judge는 exec_shell 의존이라 unix 게이트 대상)
+        let p = with_implicit_protected(&["tests".to_string()]);
+        assert!(p.iter().any(|s| s == ".cargo"));
+        assert!(p.iter().any(|s| s == "tests"));
+        // 이미 있으면 중복 추가하지 않는다
+        let p2 = with_implicit_protected(&[".cargo".to_string()]);
+        assert_eq!(p2.iter().filter(|s| *s == ".cargo").count(), 1);
+    }
+
+    #[test]
+    fn cargo_tripwire_rejects_parent_dot_cargo() {
+        let base = tempfile::tempdir().unwrap();
+        let sandbox = base.path().join("sb");
+        std::fs::create_dir_all(&sandbox).unwrap();
+        assert!(cargo_tripwire_from(&sandbox, base.path()).is_ok());
+        std::fs::create_dir_all(base.path().join(".cargo")).unwrap();
+        let err = cargo_tripwire_from(&sandbox, base.path()).unwrap_err();
+        assert!(err.to_string().contains(".cargo"), "{err}");
     }
 }
 
