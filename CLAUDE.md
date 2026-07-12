@@ -2,7 +2,7 @@
 
 Rust CLI driving a local LLM via any OpenAI-compatible API (LM Studio default `http://localhost:1234/v1`).
 Spec: `docs/superpowers/specs/2026-07-02-loco-design.md`. Plans: `docs/superpowers/plans/`.
-M1-M4 done (guided agent + eval harness implemented); baseline pass-rate measurement is next (Task 14+).
+M1-M4 done (guided agent + eval harness + baselines). Baseline pass rates (`eval tasks --repeats 3`, seed 0, ctx 8192): gemma-4-e4b 11.1%, qwen3-vl-4b 33.3% — details in `docs/baselines.md`. M5 (scaffolding improvements measured against these) is next.
 
 ## Commands
 - `cargo test` — full suite (fast, <1s)
