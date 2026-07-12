@@ -1453,7 +1453,7 @@ impl RepetitionTracker {
     pub fn new() -> Self;
     /// 디스패치 후 호출. key = "tool|정규화된 args", body = 툴 결과 원문(에러 포함)
     pub fn record(&mut self, key: &str, body: &str) -> RepetitionVerdict;
-    /// 동일 에러 첫 줄 3연속이면 교정문(1회) — record와 별도 호출
+    /// 동일 에러 첫 문장(첫 마침표까지) 3연속이면 교정문(1회) — record와 별도 호출
     pub fn error_correction(&mut self, tool: &str, body: &str) -> Option<&'static str>;
 }
 pub const EDIT_STRATEGY_CORRECTION: &str = "The same error keeps occurring. Change strategy: re-read the file, then rewrite it completely with write_file.";
