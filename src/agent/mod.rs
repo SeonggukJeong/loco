@@ -796,7 +796,7 @@ mod tests {
         // 생략해야 한다. pack은 마지막 메시지(방금 받은 결과)는 건드리지 않으므로
         // 결과가 하나뿐이면 이 테스트는 성립하지 않는다 — 반드시 두 번 읽는다.
         // 수치: 결과 각 ≈1500토큰, 예산 = (2500−100)×0.9 = 2160 → 둘 다 온전히는 못 담음.
-        // 주의: 실측 시스템 프롬프트(~400토큰)도 예산에 계상된다 — 여유 ~230토큰.
+        // 주의: 실측 시스템 프롬프트(~552토큰)도 예산에 계상된다 — 여유 ~100토큰.
         // 후속 마일스톤에서 프롬프트가 크게 자라면 이 수치를 재조정해야 한다
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("big.txt"), "z".repeat(6_000)).unwrap();
@@ -891,6 +891,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bad = || ok(&turn("finish", serde_json::json!({})));
         let script = Scripted::new(vec![bad(), bad(), bad(), bad(), bad()]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::RepetitionStop), "{outcome:?}");
+    }
+
+    #[tokio::test]
+    async fn repetition_key_uses_post_salvage_args() {
+        // 스펙 §8 회귀: 키가 salvage 정규화 후 args 기준 — 상이한 원형이 같은 키로 합류.
+        // 홀수 턴: action 레벨 스칼라 depth (salvage 대상, args:{} + depth:1 → 병합).
+        // 짝수 턴: 이미 정규화된 args:{"depth":1}. 둘 다 build_turn 이후 args가
+        // {"depth":1}로 동일해지고, list_files 결과도 변하지 않는 tempdir이라
+        // (키, 결과해시)가 5회 일치 → RepetitionStop.
+        let dir = tempfile::tempdir().unwrap();
+        let malformed =
+            r#"{"thought": "x", "action": {"tool": "list_files", "args": {}, "depth": 1}}"#;
+        let clean = || turn("list_files", serde_json::json!({"depth": 1}));
+        let script = Scripted::new(vec![
+            ok(malformed),
+            ok(&clean()),
+            ok(malformed),
+            ok(&clean()),
+            ok(malformed),
+        ]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
         let mut session = new_session(&agent);
         let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
