@@ -53,6 +53,9 @@ Its result will not change. Try a different action, or call `finish` with your a
 pub const SALVAGE_NOTE: &str =
     "note: fields outside \"args\" were accepted this time - put them inside \"args\".";
 
+/// 무검증 finish 1회 반려 (M5 §7.1). 모델 대상 — 영어
+pub const VERIFY_NUDGE: &str = "You modified files but never ran a verification command. Run the project's tests (e.g. cargo test) with run_command, then finish.";
+
 pub struct Agent<C: LlmClient> {
     client: C,
     registry: std::sync::Arc<Registry>,
@@ -150,6 +153,8 @@ impl<C: LlmClient> Agent<C> {
         let mut tracker = repetition::RepetitionTracker::new();
         // 실행당(run 호출당) 최대 2회 — 턴을 넘나들며 누적, 턴마다 리셋하지 않는다 (스펙 §9)
         let mut overflow_shrinks: u32 = 0;
+        let mut mutated_since_verify = false;
+        let mut verify_nudged = false;
         while turns < self.max_turns {
             // 취소 신호 후에는 새 LLM 호출을 만들지 않는다 — run_bounded의 유예가
             // 이 경로로 빠르게 끝난다 (설계 §1). 진행 중이던 run_command는 자체
@@ -232,7 +237,16 @@ impl<C: LlmClient> Agent<C> {
 
             if turn.action.tool == "finish" {
                 match turn.action.args.get("summary").and_then(|v| v.as_str()) {
-                    Some(s) => return Ok(AgentOutcome::Finished(s.to_string())),
+                    Some(s) => {
+                        if mutated_since_verify && !verify_nudged {
+                            verify_nudged = true;
+                            on_event(AgentEvent::Notice("(검증 없는 종료 — 확인 요청 주입)".to_string()));
+                            session.push(tool_result_message("finish", VERIFY_NUDGE));
+                            turns += 1;
+                            continue;
+                        }
+                        return Ok(AgentOutcome::Finished(s.to_string()));
+                    }
                     None => {
                         const FINISH_ERR: &str = "Error: finish requires a string `summary` argument, e.g. {\"tool\": \"finish\", \"args\": {\"summary\": \"<your final answer>\"}}";
                         // summary 없는 finish도 반복 계수에 편입 (M5 §7.3 — 기존 §3 사각지대 폐지)
@@ -293,12 +307,20 @@ impl<C: LlmClient> Agent<C> {
             let tool_args = turn.action.args.clone();
             let dispatched =
                 tokio::task::spawn_blocking(move || registry.dispatch(&tool_name, &tool_args, &ctx)).await;
+            let dispatch_ok = matches!(&dispatched, Ok(Ok(_)));
             let body = match dispatched {
                 Ok(Ok(s)) if s.is_empty() => "(no output)".to_string(),
                 Ok(Ok(s)) => s,
                 Ok(Err(e)) => format!("Error: {e}"),
                 Err(join) => format!("Error: tool execution panicked: {join}"),
             };
+            if dispatch_ok {
+                if turn.action.tool == "run_command" {
+                    mutated_since_verify = false; // 검증 실행으로 인정 — 종료 코드 무관 (M5 §7.1)
+                } else if self.registry.get(&turn.action.tool).is_some_and(|t| t.is_mutating()) {
+                    mutated_since_verify = true;
+                }
+            }
             let (note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
             session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note.as_deref());
             if stop {
@@ -964,7 +986,8 @@ mod tests {
     async fn approved_action_executes() {
         let dir = tempfile::tempdir().unwrap();
         let hits = Arc::new(AtomicUsize::new(0));
-        let script = Scripted::new(vec![ok(&turn("mut_tool", serde_json::json!({}))), ok(&finish("ok"))]);
+        // finish 2개: 검증 넛지가 mutating 실행 후의 1차 finish를 반려한다 (M5 §7.1)
+        let script = Scripted::new(vec![ok(&turn("mut_tool", serde_json::json!({}))), ok(&finish("ok")), ok(&finish("ok"))]);
         let mut agent = mut_agent(&script, hits.clone(), dir.path().to_path_buf());
         let approver = ScriptedApprover {
             decisions: Mutex::new(vec![Decision::Approve].into()),
@@ -1060,5 +1083,52 @@ mod tests {
         let outcome = run_quiet(&mut agent, &mut session, "질문").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Cancelled));
         assert_eq!(script.requests.lock().unwrap().len(), 1, "취소 후 추가 LLM 호출 금지");
+    }
+
+    #[tokio::test]
+    async fn finish_after_edit_without_verification_is_nudged_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "new.txt", "content": "x"}))),
+            ok(&finish("done without verify")),   // 1차 — 반려
+            ok(&finish("done anyway")),           // 2차 — 통과
+        ]);
+        let config = Config { max_turns: 25, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
+        let mut session = new_session(&agent);
+        let outcome = agent.run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await.unwrap();
+        match outcome {
+            AgentOutcome::Finished(s) => assert_eq!(s, "done anyway", "2차 finish는 무조건 통과"),
+            other => panic!("{other:?}"),
+        }
+        assert!(session.messages().iter().any(|m| m.content.contains("never ran a verification command")));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn finish_after_edit_and_run_command_is_not_nudged() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "new.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": "exit 3"}))), // 실패해도 "검증 실행"
+            ok(&finish("verified")),
+        ]);
+        let config = Config { max_turns: 25, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
+        let mut session = new_session(&agent);
+        let outcome = agent.run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        assert!(!session.messages().iter().any(|m| m.content.contains("never ran a verification command")));
+    }
+
+    #[tokio::test]
+    async fn finish_without_any_edit_is_not_nudged() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![ok(&finish("answer only"))]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        assert!(!session.messages().iter().any(|m| m.content.contains("verification command")));
     }
 }
