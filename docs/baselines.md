@@ -73,3 +73,6 @@
 | Batch 1 (20260712T054353Z) | 15/36 | 27 | 110 | 76 | 3 | F14/M8/R14 | keep |
 
 **Batch 1 판정 근거 (keep):** 통과 +3런(스펙 §3의 -2런 기준 반대 방향), 타깃 지표 전부 개선 — missing field 80→27(스키마 에코·salvage 효과), run_command 실행 12→110(검증 규칙 효과), 거짓 성공 finish 6→3. salvage 노트 발동 10회(신규 메커니즘 작동 확인). 관찰: fix-compile-error 0/3→3/3(공통 0% 6종 중 첫 탈출, 스펙 §2 성공 기준 1의 절반); 안정 4종(create-module·edit-crlf-file·find-definition·fix-off-by-one) 전부 3/3 유지; not found는 76으로 정체(Batch 2 대상); RepetitionStop 7→14 — MaxTurns 소진(17→8) 대신 기존 5회 동일 반복 정지가 더 일찍 걸리는 쪽으로 이동(multiline-string-edit·rename-function이 9~12턴 조기 종료), Batch 3의 (호출,결과) 윈도 개편이 이 루프들의 교정 대상.
+| Batch 2 (20260712T063028Z) | 19/36 | 10 | 135 | 32 | 1 | F15/M7/R13/T1 | keep |
+
+**Batch 2 판정 근거 (keep):** 통과 +4런(15→19). not found 76→32(§6.2 최근접 인용 32회 발동 — Batch 2 타깃 적중), missing field 27→10, 거짓 성공 finish 3→1. replace_all 실사용 3회(치환 발생; 트랜스크립트 "replace_all" 문자열 98회는 대부분 시스템 프롬프트 doc() 에코라 원자료로만 기록). 과제별: chain-edits 0/3→2/3, rename-function 0/3→1/3 — fix-compile-error(Batch 1)와 합쳐 공통 0% 6종 중 3종 탈출로 스펙 §2 성공 기준 1(≥2종) 조기 달성. count-usages 0/3→1/3(qwen 첫 통과). 관찰: multiline-string-edit 시드 2에서 첫 Timeout 1건(기준선·Batch 1은 Timeout 0) — 단발이라 지표 악화로 보지 않음, Batch 3 측정에서 재관찰. RepetitionStop 14→13, MaxTurns 8→7로 정체 — 루프 계열은 Batch 3 대상.
