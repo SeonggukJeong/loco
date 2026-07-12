@@ -68,9 +68,10 @@ fn apply_edit(text: &str, search: &str, replace: &str) -> Result<EditOutcome, St
             });
         }
         n if n >= 2 => {
-            return Err(format!(
-                "search block matches {n} locations (exact match); add surrounding lines to make it unique"
-            ));
+            let t_lines: Vec<&str> = text.split('\n').collect();
+            let starts: Vec<usize> =
+                exact_positions.iter().map(|&b| text[..b].matches('\n').count()).collect();
+            return Err(ambiguity_message(n, "exact match", &starts, &t_lines));
         }
         _ => {}
     }
@@ -109,9 +110,7 @@ fn apply_edit(text: &str, search: &str, replace: &str) -> Result<EditOutcome, St
             });
         }
         n if n >= 2 => {
-            return Err(format!(
-                "search block matches {n} locations (ignoring trailing whitespace); add surrounding lines to make it unique"
-            ));
+            return Err(ambiguity_message(n, "ignoring trailing whitespace", &stage2, &t_lines));
         }
         _ => {}
     }
@@ -134,11 +133,30 @@ fn apply_edit(text: &str, search: &str, replace: &str) -> Result<EditOutcome, St
                 occurrences: 1,
             })
         }
-        n if n >= 2 => Err(format!(
-            "search block matches {n} locations (with indent shift); add surrounding lines to make it unique"
-        )),
+        n if n >= 2 => {
+            let starts: Vec<usize> = stage3.iter().map(|(i, _)| *i).collect();
+            Err(ambiguity_message(n, "with indent shift", &starts, &t_lines))
+        }
         _ => Err(not_found_message(text, &s_lines)),
     }
+}
+
+/// 모호 매치 에러에 위치를 나열 (M5 §6.3). line_starts는 0-기준 줄 인덱스
+fn ambiguity_message(n: usize, stage: &str, line_starts: &[usize], t_lines: &[&str]) -> String {
+    let shown: Vec<String> = line_starts
+        .iter()
+        .take(5)
+        .map(|&i| format!("  line {}: {}", i + 1, t_lines.get(i).copied().unwrap_or("")))
+        .collect();
+    let more = if line_starts.len() > 5 {
+        format!("\n  and {} more", line_starts.len() - 5)
+    } else {
+        String::new()
+    };
+    format!(
+        "search block matches {n} locations ({stage}):\n{}{more}\nadd surrounding lines to pick one, or set \"replace_all\": true if you intend to change every occurrence",
+        shown.join("\n")
+    )
 }
 
 /// 모든 줄이 동일한 indent 접두로 매칭되면 그 indent를 반환 (후행 공백은 무시)
@@ -176,19 +194,53 @@ fn splice(t_lines: &[&str], start: usize, window: usize, replacement: &[String])
     out.join("\n")
 }
 
+/// not-found에 최근접 실제 텍스트를 인용 (M5 §6.2) — 모델이 복사만 하면 되게.
+/// 탐색: search 첫 줄 부분 매치 → 없으면 문자 bigram 중첩 최대 라인(임계 0.25)
 fn not_found_message(text: &str, s_lines: &[&str]) -> String {
+    const MAX_QUOTE: usize = 10;
     let first = s_lines.first().map(|l| l.trim()).unwrap_or("");
-    // let-chain: 단독 중첩 if는 clippy::collapsible_if가 -D warnings에서 거부한다 (edition 2024)
-    if !first.is_empty()
-        && let Some(i) = text.split('\n').position(|l| l.contains(first))
-    {
-        return format!(
-            "search block not found. Line {} contains the first line of your block - \
-             re-read the file and copy the exact text including whitespace",
-            i + 1
-        );
+    let lines: Vec<&str> = text.split('\n').collect();
+    let found = if first.is_empty() {
+        None
+    } else {
+        lines.iter().position(|l| l.contains(first)).or_else(|| best_bigram_line(&lines, first))
+    };
+    match found {
+        Some(i) => {
+            let to = (i + s_lines.len().min(MAX_QUOTE)).min(lines.len());
+            format!(
+                "search block not found. Closest match at lines {}-{}:\n{}\nCopy this text exactly into `search` if this is the location you meant.",
+                i + 1,
+                to,
+                lines[i..to].join("\n")
+            )
+        }
+        None => "search block not found - re-read the file and copy the exact text".to_string(),
     }
-    "search block not found - re-read the file and copy the exact text".to_string()
+}
+
+fn best_bigram_line(lines: &[&str], needle: &str) -> Option<usize> {
+    let nb = bigrams(needle);
+    if nb.is_empty() {
+        return None;
+    }
+    let mut best: Option<(usize, f32)> = None;
+    for (i, l) in lines.iter().enumerate() {
+        let lb = bigrams(l);
+        if lb.is_empty() {
+            continue;
+        }
+        let score = nb.intersection(&lb).count() as f32 / nb.len() as f32;
+        if best.is_none_or(|(_, s)| score > s) {
+            best = Some((i, score));
+        }
+    }
+    best.filter(|&(_, s)| s >= 0.25).map(|(i, _)| i)
+}
+
+fn bigrams(s: &str) -> std::collections::HashSet<(char, char)> {
+    let cs: Vec<char> = s.trim().chars().collect();
+    cs.windows(2).map(|w| (w[0], w[1])).collect()
 }
 
 impl EditFile {
@@ -334,7 +386,48 @@ mod tests {
         let err = edit(&ctx, "beta\nDELTA", "x").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("not found"), "{msg}");
-        assert!(msg.contains("Line 2"), "첫 줄 근접 위치 안내: {msg}");
+        assert!(msg.contains("lines 2-"), "첫 줄 근접 위치 안내: {msg}");
+    }
+
+    #[test]
+    fn not_found_quotes_the_closest_actual_text() {
+        // 이스케이프 깊이 불일치 시나리오: 모델의 search가 실제와 한 글자 다름
+        let (_d, ctx) = setup("fn top() {}\n    t.push_str(\"said: \\\"hi\\\"\");\nfn bot() {}\n");
+        let err = edit(&ctx, "t.push_str(\"said: \"hi\"\");", "x").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Closest match at lines 2-2:"), "{msg}");
+        assert!(msg.contains("t.push_str(\"said: \\\"hi\\\"\");"), "실제 파일 원문 인용: {msg}");
+        assert!(msg.contains("Copy this text exactly"), "{msg}");
+    }
+
+    #[test]
+    fn not_found_quote_is_capped_at_ten_lines() {
+        let body: String = (1..=30).map(|i| format!("line{i}\n")).collect();
+        let (_d, ctx) = setup(&body);
+        let search: String = (1..=20).map(|i| format!("line{i}X\n")).collect(); // 20줄, 첫 줄에서 부분 매치
+        let err = edit(&ctx, &search, "x").unwrap_err();
+        let quoted = err.to_string().matches("line").count();
+        assert!(quoted <= 12, "인용 최대 10줄 (스펙 §6.2 크기 상한): {err}");
+    }
+
+    #[test]
+    fn multi_match_lists_line_numbers_and_suggests_replace_all() {
+        let (_d, ctx) = setup("dup();\nmid\ndup();\nmid\ndup();\n");
+        let err = edit(&ctx, "dup();", "x();").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("matches 3 locations"), "{msg}");
+        assert!(msg.contains("line 1") && msg.contains("line 3") && msg.contains("line 5"), "{msg}");
+        assert!(msg.contains("replace_all"), "{msg}");
+    }
+
+    #[test]
+    fn multi_match_listing_is_capped_at_five() {
+        let body = "dup();\n".repeat(9);
+        let (_d, ctx) = setup(&body);
+        let err = edit(&ctx, "dup();", "x();").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("matches 9 locations"), "{msg}");
+        assert!(msg.contains("and 4 more"), "5개 초과는 생략 표기 (스펙 §6.3): {msg}");
     }
 
     #[test]
