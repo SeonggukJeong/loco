@@ -76,3 +76,6 @@
 | Batch 2 (20260712T063028Z) | 19/36 | 10 | 135 | 32 | 1 | F15/M7/R13/T1 | keep |
 
 **Batch 2 판정 근거 (keep):** 통과 +4런(15→19). not found 76→32(§6.2 최근접 인용 32회 발동 — Batch 2 타깃 적중), missing field 27→10, 거짓 성공 finish 3→1. replace_all 실사용 3회(치환 발생; 트랜스크립트 "replace_all" 문자열 98회는 대부분 시스템 프롬프트 doc() 에코라 원자료로만 기록). 과제별: chain-edits 0/3→2/3, rename-function 0/3→1/3 — fix-compile-error(Batch 1)와 합쳐 공통 0% 6종 중 3종 탈출로 스펙 §2 성공 기준 1(≥2종) 조기 달성. count-usages 0/3→1/3(qwen 첫 통과). 관찰: multiline-string-edit 시드 2에서 첫 Timeout 1건(기준선·Batch 1은 Timeout 0) — 단발이라 지표 악화로 보지 않음, Batch 3 측정에서 재관찰. RepetitionStop 14→13, MaxTurns 8→7로 정체 — 루프 계열은 Batch 3 대상.
+| Batch 3 (20260712T103250Z) | 18/36 | 50 | 100 | 50 | 2 | F16/M8/R12 | keep |
+
+**Batch 3 판정 근거 (keep, 스펙 §3 ±1런 규칙):** 통과 -1런(19→18)은 keep 범위. 신규 메커니즘 발동 확인 — 검증 넛지 3회, 전략 교정 5회, Timeout 재발 0(Batch 2의 1건 소멸). count-usages 1/3→2/3. 악화 항목의 원인: missing field 10→50은 특정 런 편중(create-module 시드1 단독 12건 — 해당 과제는 3/3 통과, 통과 무관 원자료 노이즈), not found 32→50도 유사 분산. chain-edits 2/3→0/3이 -1런의 실체 — 시드0이 새 (호출,결과) 윈도의 RepetitionStop에 12턴에서 걸림(시드1·2는 MaxTurns 25턴 소진, Batch 2에서도 실패하던 시드 구성과 변동 혼재). 시드 단위 분산과 신규 정지의 구분은 Task 17 최종 측정에서 재관찰.
