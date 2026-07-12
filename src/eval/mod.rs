@@ -162,7 +162,7 @@ async fn run_once<C: LlmClient>(
             turns += 1;
         }
     };
-    let limit = Duration::from_secs_f64(t.spec.timeout_secs as f64 * opts.timeout_scale);
+    let limit = scaled_timeout(t.spec.timeout_secs, opts.timeout_scale);
     let start = Instant::now();
     let bounded = run_bounded(
         agent.run(&mut session, &t.spec.prompt, &mut approver, &mut on_event),
@@ -219,7 +219,7 @@ async fn judge(
     interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<Option<RunRecord>> {
     sb.sync_protected(&t.fixture, &t.spec.protected)?;
-    let check_timeout = Duration::from_secs_f64(t.spec.check_timeout_secs as f64 * opts.timeout_scale);
+    let check_timeout = scaled_timeout(t.spec.check_timeout_secs, opts.timeout_scale);
     let check = t.spec.check.clone();
     let root = sb.root.clone();
     // exec_shell은 블로킹(폴링 루프) — 런타임과 인터럽트 리스너를 막지 않게 워커로.
@@ -254,6 +254,32 @@ fn create_report_dir(root: &Path, stamp: &str) -> anyhow::Result<PathBuf> {
         }
     }
     anyhow::bail!("리포트 디렉터리 이름 충돌이 반복됨")
+}
+
+/// timeout × scale — 포화 + 상한 3600초. from_secs_f64는 비유한/음수/오버플로에서
+/// 패닉하므로(스펙 M5 §4.2) 유한성 검사 후 클램프한다
+fn scaled_timeout(secs: u64, scale: f64) -> Duration {
+    const MAX_SECS: f64 = 3600.0;
+    let v = secs as f64 * scale;
+    let v = if v.is_finite() { v.clamp(0.0, MAX_SECS) } else { MAX_SECS };
+    Duration::from_secs_f64(v)
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn scaled_timeout_saturates_and_clamps() {
+        assert_eq!(scaled_timeout(300, 1.0), Duration::from_secs(300));
+        assert_eq!(scaled_timeout(300, 2.0), Duration::from_secs(600));
+        // 상한 3600초 — 거대 값·비유한 배율이 from_secs_f64 패닉을 일으키지 않는다 (스펙 §4.2)
+        assert_eq!(scaled_timeout(u64::MAX, 1.0), Duration::from_secs(3600));
+        assert_eq!(scaled_timeout(300, f64::INFINITY), Duration::from_secs(3600));
+        assert_eq!(scaled_timeout(300, f64::NAN), Duration::from_secs(3600));
+        assert_eq!(scaled_timeout(300, -1.0), Duration::from_secs(0));
+    }
 }
 
 #[cfg(test)]
