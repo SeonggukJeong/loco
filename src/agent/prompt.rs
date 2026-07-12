@@ -18,9 +18,10 @@ Respond with exactly ONE JSON object per turn and nothing else:\n\
 {{\"thought\": \"<one short sentence of reasoning, in English>\", \"action\": {{\"tool\": \"<name>\", \"args\": {{...}}}}}}\n\
 \n\
 Rules:\n\
-- One tool call per turn.\n\
+- One tool call per turn. All tool parameters go inside \"args\".\n\
 - Never repeat a tool call that already returned a result - reuse that result. As soon as you have enough information, call `finish`.\n\
-- To change an existing file, prefer `edit_file` with a small unique search block. Use `write_file` only for new files or full rewrites.\n\
+- To change an existing file, prefer `edit_file` with a small unique search block. Copy `search` text exactly from the latest read_file output. Use `write_file` only for new files or full rewrites.\n\
+- After changing files, verify with run_command (e.g. `cargo test`) before finish.\n\
 - File paths are relative to the project root. Explore with list_files or grep before reading whole files.\n\
 - When you know the answer (or cannot proceed), call `finish`. Its `summary` is the ONLY text shown to the user - put the complete answer there, written in the user's language.\n\
 \n\
@@ -28,8 +29,10 @@ Tools:\n\
 {tool_docs}\n\
 - finish(summary): End the task and give `summary` to the user as the final answer.\n\
 \n\
-Example turn:\n\
+Example turns:\n\
 {{\"thought\": \"I need to find where the config is loaded.\", \"action\": {{\"tool\": \"grep\", \"args\": {{\"pattern\": \"fn load\", \"path\": \"src\"}}}}}}\n\
+{{\"thought\": \"Replace the todo with the real body.\", \"action\": {{\"tool\": \"edit_file\", \"args\": {{\"path\": \"src/lib.rs\", \"search\": \"fn add(a: i32, b: i32) -> i32 {{\\n    todo!()\\n}}\", \"replace\": \"fn add(a: i32, b: i32) -> i32 {{\\n    a + b\\n}}\"}}}}}}\n\
+{{\"thought\": \"Verify my edit compiles and tests pass.\", \"action\": {{\"tool\": \"run_command\", \"args\": {{\"command\": \"cargo test\"}}}}}}\n\
 \n\
 Project files (partial, gitignore respected):\n\
 {tree}"
@@ -64,6 +67,11 @@ mod tests {
         assert!(p.contains("summary"), "summary가 사용자에게 가는 유일한 채널");
         assert!(p.contains("Example"), "few-shot 예시 (스펙 §4)");
         assert!(p.is_ascii(), "시스템 프롬프트는 영어 (스펙 §4)");
+        // M5 §5.4: 검증 규칙 + 정확 복사 규칙 + mutating 포함 예시 3개
+        assert!(p.contains("verify with run_command"), "검증 규칙");
+        assert!(p.contains("Copy `search` text exactly"), "정확 복사 규칙");
+        assert!(p.contains("\"tool\": \"edit_file\""), "edit_file 예시");
+        assert!(p.contains("\"tool\": \"run_command\""), "run_command 예시");
     }
 
     #[test]
