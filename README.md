@@ -3,6 +3,15 @@
 로컬에서 서빙되는 소형 LLM(OpenAI 호환 API)으로 코딩을 지원하는 CLI.
 설계 문서: `docs/superpowers/specs/2026-07-02-loco-design.md`
 
+## 프로젝트 상태: 중단 (2026-07-13)
+
+M6(판정·평가 신뢰성 개편) 스펙·구현 플랜까지 작성·리뷰를 마친 상태에서 잠시 중단한다.
+저사양 PC에서 4B급 소형 모델을 돌려도 추론이 느려 실사용성이 떨어진다는 한계에
+부딪혔고, 그보다는 **저사양 하드웨어에서 대형 모델을 구동하고 추론 속도를 높이는
+방법**을 먼저 연구하는 쪽으로 방향을 튼다. loco 자체(스캐폴딩으로 소형 모델의 코딩
+성공률을 끌어올리는 접근)는 유효하다고 보고, 재개 시 M6부터 이어간다 — 아래 "현재
+상태"와 `docs/superpowers/plans/2026-07-12-m6-eval-integrity.md`가 재개 지점이다.
+
 ## 시작하기
 
 1. LM Studio(또는 Ollama, llama.cpp server 등)에서 모델을 로드하고 서버 시작
@@ -90,3 +99,10 @@ command_timeout_secs = 60
 - [x] M2: 읽기 도구 에이전트
 - [x] M3: 가이드형 코딩 에이전트 (쓰기 툴 + 확인 게이트 + 세션 기록)
 - [x] M4: 평가 하네스 (`loco eval` — 과제 세트 통과율 측정)
+- [x] M5: 스캐폴딩 개선 (salvage 파싱, 반복 감지, edit_file 3단 매칭, 검증 넛지 등) —
+      `eval tasks --repeats 3`(seed 0, ctx 8192) 기준 gemma-4-e4b 11.1%→66.7%,
+      qwen3-vl-4b 33.3%→50.0%. 배치별 경과와 최종 분석은 `docs/baselines.md` 참고
+- [ ] M6: 판정·평가 신뢰성 개편 — 스펙·구현 플랜 리뷰 통과(Ready: Yes, 커밋 `e10a703`),
+      구현은 착수 전 상태로 프로젝트 중단. 목표: 관대한 채점(outcome 무관 check만 봄)·
+      협소한 판정기(정답 형식 불인정)·거짓 성공 finish 미계측 문제 해소. 재개 시
+      `docs/superpowers/plans/2026-07-12-m6-eval-integrity.md`부터 시작
