@@ -10,7 +10,9 @@
     ],
     "ask": [
       "Edit(tasks/*/fixture/**)",
-      "Write(tasks/*/fixture/**)"
+      "Write(tasks/*/fixture/**)",
+      "Edit(tasks-large/*/fixture/**)",
+      "Write(tasks-large/*/fixture/**)"
     ]
   }
 }
