@@ -5,6 +5,12 @@ version = 4
 [[package]]
 name = "inv-cli"
 version = "0.1.0"
+dependencies = [
+ "inv-core",
+ "inv-parse",
+ "inv-report",
+ "inv-store",
+]
 
 [[package]]
 name = "inv-core"
@@ -20,6 +26,9 @@ dependencies = [
 [[package]]
 name = "inv-report"
 version = "0.1.0"
+dependencies = [
+ "inv-core",
+]
 
 [[package]]
 name = "inv-store"

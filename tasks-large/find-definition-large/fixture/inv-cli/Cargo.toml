@@ -5,3 +5,7 @@ edition = "2021"
 
 [dependencies]
 # 내부 path 의존만 허용. 예) inv-parse에서: inv-core = { path = "../inv-core" }
+inv-core = { path = "../inv-core" }
+inv-parse = { path = "../inv-parse" }
+inv-store = { path = "../inv-store" }
+inv-report = { path = "../inv-report" }
