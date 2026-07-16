@@ -619,13 +619,16 @@ git add tasks-large CLAUDE.md && git commit -m "docs: tasks-large 함정 대장 
 - [ ] **Step 1**: aider 공식 문서(repomap 페이지)와 소스(`aider/repomap.py`)를 조사해 노트 작성 — 필수 절: ① tree-sitter 태그 추출 방식 ② 심볼 랭킹(그래프 기반) 알고리즘 ③ 토큰 예산 맞춤 로직 ④ **loco에의 시사점**(Rust·8K·의존성 제약(스펙 고정 목록: tree-sitter 크레이트 추가는 사용자 승인 필요) 하의 이식 형태 스케치)
 - [ ] **Step 2**: 커밋 `docs: aider repo-map 레퍼런스 노트 (M8 Task8)`
 
-### Task 9: 레퍼런스 노트 — codex-rs
+### Task 9: 레퍼런스 노트 — codex-rs + grok-build
 
 **Files:**
 - Create: `docs/research/2026-07-16-codex-rs.md`
+- Create: `docs/research/2026-07-16-grok-build.md`
 
 - [ ] **Step 1**: openai/codex의 codex-rs를 조사해 노트 작성 — 필수 절: ① 컨텍스트 압축/이력 관리 ② 도구 표면(apply_patch·검색 설계) ③ 소형/로컬 모델(`--oss`) 대응 흔적 ④ **loco에의 시사점**
 - [ ] **Step 2**: 커밋 `docs: codex-rs 레퍼런스 노트 (M8 Task9)`
+- [ ] **Step 3**: xai-org/grok-build를 조사해 노트 작성(스펙 §7 확장 조항의 1차 승격 — 2026-07-16 사용자 지적: 약한 모델 보정 공학 가설). **TUI/pager 크레이트 제외**, 범위 4절: ① 에이전트 루프의 응답 파싱·도구 디스패치(salvage류 관용 파싱·재시도 등 견고성 공학 흔적 — 가설 검증) ② 도구 계층의 편집·검색 설계(퍼지 매칭 여부) ③ 커스텀/로컬 모델 지원 폭(`~/.grok/config.toml` base URL) ④ 서브에이전트 구조(docs/m9-candidates.md "컨텍스트 임대" 아이디어의 참조 구현 여부) + **loco에의 시사점**
+- [ ] **Step 4**: 커밋 `docs: grok-build 레퍼런스 노트 (M8 Task9)`
 
 (Task 8·9는 픽스처 태스크와 독립 — 병행 가능. 실패 데이터가 특정 주제를 가리키면 깊이 제한 없이 후속 노트 확장 — 스펙 §7)
 
