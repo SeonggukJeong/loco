@@ -1,0 +1,12 @@
+prompt = "월간 정산 보고서에서 반품이 포함된 달의 합계가 음수로 나온다는 현장 보고가 있다. 판매는 더해지고 반품만 차감되는 것이 정상이다. 원인을 찾아 고치고 cargo test로 확인하라."
+check = "cargo test"
+timeout_secs = 600
+check_timeout_secs = 300
+protected = [
+  "Cargo.toml",
+  "inv-core/Cargo.toml",   "inv-core/tests",
+  "inv-parse/Cargo.toml",  "inv-parse/tests",
+  "inv-store/Cargo.toml",  "inv-store/tests",
+  "inv-report/Cargo.toml", "inv-report/tests",
+  "inv-cli/Cargo.toml",    "inv-cli/tests",
+]

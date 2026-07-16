@@ -1,0 +1,3 @@
+[workspace]
+resolver = "2"
+members = ["inv-core", "inv-parse", "inv-store", "inv-report", "inv-cli"]

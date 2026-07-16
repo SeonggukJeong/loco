@@ -24,6 +24,7 @@
 
 | 과제 | 정답 파일 |
 |---|---|
+| 과제1 | inv-report/src/monthly.rs |
 | 과제3 | inv-core/src/rules/mod.rs |
 
 ## 판별력 수동 확인 기록
