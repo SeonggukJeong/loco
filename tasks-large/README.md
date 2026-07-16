@@ -25,10 +25,25 @@
 | 과제 | 정답 파일 |
 |---|---|
 | 과제1 | inv-report/src/monthly.rs |
+| 과제2 | inv-core/src/rules/pricing.rs · inv-report/src/invoice.rs · inv-report/src/forecast.rs · inv-parse/src/defaults.rs |
 | 과제3 | inv-core/src/rules/mod.rs |
 
 ## 판별력 수동 확인 기록
-(과제 2의 지점별 부분 오버레이 확인 결과 — Task 6에서 기록)
+과제2(update-vat-rate)의 지점별 부분 오버레이 확인 결과(Task 6). solution 4파일 중
+1개만 제외한 부분 오버레이를 fixture 사본(스크래치, tasks-large/ 밖)에 적용하고
+`cargo test`를 실행해, 제외된 지점의 판정 테스트만 단독으로 실패하는지 확인했다.
+사전 점검으로 solution 4파일 전부를 적용한 라운드(round0-full)도 실행해 전체
+통과(0 failed)를 확인했다.
+
+| 제외 파일 | 결과 | 실패한 테스트 | 기타 실패 |
+|---|---|---|---|
+| inv-core/src/rules/pricing.rs | FAIL (예상대로) | `apply_tax_uses_12_percent` | 없음 |
+| inv-report/src/invoice.rs | FAIL (예상대로) | `invoice_total_uses_12_percent` | 없음(같은 파일의 `forecast_projection_uses_12_percent`는 통과) |
+| inv-report/src/forecast.rs | FAIL (예상대로) | `forecast_projection_uses_12_percent` | 없음(같은 파일의 `invoice_total_uses_12_percent`는 통과) |
+| inv-parse/src/defaults.rs | FAIL (예상대로) | `default_config_vat_is_12` | 없음 |
+
+4/4 라운드 모두 기대한 판정 테스트 정확히 1개만 실패했고, 다른 판정 테스트나
+베이스 테스트에는 영향이 없었다(4지점이 서로 독립적으로 판별됨을 확인).
 
 ## 드리프트 방지 절차 (베이스 수정 시)
 베이스 = find-definition-large/fixture (판정 파일 tests/check_*.rs 제외).

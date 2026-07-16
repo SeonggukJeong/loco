@@ -1,0 +1,12 @@
+prompt = "부가세율이 10%에서 12%로 변경되었다. 시스템 전체의 세율 적용을 빠짐없이 반영하라. 설정 기본값도 포함된다. 반영 후 cargo test로 확인하라."
+check = "cargo test"
+timeout_secs = 600
+check_timeout_secs = 300
+protected = [
+  "Cargo.toml",
+  "inv-core/Cargo.toml",   "inv-core/tests",
+  "inv-parse/Cargo.toml",  "inv-parse/tests",
+  "inv-store/Cargo.toml",  "inv-store/tests",
+  "inv-report/Cargo.toml", "inv-report/tests",
+  "inv-cli/Cargo.toml",    "inv-cli/tests",
+]
