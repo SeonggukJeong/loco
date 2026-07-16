@@ -135,3 +135,39 @@
 
 - 기준선 한계 1~3·5·7항은 그대로 유효. 4항(.cargo 판정 우회)은 M5에서 샌드박스 내부 벡터가 차단됐다(암묵 protected + 상위 경로 트립와이어) — 단 `$CARGO_HOME`/홈 디렉터리 벡터는 미차단 잔여 한계, 그리고 트립와이어는 temp_dir 상위에 `.cargo`가 우연히 존재하는 환경에서 하네스를 중단시킨다(감지만 하고 정리하지 않음 — 에러 메시지의 경로를 수동 제거).
 - 6항(config 미스냅샷)은 해소 — report.json이 `effective_config`(base_url·temperature·context_tokens·max_output_tokens·max_turns·command_timeout_secs·loco_version)를 기록한다.
+
+## v2 기준선 (M6 판정기 개편 후 — 측정 대기)
+
+M6(스펙 2026-07-12-m6-eval-integrity-design.md)이 판정기를 수선했으므로 **이 절의 수치는
+v1 계열(기준선·M5)과 직접 비교할 수 없다**. M7+ 마일스톤은 이 절을 비교 기준으로 사용한다.
+
+### 판정기 변경 목록 (v1 → v2)
+
+- find-definition: 정규화 사다리 확장 — 감싼 따옴표쌍(`"` `'` `` ` ``)·후행 슬래시·후행
+  마침표 허용 (여러 줄·산문은 계속 거부). 사다리 단위 테스트가 판정 테스트 파일에 동거
+- count-usages: trim·따옴표쌍 제거 후 정수 파싱·수치 비교 (산문 거부). 사다리 단위 테스트 동거
+- fix-off-by-one: 비변별 `zero` 테스트를 변별 케이스(`two`)로 교체
+- 하네스: verify 오버레이·protected 복원을 read+write로 — macOS `fs::copy`의 mtime
+  보존이 스테일 테스트 바이너리 판정을 유발하는 벡터 수선 (판정기 자체는 아니나
+  판정 경로 무결성 수정)
+- Task 3 솔루션 감사(전 12과제 `--verify` 12/12, ✗ 0건): 솔루션 저작 오류 **0건**
+- Task 4 전수 변별성 감사(기지 3건 외): 추가 교체 **0건**. fix-failing-test의
+  `max_single`·`max_empty`는 버그 함수(`max_csv`, min↔max 오류)를 겨냥하지만 단일·빈
+  입력이라 구조적으로 그 버그를 변별할 수 없음 — 정당한 엣지(None 초기화·빈 목록)
+  커버리지로 유지, 버그는 `max_of_list`가 변별한다(교체 불필요)
+
+### 측정 조건
+
+기준선과 동일: 모델 단독 로드 ctx 8192, 로컬 config `max_output_tokens = 4096`, seed 0,
+`--repeats 3`, 측정 중 병행 빌드 금지. 하네스: (측정 시점 커밋 해시 기입).
+
+### 전체 통과율
+
+| 모델 | 통과 | 엄격(Finished∧통과) | 거짓 성공 finish | report.json |
+|---|---|---|---|---|
+| google/gemma-4-e4b | (측정 예정) | | | |
+| qwen/qwen3-vl-4b | (측정 예정) | | | |
+
+### 과제별·관찰
+
+(측정 후 기입)
