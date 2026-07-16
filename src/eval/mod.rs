@@ -4,6 +4,7 @@
 pub mod report;
 pub mod sandbox;
 pub mod task;
+pub mod verify;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -268,7 +269,7 @@ fn create_report_dir(root: &Path, stamp: &str) -> anyhow::Result<PathBuf> {
 
 /// timeout × scale — 포화 + 상한 3600초. from_secs_f64는 비유한/음수/오버플로에서
 /// 패닉하므로(스펙 M5 §4.2) 유한성 검사 후 클램프한다
-fn scaled_timeout(secs: u64, scale: f64) -> Duration {
+pub(crate) fn scaled_timeout(secs: u64, scale: f64) -> Duration {
     const MAX_SECS: f64 = 3600.0;
     let v = secs as f64 * scale;
     let v = if v.is_finite() { v.clamp(0.0, MAX_SECS) } else { MAX_SECS };
@@ -277,7 +278,7 @@ fn scaled_timeout(secs: u64, scale: f64) -> Duration {
 
 /// check 판정 자산에 항상 포함되는 암묵 protected — .cargo/config.toml 가짜 러너로
 /// 판정을 우회하는 샌드박스 내부 벡터 차단 (스펙 M5 §4.1)
-fn with_implicit_protected(protected: &[String]) -> Vec<String> {
+pub(crate) fn with_implicit_protected(protected: &[String]) -> Vec<String> {
     let mut out = protected.to_vec();
     if !out.iter().any(|p| p == ".cargo") {
         out.push(".cargo".to_string());
@@ -306,7 +307,7 @@ fn cargo_tripwire_from(sandbox_root: &Path, base: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cargo_tripwire(sandbox_root: &Path) -> anyhow::Result<()> {
+pub(crate) fn cargo_tripwire(sandbox_root: &Path) -> anyhow::Result<()> {
     cargo_tripwire_from(sandbox_root, &std::env::temp_dir())
 }
 

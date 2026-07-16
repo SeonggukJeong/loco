@@ -49,12 +49,15 @@ impl Sandbox {
             }
             if src.is_dir() {
                 std::fs::create_dir_all(&dst)?;
-                copy_tree(&src, &dst)?;
+                // read+write 오버레이 — fs::copy는 macOS에서 원본 mtime을 보존해(clonefile)
+                // 변조된 protected로 빌드된 캐시가 재사용되는 스테일 판정 벡터가 된다 (M6 §4)
+                overlay_tree(&src, &dst)?;
             } else if src.exists() {
                 if let Some(parent) = dst.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
-                std::fs::copy(&src, &dst)?;
+                let bytes = std::fs::read(&src)?;
+                std::fs::write(&dst, bytes)?;
             }
         }
         Ok(())
@@ -80,6 +83,30 @@ fn copy_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
             copy_tree(&from, &to)?;
         } else {
             std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// src 트리를 dst에 덮어쓴다 — fs::copy 대신 read+write. macOS의 fs::copy는
+/// 원본 mtime을 보존해(clonefile) 기존 빌드 산출물보다 과거가 되고, cargo가
+/// 재빌드를 건너뛰어 스테일 테스트 바이너리로 판정하는 벡터가 된다 (M6 §4)
+pub(crate) fn overlay_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        let meta = std::fs::symlink_metadata(&from)?;
+        if meta.is_symlink() {
+            bail!("오버레이 원본에 심링크가 있음 (지원 안 함): {}", from.display());
+        }
+        if meta.is_dir() {
+            std::fs::create_dir_all(&to)?;
+            overlay_tree(&from, &to)?;
+        } else {
+            let bytes = std::fs::read(&from)?;
+            std::fs::write(&to, bytes)
+                .with_context(|| format!("오버레이 쓰기 실패: {}", to.display()))?;
         }
     }
     Ok(())
@@ -195,5 +222,38 @@ mod tests {
         let root = sb.root.clone();
         sb.cleanup();
         assert!(!root.exists());
+    }
+
+    fn age_file(p: &Path) -> std::time::SystemTime {
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        let f = std::fs::File::options().write(true).open(p).unwrap();
+        f.set_modified(old).unwrap();
+        old
+    }
+
+    #[test]
+    fn overlay_tree_refreshes_mtime() {
+        // fs::copy였다면 macOS에서 원본 mtime(1시간 전)이 보존돼 실패한다
+        let src = fixture_with(&[("a.rs", "new")]);
+        let dst = fixture_with(&[("a.rs", "stale")]);
+        let old = age_file(&src.path().join("a.rs"));
+        overlay_tree(src.path(), dst.path()).unwrap();
+        let copied = std::fs::metadata(dst.path().join("a.rs")).unwrap().modified().unwrap();
+        assert!(copied > old + std::time::Duration::from_secs(1800), "오버레이는 mtime을 갱신해야 함 — 스테일 빌드 캐시 방지 (M6 §4)");
+        assert_eq!(std::fs::read_to_string(dst.path().join("a.rs")).unwrap(), "new");
+    }
+
+    #[test]
+    fn sync_protected_refreshes_mtime() {
+        // 에이전트가 protected를 변조·빌드해 둔 뒤 복원돼도 check가 재빌드하게
+        let fx = fixture_with(&[("tests/t.rs", "ORIGINAL")]);
+        let old = age_file(&fx.path().join("tests/t.rs"));
+        let sb = Sandbox::create(fx.path()).unwrap();
+        std::fs::write(sb.root.join("tests/t.rs"), "HACKED").unwrap();
+        sb.sync_protected(fx.path(), &["tests".to_string()]).unwrap();
+        let restored = std::fs::metadata(sb.root.join("tests/t.rs")).unwrap().modified().unwrap();
+        assert!(restored > old + std::time::Duration::from_secs(1800), "protected 복원도 mtime 갱신 (M6 §4)");
+        assert_eq!(std::fs::read_to_string(sb.root.join("tests/t.rs")).unwrap(), "ORIGINAL");
+        sb.cleanup();
     }
 }
