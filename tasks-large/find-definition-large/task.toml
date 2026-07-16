@@ -1,0 +1,12 @@
+prompt = "함수 restock_threshold의 정의(구현 본문)가 있는 파일의 경로를 프로젝트 루트 기준 상대 경로로, 프로젝트 루트의 answer.txt에 한 줄로 저장하라. 재수출(re-export) 지점이나 테스트 헬퍼가 아닌 실제 정의 위치여야 한다. 저장 후 cargo test로 확인하라."
+check = "cargo test"
+timeout_secs = 600
+check_timeout_secs = 300
+protected = [
+  "Cargo.toml",
+  "inv-core/Cargo.toml",   "inv-core/tests",
+  "inv-parse/Cargo.toml",  "inv-parse/tests",
+  "inv-store/Cargo.toml",  "inv-store/tests",
+  "inv-report/Cargo.toml", "inv-report/tests",
+  "inv-cli/Cargo.toml",    "inv-cli/tests",
+]
