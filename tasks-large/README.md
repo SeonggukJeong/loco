@@ -49,9 +49,11 @@ forecast.rs의 `required_net_for_target`가 옛 1.10 제수를 유지한다 — 
 **플랜 가정과의 괴리**: 플랜(§3)은 "inv-parse/inv-report/inv-store가 알파벳 순서상 100개
 상한을 넘어갈 수 있다"고 가정했다. 실측 결과 세 과제 중 update-vat-rate만 실제로 100개
 상한에 걸려 절삭되지만(check_vat_*.rs 판정 파일 3벌이 추가되어 트리가 101줄 — 100개+
-`[tree truncated]`), 절삭 지점은 `inv-store/tests/store_basic.rs` 직후로, 정답 파일 4개
-(update-vat-rate) 모두 그보다 훨씬 앞에서 이미 노출된 뒤다. 즉 depth3 정답 파일은 세
-과제 어디에서도 개수 상한에 걸려 잘린 적이 없다 — 실제로 노출을 좌우하는 것은 개수
+`[tree truncated]`), 절삭 지점은 `inv-store/tests/store_basic.rs` 직후로, update-vat-rate
+정답 파일 중 depth≤3인 3개(invoice.rs·forecast.rs·defaults.rs)는 그보다 훨씬 앞에서
+이미 노출된 뒤고, pricing.rs는 depth4라 절삭 여부와 무관하게 애초에 노출되지 않는다.
+즉 depth3 정답 파일은 세 과제 어디에서도 개수 상한에 걸려 잘린 적이 없다 — 실제로
+노출을 좌우하는 것은 개수
 상한이 아니라 **depth=3 재귀 상한**이다: `inv-core/src/rules/` 아래(mod.rs, pricing.rs)처럼
 src/ 밑에 한 단계 더 들어간 파일만 정확히, 그리고 항상 제외된다. 나머지 5개 정답 파일
 (전부 `inv-*/src/*.rs`, depth3)은 100개 상한 도달 여부와 무관하게 전부 노출된다.
