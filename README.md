@@ -3,14 +3,29 @@
 로컬에서 서빙되는 소형 LLM(OpenAI 호환 API)으로 코딩을 지원하는 CLI.
 설계 문서: `docs/superpowers/specs/2026-07-02-loco-design.md`
 
-## 프로젝트 상태: M7 완료 · 모델 세트 재편 (2026-07-16)
+## 프로젝트 상태: M8 완료 · 대형 저장소 트랙 (2026-07-17)
 
-M7은 측정 체계 마무리다 — 모델 세트 재편(qwen3-vl-4b 은퇴, Ornith 9B를 Qwen3 계열
-대표 기준선으로 승격), 평균 s/런의 리포트 1급 지표화, 판정 무결성 보강(cargo config
-스냅샷 감지), 테스트·문서 부채 정리. 판정기·에이전트 코드는 불변이라 v2 수치는 그대로
-비교 가능하다. 상세는 `docs/baselines.md` "모델 세트 재편 (M7)" 절.
+M8은 실사용 조건 측정이다 — 수만 라인급 사내 코드베이스 항해가 실제 병목이라는
+북극성(폐쇄망 동료 배포)에 맞춰, 5크레이트 ~11.6K LOC 재고/물류 워크스페이스 픽스처
+(`tasks-large/`, 검색 오염 함정 11종 내장)와 과제 3개를 신설하고 gemma·ornith 8K
+베이스라인 + ornith 32K 민감도를 측정했다. 하네스 코드 변경 0. 결과: 소형 세트에서
+94.4%였던 ornith이 대형 저장소 8K에서 55.6%로 떨어지고, 32K가 관대 통과를 88.9%로
+구제하지만 엄격(종료 규율)은 44.4%로 불변 — 컨텍스트와 종료 규율이 별개 병목임을
+확인했다. 27런 실패 분류가 M9 우선순위를 확정(`docs/research/2026-07-17-m8-failure-analysis.md`):
+repo-map은 강등(모델들이 트리를 안 보고 grep 직행), 최우선은 edit_file 자기-버그 완화.
 
-### v2 기준선 요지 (상세 `docs/baselines.md`)
+### M8 대형 저장소 트랙 요지 (상세 `docs/baselines.md` M8 절)
+
+| 조건 | 통과 | 엄격(Finished∧통과) | 평균 s/런 |
+|---|---|---|---|
+| gemma-4-e4b @8K | 44.4% (4/9) | 44.4% | 80.5s |
+| ornith-1.0-9b @8K | 55.6% (5/9) | 44.4% | 156.8s |
+| ornith-1.0-9b @32K | 88.9% (8/9) | 44.4% | 217.8s |
+
+과제 3 × 3반복 = 9런, seed 0. ornith 실측 사양표(프리필 ~334 tok/s·KV 32 KiB/토큰 —
+하이브리드 아치라 RAM-only 폐쇄망에서 32K 운용 총 ~7 GiB)도 같은 절에 있다.
+
+### v2 기준선 요지 — 소형 세트 `tasks/` (상세 `docs/baselines.md`)
 
 | 모델 | 통과 | 엄격(Finished∧통과) | 거짓 성공 finish | 평균 s/런 | 세트 지위 |
 |---|---|---|---|---|---|
@@ -62,13 +77,16 @@ REPL에 입력한 내용은 에이전트가 처리한다 — 모델이 read_file
 
 ## 평가 하네스 (eval)
 
-과제 세트를 돌려 모델의 코딩 성공률을 측정한다:
+과제 세트를 돌려 모델의 코딩 성공률을 측정한다. 세트는 둘이다 — `tasks/`(소형
+크레이트 12과제)와 `tasks-large/`(M8 신설, 5크레이트 워크스페이스 3과제 — 함정
+대장·드리프트 절차는 `tasks-large/README.md`):
 
 ```
 cargo run -- eval tasks/                          # 과제당 1회
 cargo run -- eval tasks/ --repeats 3 --seed 0      # 과제당 3회 반복 (시드 0/1/2)
 cargo run -- eval tasks/ --timeout-scale 2.0       # 느린 머신 — 모든 타임아웃 ×2
 cargo run -- eval tasks/ --verify                  # 판정기 게이트 (LLM 없이) — 아래 참고
+cargo run -- eval tasks-large/ --repeats 3         # 대형 저장소 트랙도 동일 사용법
 ```
 
 `--verify`는 모델 없이 판정기 자체를 검증하는 메타테스트다(M6): 과제마다 원본 픽스처에서
@@ -124,3 +142,7 @@ command_timeout_secs = 60
 - [x] M7: 모델 세트 재편·속도 지표·판정 무결성 보강 — qwen3-vl-4b 은퇴, Ornith 9B 기준선
       승격(재측정 없음), report 최상위 평균 s/런, cargo config 스냅샷 감지
       (`eval/integrity.rs`), 테스트·문서 부채 정리. 판정기·에이전트 코드 불변
+- [x] M8: 대형 저장소 트랙 — `tasks-large/`(~11.6K LOC 워크스페이스 픽스처 + 과제 3,
+      함정 11종, `--verify` 3/3) 신설, 8K 베이스라인·32K 민감도·ornith 실측 사양표 측정,
+      레퍼런스 노트 3건(aider repo-map·codex-rs·grok-build), 27런 실패 분류로 M9
+      우선순위 확정. 하네스 코드 변경 0 — 위 "프로젝트 상태"와 `docs/baselines.md` 참고
