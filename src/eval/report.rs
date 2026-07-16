@@ -35,6 +35,7 @@ pub struct RunRecord {
     pub passed: bool,
     pub outcome: RunOutcome,
     pub turns: usize,
+    /// 에이전트 실행 시간(agent.run)만 — 판정 check·샌드박스 준비 제외 (M7 §4)
     pub duration_secs: f64,
 }
 
@@ -82,6 +83,7 @@ pub struct Report {
     pub repeats: usize,
     pub timeout_scale: f64,
     pub started_at: String,
+    /// 하네스 벽시계 총합 — check 실행·샌드박스 준비 오버헤드 포함 (M7 §4 의미 구분)
     pub duration_secs: f64,
     /// Ctrl+C로 중단된 부분 결과인지 — 표와 종료 코드(1)에 반영
     pub interrupted: bool,
@@ -90,6 +92,9 @@ pub struct Report {
     pub passed_count: usize,
     pub passed_strict_count: usize,
     pub false_finish_count: usize,
+    /// 런당 에이전트 실행 시간의 **런 가중** 평균 — per-run `duration_secs`(agent.run만
+    /// 계측, check 제외) 정의 승계라 벽시계 `duration_secs`/총런수와 일치하지 않는다 (M7 §4)
+    pub avg_duration_secs: f64,
     pub effective_config: EffectiveConfig,
 }
 
@@ -103,6 +108,16 @@ impl Report {
         }
         let passed: usize = tasks.iter().map(|t| t.runs.iter().filter(|r| r.passed).count()).sum();
         passed as f64 / total as f64
+    }
+
+    /// 런 가중 평균 s/런 — total_of와 같은 정의 철학 (반복 수가 달라도 왜곡 없음, M7 §4)
+    pub fn avg_duration_of(tasks: &[TaskReport]) -> f64 {
+        let total: usize = tasks.iter().map(|t| t.runs.len()).sum();
+        if total == 0 {
+            return 0.0;
+        }
+        let sum: f64 = tasks.iter().flat_map(|t| t.runs.iter().map(|r| r.duration_secs)).sum();
+        sum / total as f64
     }
 
     /// stdout용 한국어 표 (스펙 §8 리포트). 폭 계산이 char 수 기준이라 한글
@@ -127,12 +142,13 @@ impl Report {
         let total: usize = self.tasks.iter().map(|t| t.runs.len()).sum();
         let strict_rate = if total == 0 { 0.0 } else { self.passed_strict_count as f64 / total as f64 };
         out.push_str(&format!(
-            "전체 통과율 {:.1}% ({}/{total}) · 엄격 {:.1}% ({}/{total}) · 거짓 성공 finish {} (시드 {}부터, timeout×{}){}\n",
+            "전체 통과율 {:.1}% ({}/{total}) · 엄격 {:.1}% ({}/{total}) · 거짓 성공 finish {} · 평균 {:.1}s/런 (시드 {}부터, timeout×{}){}\n",
             self.total_pass_rate * 100.0,
             self.passed_count,
             strict_rate * 100.0,
             self.passed_strict_count,
             self.false_finish_count,
+            self.avg_duration_secs,
             self.base_seed,
             self.timeout_scale,
             if self.interrupted { " — 중단됨(부분 결과)" } else { "" }
@@ -151,6 +167,22 @@ mod tests {
 
     fn run_with(passed: bool, outcome: RunOutcome) -> RunRecord {
         RunRecord { repeat: 0, seed: 0, passed, outcome, turns: 1, duration_secs: 1.0 }
+    }
+
+    #[test]
+    fn top_level_avg_duration_is_run_weighted() {
+        // 런 가중 — 과제별 평균의 평균이 아님 (M7 §4): (10+20+60)/3 = 30, 평균의 평균이면 37.5
+        let a = TaskReport::from_runs("a".into(), vec![run(true, 1, 10.0), run(true, 1, 20.0)]);
+        let b = TaskReport::from_runs("b".into(), vec![run(false, 1, 60.0)]);
+        assert_eq!(Report::avg_duration_of(&[a, b]), 30.0);
+        assert_eq!(Report::avg_duration_of(&[]), 0.0, "빈 목록은 0 (0나눗셈 금지)");
+    }
+
+    #[test]
+    fn table_shows_avg_duration_per_run() {
+        // sample_report는 38.5s 런 1개 — 요약 라인에 평균 s/런 노출 (M7 §4)
+        let table = sample_report().render_table();
+        assert!(table.contains("평균 38.5s/런"), "{table}");
     }
 
     #[test]
@@ -239,6 +271,7 @@ mod tests {
             duration_secs: 40.0,
             interrupted: false,
             total_pass_rate: Report::total_of(&tasks),
+            avg_duration_secs: Report::avg_duration_of(&tasks),
             passed_count: 1,
             passed_strict_count: 1,
             false_finish_count: 0,
@@ -258,7 +291,7 @@ mod tests {
     #[test]
     fn report_json_has_design_schema_fields() {
         let v = serde_json::to_value(sample_report()).unwrap();
-        for key in ["model", "base_seed", "repeats", "timeout_scale", "started_at", "duration_secs", "interrupted", "tasks", "total_pass_rate", "effective_config"] {
+        for key in ["model", "base_seed", "repeats", "timeout_scale", "started_at", "duration_secs", "interrupted", "tasks", "total_pass_rate", "effective_config", "avg_duration_secs"] {
             assert!(v.get(key).is_some(), "리포트에 {key} 필드가 있어야 함");
         }
         assert_eq!(v["tasks"][0]["runs"][0]["seed"], 0, "시드 기록 (스펙 §8 재현성)");
