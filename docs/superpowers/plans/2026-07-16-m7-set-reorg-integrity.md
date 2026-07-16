@@ -170,7 +170,7 @@ git commit -m "feat(eval): report 최상위 평균 s/런 — 런 가중 집계·
 use std::path::{Path, PathBuf};
 
 /// 파일 상태 3종 — 상태 전이 일체(내용↔부재↔읽기불가)가 변조다 (M7 §5)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 enum FileState {
     Absent,
     Unreadable,
@@ -187,10 +187,11 @@ fn state_of(path: &Path) -> FileState {
 
 /// env CARGO_HOME → 없으면 홈 밑 `.cargo`. 둘 다 불가면 None (호출부가 감시 생략을 알림)
 pub fn resolve_cargo_home() -> Option<PathBuf> {
-    if let Some(v) = std::env::var_os("CARGO_HOME") {
-        if !v.is_empty() {
-            return Some(PathBuf::from(v));
-        }
+    // let-chain 병합 — clippy 1.97(edition 2024)의 collapsible_if가 -D warnings에서 에러
+    if let Some(v) = std::env::var_os("CARGO_HOME")
+        && !v.is_empty()
+    {
+        return Some(PathBuf::from(v));
     }
     std::env::home_dir().map(|h| h.join(".cargo"))
 }
@@ -542,10 +543,36 @@ Expected: 세 줄 (gemma·qwen·ornith 순, ornith은 ~67.3s). **폴백**(report
 
 `{Step 1 값}`은 Step 1 산출값으로 치환 (플레이스홀더를 남기지 말 것).
 
-(b) "### 탐색: 9B (저사양 대형모델 방향, 기준선 아님)" 헤딩 바로 아래에 한 줄 추가:
+(b) "탐색: 9B" 절의 탐색 단서를 제거해 기준선으로 재지정 (스펙 §3 — 헤딩·본문 모두,
+승격 안내만 덧붙이면 "기준선이 아니다" 본문과 자기모순이 되므로 본문도 시제 처리):
+
+헤딩(`docs/baselines.md:207`) 교체 — old:
 
 ```markdown
-> **M7 갱신**: 이 측정은 기준선으로 승격되었다 — 아래 "모델 세트 재편 (M7)" 절 참고.
+### 탐색: 9B (저사양 대형모델 방향, 기준선 아님)
+```
+
+new:
+
+```markdown
+### 9B 측정 (측정 당시 탐색 — M7에서 기준선 승격)
+```
+
+이어지는 본문 첫 문단의 "**기준선이 아니다**: ..." 문장 교체 — old:
+
+```markdown
+프로젝트 방향 전환(README 2026-07-13 — "저사양 하드웨어에서 대형 모델 구동")의 첫 실측. **기준선이
+아니다**: 모델 세트(gemma·qwen 4B) 밖이고, 4B→9B 크기 + 파인튜닝 차이가 섞여 위 표와 대등 비교가
+아니라 "같은 하네스에서 더 큰 같은-계열(Qwen3) 모델이 어떻게 하나"의 탐색이다.
+```
+
+new:
+
+```markdown
+프로젝트 방향 전환(README 2026-07-13 — "저사양 하드웨어에서 대형 모델 구동")의 첫 실측. **측정
+당시에는 기준선이 아니었다**: 모델 세트(gemma·qwen 4B) 밖이고, 4B→9B 크기 + 파인튜닝 차이가 섞여
+위 표와 대등 비교가 아니라 "같은 하네스에서 더 큰 같은-계열(Qwen3) 모델이 어떻게 하나"의
+탐색이었다. **M7 세트 재편으로 기준선에 승격** — 경위는 아래 "모델 세트 재편 (M7)" 절 참고.
 ```
 
 (c) M5 "잔여 한계" 절의 `.cargo` 항목(`docs/baselines.md:136`) 끝에 문장 추가:
@@ -578,6 +605,21 @@ M7은 측정 체계 마무리다 — 모델 세트 재편(qwen3-vl-4b 은퇴, Or
 ```
 
 표 아래 측정 조건 문장은 유지하되 끝에 추가: `모델 세트 재편 경위는 docs/baselines.md 참고.`
+
+(c) 하단 마일스톤 체크리스트(`README.md:129-130`)의 M7 항목 교체 — old:
+
+```markdown
+- [ ] M7: 미스코핑 — 후보는 품질 마무리(multiline-string-edit 잔여 0, SALVAGE_NOTE 소실,
+      과제 확장) vs 대형모델·큰-컨텍스트 방향(9B 탐색 후속, `context_tokens` 상향)
+```
+
+new:
+
+```markdown
+- [x] M7: 모델 세트 재편·속도 지표·판정 무결성 보강 — qwen3-vl-4b 은퇴, Ornith 9B 기준선
+      승격(재측정 없음), report 최상위 평균 s/런, cargo config 스냅샷 감지
+      (`eval/integrity.rs`), 테스트·문서 부채 정리. 판정기·에이전트 코드 불변
+```
 
 - [ ] **Step 4: CLAUDE.md 편집 (영문 유지)**
 
