@@ -144,6 +144,31 @@ mod tests {
     }
 
     #[test]
+    fn partial_eviction_third_hit_evicts_oldest_and_stays_ok() {
+        // M7 §6.2 — 완전 축출(window_caps_at_eight_entries)과 구별되는 오프바이원 경계:
+        // 히트2+패딩6=만석 → 3번째 히트 푸시가 스스로 최고령 히트를 축출 → 카운트 2 → Ok
+        let mut t = RepetitionTracker::new();
+        t.record("a|1", "r");
+        t.record("a|1", "r");
+        for i in 0..6 {
+            t.record(&format!("pad|{i}"), "x");
+        }
+        assert!(matches!(t.record("a|1", "r"), RepetitionVerdict::Ok), "축출로 3회 미달");
+    }
+
+    #[test]
+    fn partial_eviction_one_fewer_pad_still_corrects() {
+        // 위 케이스의 쌍 — 패딩 하나 적으면(2+5=7, 축출 없음) 3회가 성립해 교정 주입
+        let mut t = RepetitionTracker::new();
+        t.record("a|1", "r");
+        t.record("a|1", "r");
+        for i in 0..5 {
+            t.record(&format!("pad|{i}"), "x");
+        }
+        assert!(matches!(t.record("a|1", "r"), RepetitionVerdict::InjectCorrection));
+    }
+
+    #[test]
     fn same_error_first_sentence_three_times_yields_strategy_correction_once() {
         let mut t = RepetitionTracker::new();
         assert!(t.error_correction("edit_file", "Error: edit failed: search block not found. Closest match at lines 3-5:\nfoo").is_none());

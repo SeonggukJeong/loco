@@ -182,6 +182,24 @@ mod tests {
     }
 
     #[test]
+    fn literal_fallback_and_truncation_combine() {
+        // M7 §6.1 — 폴백 헤더(캡 값 보고)와 절단 마커가 공존하는 결합 경로 고정.
+        // 각각은 invalid_regex_*·caps_matches_at_50이 커버하지만 결합은 비어 있었다
+        let dir = tempfile::tempdir().unwrap();
+        let body: String = (1..=60).map(|i| format!("val {{hit}} {i}\n")).collect();
+        std::fs::write(dir.path().join("many.txt"), body).unwrap();
+        let ctx = ToolCtx::new(dir.path().to_path_buf());
+        let out = Grep.run(&serde_json::json!({"pattern": "{hit}"}), &ctx).unwrap();
+        assert!(out.starts_with("invalid regex"), "{out}");
+        assert!(
+            out.contains(&format!("literal text instead - {MAX_MATCHES} matches")),
+            "헤더는 캡된 매치 수를 보고: {out}"
+        );
+        assert_eq!(out.matches("many.txt:").count(), MAX_MATCHES, "{out}");
+        assert!(out.contains("[more matches truncated at 50]"), "{out}");
+    }
+
+    #[test]
     fn binary_files_are_skipped() {
         let (dir, ctx) = setup();
         std::fs::write(dir.path().join("bin.dat"), [0xFF, 0x00, b'f', b'n']).unwrap();
