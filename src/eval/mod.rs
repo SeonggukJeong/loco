@@ -117,6 +117,9 @@ pub async fn run_eval<C: LlmClient>(
         duration_secs: started.elapsed().as_secs_f64(),
         interrupted,
         total_pass_rate: Report::total_of(&task_reports),
+        passed_count: task_reports.iter().map(|t| t.passed_count).sum(),
+        passed_strict_count: task_reports.iter().map(|t| t.passed_strict_count).sum(),
+        false_finish_count: task_reports.iter().map(|t| t.false_finish_count).sum(),
         tasks: task_reports,
         effective_config: EffectiveConfig {
             base_url: config.base_url.clone(),
