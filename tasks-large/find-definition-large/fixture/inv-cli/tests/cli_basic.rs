@@ -1,11 +1,8 @@
 //! inv-cli 베이스 테스트: 라우팅 단위 테스트.
 //!
-//! `calc_total_v2`/`monthly_total`의 합계값과 세율 파생값(`apply_tax`/
-//! `invoice_total`/`forecast_projection`이 실제로 계산한 값,
-//! `DEFAULT_VAT_PERCENT`)은 설정에 따라 바뀔 수 있는 값이라 이 파일에서는
-//! 단정하지 않는다. 여기서는 인자 파싱이 올바른 `Command`를 만드는지, 각
-//! 서브커맨드가 올바르게 라우팅되는지(출력에 기대한 문구/구조가 담기는지)만
-//! 검증한다.
+//! 정책에 따라 바뀌는 파생값(세율 등)은 여기서 단정하지 않는다. 여기서는
+//! 인자 파싱이 올바른 `Command`를 만드는지, 각 서브커맨드가 올바르게
+//! 라우팅되는지(출력에 기대한 문구/구조가 담기는지)만 검증한다.
 
 use inv_cli::commands::{ingest, inventory, movement, report};
 use inv_cli::{dispatch, is_known_command, parse_args, Command};

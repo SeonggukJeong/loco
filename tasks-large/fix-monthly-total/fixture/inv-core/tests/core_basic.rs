@@ -1,8 +1,6 @@
 //! inv-core 베이스 테스트.
 //!
-//! monthly_total/calc_total_v2의 합계값, apply_tax/invoice_total/
-//! forecast_projection/DEFAULT_VAT_PERCENT 등 세율 파생값은 설정이나
-//! 정책에 따라 바뀔 수 있는 값이라 이 파일에서는 단정하지 않는다. 대신
+//! 정책에 따라 바뀌는 파생값(세율 등)은 여기서 단정하지 않는다. 대신
 //! 정렬/검증/임계값 계산 같은 순수 헬퍼 함수의 동작만 검증한다.
 
 use inv_core::ledger::{sort_by_sku, LedgerLine, LineKind};
