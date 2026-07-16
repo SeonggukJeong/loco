@@ -202,28 +202,50 @@ m9-candidates 리스크 ②를 그대로 진다 — grok-build는 이 축을 해
 
 전부 `gh api repos/xai-org/grok-build/contents/<path>`로 2026-07-17 `main`에서
 직접 취득(`-H "Accept: application/vnd.github.raw"`로 원문, 대형 파일은 grep으로
-대상 구간만 확인).
+대상 구간만 확인). 저장소 루트: https://github.com/xai-org/grok-build/tree/main
 
-- §1: `crates/common/xai-tool-runtime/src/{tool,dispatch,error}.rs`(툴
-  트레이트·인자 디코딩, 무살베지 확인) · `xai-grok-tools/src/retry.rs` +
-  `xai-grok-sampler/src/{retry,doom_loop}.rs`(229행, 서버발 퇴화-반복 신호
-  관용 파싱) · `xai-grok-shell/src/agent/config_model_override_parse.rs`
-  (24213바이트, config 관용 파싱 철학) · `xai-grok-sampling-types/src/
-  types.rs` 1013-1030행(`ApiBackend` 3종 전부 구조화 API 확인)
-- §2: `xai-grok-tools/src/implementations/grok_build/search_replace/
-  {mod,helpers}.rs`(2482+532행, 매칭 사다리·진단 힌트) ·
-  `.../grok_build/grep/{mod,ripgrep}.rs`(ripgrep 셸아웃)
-- §3: `xai-grok-config/src/{paths,loader}.rs`(`~/.grok/config.toml` 경로) ·
-  `xai-grok-shell/src/agent/config.rs` 3570-3610행(`ConfigModelOverride`,
-  파일 전체 462KB 중 grep으로 대상 구간만 취득 — 전체 미열람) ·
-  `xai-grok-sampler/src/config.rs`(`SamplerConfig`)
-- §4: `xai-grok-subagent-resolution/src/{lib,types}.rs` ·
-  `xai-grok-tools/src/implementations/grok_build/task/{mod,types,backend}.rs`
-  (TaskTool·`SubagentResult`·깊이 제한) · `xai-grok-agent/src/agent.rs`
+**§1** (툴 트레이트·인자 디코딩, 무살베지 확인 / 재시도 인프라 / 관용 파싱 사례):
+- https://github.com/xai-org/grok-build/blob/main/crates/common/xai-tool-runtime/src/tool.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/common/xai-tool-runtime/src/dispatch.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/common/xai-tool-runtime/src/error.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-tools/src/retry.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-sampler/src/retry.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-sampler/src/doom_loop.rs
+  (229행, 서버발 퇴화-반복 신호 관용 파싱)
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-shell/src/agent/config_model_override_parse.rs
+  (24213바이트, config 관용 파싱 철학)
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-sampling-types/src/types.rs
+  (1013-1030행, `ApiBackend` 3종 전부 구조화 API 확인)
+
+**§2** (매칭 사다리·진단 힌트 / ripgrep 셸아웃):
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-tools/src/implementations/grok_build/search_replace/mod.rs
+  (2482행)
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-tools/src/implementations/grok_build/search_replace/helpers.rs
+  (532행)
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-tools/src/implementations/grok_build/grep/mod.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-tools/src/implementations/grok_build/grep/ripgrep.rs
+
+**§3** (`~/.grok/config.toml` 경로 / `ConfigModelOverride` / `SamplerConfig`):
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-config/src/paths.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-config/src/loader.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-shell/src/agent/config.rs
+  (3570-3610행, `ConfigModelOverride` — 파일 전체 462KB 중 grep으로 대상
+  구간만 취득, 전체 미열람)
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-sampler/src/config.rs
+  (`SamplerConfig`)
+
+**§4** (서브에이전트 해석 크레이트 / TaskTool·`SubagentResult`·깊이 제한):
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-subagent-resolution/src/lib.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-subagent-resolution/src/types.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/types.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/backend.rs
+- https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-agent/src/agent.rs
   (296행, `should_auto_compact` 참고용 — 필수 절 범위 밖)
-- 로컬: `CLAUDE.md`, `src/agent/protocol.rs`, `docs/m9-candidates.md`,
-  `docs/superpowers/specs/2026-07-16-m8-large-repo-track-design.md` §7 —
-  loco 비교 기준 및 승격 배경 (§1, §4)
+
+**로컬**: `CLAUDE.md`, `src/agent/protocol.rs`, `docs/m9-candidates.md`,
+`docs/superpowers/specs/2026-07-16-m8-large-repo-track-design.md` §7 —
+loco 비교 기준 및 승격 배경 (§1, §4)
 
 **미확인/조사 범위 밖**: `api_base_url`과 `base_url` 필드의 정확한 역할
 분담(양쪽 다 `ConfigModelOverride`에 존재, `apply()` 메서드 일부만 확인),
