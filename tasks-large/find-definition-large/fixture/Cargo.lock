@@ -13,6 +13,9 @@ version = "0.1.0"
 [[package]]
 name = "inv-parse"
 version = "0.1.0"
+dependencies = [
+ "inv-core",
+]
 
 [[package]]
 name = "inv-report"
@@ -21,3 +24,6 @@ version = "0.1.0"
 [[package]]
 name = "inv-store"
 version = "0.1.0"
+dependencies = [
+ "inv-core",
+]
