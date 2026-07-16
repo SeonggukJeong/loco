@@ -506,7 +506,7 @@ Expected: 세 줄 (gemma·qwen·ornith 순, ornith은 ~67.3s). **폴백**(report
 
 - [ ] **Step 2: baselines.md 편집**
 
-(a) 파일 끝("### 탐색: 9B" 절 뒤)에 신설:
+(a) 파일 끝(9B 절 — (b)에서 개칭되는 그 절 — 뒤)에 신설. (a)/(b) 실행 순서 무관:
 
 ```markdown
 ## 모델 세트 재편 (M7, 2026-07-16)
@@ -573,6 +573,18 @@ new:
 당시에는 기준선이 아니었다**: 모델 세트(gemma·qwen 4B) 밖이고, 4B→9B 크기 + 파인튜닝 차이가 섞여
 위 표와 대등 비교가 아니라 "같은 하네스에서 더 큰 같은-계열(Qwen3) 모델이 어떻게 하나"의
 탐색이었다. **M7 세트 재편으로 기준선에 승격** — 경위는 아래 "모델 세트 재편 (M7)" 절 참고.
+```
+
+그리고 v2 "과제별" 표의 열 헤더(`docs/baselines.md:177`)도 개칭된 절과 짝 맞춤 — old:
+
+```markdown
+| 과제 | gemma | qwen | ornith*(탐색) |
+```
+
+new:
+
+```markdown
+| 과제 | gemma | qwen | ornith*(측정 당시 탐색) |
 ```
 
 (c) M5 "잔여 한계" 절의 `.cargo` 항목(`docs/baselines.md:136`) 끝에 문장 추가:
