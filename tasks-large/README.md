@@ -23,7 +23,11 @@ forecast.rs의 `required_net_for_target`가 옛 1.10 제수를 유지한다 — 
 지점으로, update-vat-rate 실행 시 모델이 건드려도 pass/fail에 무영향(측정 해석 시 참고).
 
 ## 과제별 정답 파일 집합
-(§4 참조 — Task 4~6에서 확정)
+- 과제1 fix-monthly-total → `inv-report/src/monthly.rs`
+- 과제2 update-vat-rate → `inv-core/src/rules/pricing.rs` · `inv-report/src/invoice.rs` · `inv-report/src/forecast.rs` · `inv-parse/src/defaults.rs`
+- 과제3 find-definition-large → `inv-core/src/rules/mod.rs`
+
+(파일별 트리 노출 여부는 바로 아래 표 참조)
 
 ### 트리 노출 판독 (§3 의도 변수, Task7)
 시스템 프롬프트에 주입되는 프로젝트 트리는 `src/agent/prompt.rs`의 `project_tree()`가
