@@ -1,10 +1,9 @@
 //! inv-core 베이스 테스트.
 //!
-//! 금지 구역 준수: monthly_total/calc_total_v2의 합계값, apply_tax/
-//! invoice_total/forecast_projection/DEFAULT_VAT_PERCENT 등 세율 파생값은
-//! 이 파일에서 절대 단정하지 않는다(향후 태스크가 심는 버그/세율 변경 후에도
-//! 이 파일의 테스트는 그대로 통과해야 하기 때문). 대신 정렬/검증/임계값
-//! 계산 같은, 버그 심기 대상이 아닌 헬퍼만 검증한다.
+//! monthly_total/calc_total_v2의 합계값, apply_tax/invoice_total/
+//! forecast_projection/DEFAULT_VAT_PERCENT 등 세율 파생값은 설정이나
+//! 정책에 따라 바뀔 수 있는 값이라 이 파일에서는 단정하지 않는다. 대신
+//! 정렬/검증/임계값 계산 같은 순수 헬퍼 함수의 동작만 검증한다.
 
 use inv_core::ledger::{sort_by_sku, LedgerLine, LineKind};
 use inv_core::rules::{restock_threshold, WarehouseGrade};

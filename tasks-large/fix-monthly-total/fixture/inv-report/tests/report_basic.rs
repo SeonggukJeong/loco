@@ -1,10 +1,11 @@
 //! inv-report 베이스 테스트.
 //!
-//! 금지 구역 준수: `calc_total_v2`/`monthly_total`의 합계값과, 부가세율
-//! 파생값(`invoice_total`/`forecast_projection`이 실제로 계산한 값,
-//! `DEFAULT_VAT_PERCENT`)은 이 파일에서 절대 단정하지 않는다(과제1의 심은
-//! 버그·과제2의 세율 변경 후에도 이 파일의 테스트는 그대로 통과해야
-//! 하기 때문). v1 `calc_total`의 합계값은 명시적으로 허용된다.
+//! `calc_total_v2`/`monthly_total`의 합계값과 세율 파생값(`invoice_total`/
+//! `forecast_projection`이 실제로 계산한 값, `DEFAULT_VAT_PERCENT`)은 정책에
+//! 따라 자주 바뀌는 값이라 이 파일에서는 구체값을 단정하지 않는다 — 그
+//! 계산 로직 자신의 테스트가 값 검증을 맡고, 여기서는 리포트 조립·요약·
+//! 포맷팅 같은 구조적 동작만 확인한다. v1 `calc_total`은 안정된 경로라
+//! 합계값을 그대로 단정한다.
 
 use inv_core::ledger::{LedgerLine, LineKind};
 use inv_report::comparison::Comparison;

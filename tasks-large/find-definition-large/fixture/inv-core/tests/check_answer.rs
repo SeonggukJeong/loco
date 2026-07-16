@@ -57,9 +57,9 @@ fn ladder_accepts_variants() {
 #[test]
 fn ladder_rejects_wrong_paths() {
     for bad in [
-        "inv-core/src/inventory.rs",        // 함정11: 재수출 지점
-        "inv-store/tests/support/mod.rs",   // 함정3: 목
-        "inv-store/src/legacy_import.rs",   // 함정6: 사본
+        "inv-core/src/inventory.rs",        // 재수출 지점
+        "inv-store/tests/support/mod.rs",   // 테스트 헬퍼
+        "inv-store/src/legacy_import.rs",   // 유사 사본
         "inv-core/src/rules",
     ] {
         assert!(!matches_target(bad), "기각해야 함: {bad:?}");

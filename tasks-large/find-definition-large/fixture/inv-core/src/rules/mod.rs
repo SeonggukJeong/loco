@@ -54,7 +54,7 @@ pub fn is_valid_priority(level: u8) -> bool {
 
 /// 등급 코드 문자열이 알려진 등급("A"/"B"/"C")인지 검사한다.
 ///
-/// `WarehouseGrade`(이 파일 하단)와는 별개의, 상품 등급 코드다 — 이름이
+/// `WarehouseGrade`와는 별개의, 상품 등급 코드다 — 이름이
 /// 비슷해 혼동하기 쉬우니 주의.
 pub fn is_valid_grade_code(code: &str) -> bool {
     matches!(code, "A" | "B" | "C")

@@ -1,10 +1,8 @@
 //! inv-parse 베이스 테스트.
 //!
-//! 금지 구역 준수: `DEFAULT_VAT_PERCENT`의 값이나 `parse_config`가 반환한
-//! `vat_percent` 값은 이 파일에서 절대 단정하지 않는다(부가세율 변경
-//! 과제의 판정 신호이기 때문 — 세율이 바뀐 뒤에도 이 파일의 테스트는
-//! 그대로 통과해야 한다). 대신 구조 파싱(컬럼 분리, 필드 추출, 오류 종류
-//! 판별)만 검증한다.
+//! `DEFAULT_VAT_PERCENT`의 값이나 `parse_config`가 반환한 `vat_percent`
+//! 값은 정책에 따라 자주 바뀌는 값이라 이 파일에서는 단정하지 않는다.
+//! 대신 구조 파싱(컬럼 분리, 필드 추출, 오류 종류 판별)만 검증한다.
 
 use inv_parse::config::parse_config;
 use inv_parse::csv::{parse_row, split_csv_line, ParseError};
