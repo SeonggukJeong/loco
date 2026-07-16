@@ -1,6 +1,7 @@
 //! 평가 하네스 오케스트레이터 (스펙 §8, 설계 2026-07-03).
 //! 인프로세스로 Agent::run을 호출한다 — 가짜 LlmClient로 서버 없이 테스트 가능.
 
+pub mod integrity;
 pub mod report;
 pub mod sandbox;
 pub mod task;
@@ -50,6 +51,14 @@ pub async fn run_eval<C: LlmClient>(
     let started_at = utc_stamp(now_secs());
     let report_dir = create_report_dir(project_root, &started_at)?;
 
+    // M7 §5: 샌드박스 밖 cargo config 변조 감지 — 시작 시 1회 스냅샷, 매 런 check 전 비교
+    let cargo_home = integrity::resolve_cargo_home();
+    if cargo_home.is_none() {
+        eprintln!("(CARGO_HOME을 해석할 수 없어 해당 감시를 생략합니다 — env 미설정·홈 없음)");
+    }
+    let cargo_snapshot =
+        integrity::CargoConfigSnapshot::take(cargo_home.as_deref(), &std::env::temp_dir());
+
     // 장수 SIGINT 리스너 + 공유 플래그. tokio의 ctrl_c()는 첫 폴링에서 프로세스
     // 기본 SIGINT 동작을 영구 대체하고 등록 이후의 신호만 보므로, select! 창 밖
     // 구간(샌드박스 복사·protected 동기화·check 실행)의 Ctrl+C가 유실되지 않게
@@ -83,7 +92,7 @@ pub async fn run_eval<C: LlmClient>(
                 }
                 let seed = opts.base_seed + repeat as u64;
                 eprintln!("[{}] {}/{} 실행 중… (시드 {seed})", t.name, repeat + 1, opts.repeats);
-                match run_once(client, config, model, t, seed, repeat, opts, &report_dir, &interrupt).await? {
+                match run_once(client, config, model, t, seed, repeat, opts, &report_dir, &interrupt, &cargo_snapshot).await? {
                     Some(rec) => {
                         eprintln!(
                             "[{}] {}/{} — {} ({:?}, {}턴, {:.1}s)",
@@ -150,6 +159,7 @@ async fn run_once<C: LlmClient>(
     opts: &EvalOptions,
     report_dir: &Path,
     interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    cargo_snapshot: &integrity::CargoConfigSnapshot,
 ) -> anyhow::Result<Option<RunRecord>> {
     let mut cfg = config.clone();
     if let Some(mt) = t.spec.max_turns {
@@ -199,7 +209,7 @@ async fn run_once<C: LlmClient>(
             return Ok(None);
         }
         Err(Stopped::TimedOut) => {
-            let rec = judge(&sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat, interrupt).await;
+            let rec = judge(&sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat, interrupt, cargo_snapshot).await;
             sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
             return rec;
         }
@@ -212,7 +222,7 @@ async fn run_once<C: LlmClient>(
         // eval에선 도달하지 않음(플래그는 run_bounded만 세우고 그 경로는 위에서 반환) — 방어적 매핑
         AgentOutcome::Cancelled => RunOutcome::Timeout,
     };
-    let rec = judge(&sb, t, opts, kind, turns, elapsed, seed, repeat, interrupt).await;
+    let rec = judge(&sb, t, opts, kind, turns, elapsed, seed, repeat, interrupt, cargo_snapshot).await;
     sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
     rec
 }
@@ -231,9 +241,11 @@ async fn judge(
     seed: u64,
     repeat: usize,
     interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    cargo_snapshot: &integrity::CargoConfigSnapshot,
 ) -> anyhow::Result<Option<RunRecord>> {
     sb.sync_protected(&t.fixture, &with_implicit_protected(&t.spec.protected))?;
     cargo_tripwire(&sb.root)?;
+    cargo_snapshot.verify_unchanged()?;
     let check_timeout = scaled_timeout(t.spec.check_timeout_secs, opts.timeout_scale);
     let check = t.spec.check.clone();
     let root = sb.root.clone();
@@ -291,8 +303,9 @@ pub(crate) fn with_implicit_protected(protected: &[String]) -> Vec<String> {
 }
 
 /// 샌드박스 상위 경로(base까지)에 .cargo가 있으면 판정 무결성 훼손으로 하네스 중단.
-/// cargo의 config 탐색이 cwd에서 루트로 상향하기 때문 — $CARGO_HOME/홈 벡터는
-/// 미차단 잔여 한계 (docs/baselines.md 한계 절 참고)
+/// 실효 검사는 temp_dir/.cargo 하나다 — 샌드박스 부모가 곧 temp_dir이고 base에서
+/// 중단하므로. temp_dir 상위 조상과 $CARGO_HOME/홈 config는 M7 스냅샷 감지
+/// (integrity.rs)가 맡고, cargo 바이너리 교체 벡터는 백로그 (M7 스펙 §5)
 fn cargo_tripwire_from(sandbox_root: &Path, base: &Path) -> anyhow::Result<()> {
     let mut cur = sandbox_root.parent();
     while let Some(dir) = cur {
