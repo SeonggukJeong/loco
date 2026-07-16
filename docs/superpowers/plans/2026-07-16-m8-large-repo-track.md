@@ -17,7 +17,8 @@
 - 픽스처 식별자는 영문, 주석은 일부 한국어 혼용(사내 코드 현실성 — 함정 앵커·grep 대상)
 - 모든 크레이트에 `tests/` 디렉토리 필수 (protected 목록의 로더 존재-검사 대응, 스펙 §4)
 - **베이스 테스트 금지 구역**: 베이스(공통) 테스트는 ①`monthly_total`/`calc_total_v2`의 합계값 ②부가세율 파생값(`apply_tax`/`invoice_total`/`forecast_projection`/`DEFAULT_VAT_PERCENT`)을 절대 단정하지 않는다 — 과제 1의 심은 버그·과제 2의 세율 변경 후에도 베이스 테스트는 전부 통과해야 하기 때문(판정 신호 = 판정 테스트만)
-- `tasks-large/` 변경 후에는 반드시 `cargo run -- eval tasks-large --verify` 실행 (CLAUDE.md의 tasks/ 규칙과 동일)
+- `tasks-large/` 변경 후에는 반드시 `cargo run -- eval tasks-large --verify` 실행 (CLAUDE.md의 tasks/ 규칙과 동일) — **단 task.toml이 처음 생기는 Task 4부터**(그 전엔 로더가 task.toml 부재로 하네스 에러 exit 1이 정상)
+- **픽스처 안에서 `cargo test`를 실행한 모든 스텝은 직후 `cargo clean`(또는 `rm -rf target`) 필수** — 샌드박스 복사(`copy_tree`)는 .gitignore를 존중하지 않으므로 잔존 `target/`(수백 MB)이 통째로 복사되어 매 런이 웜 빌드로 시작, "콜드 빌드가 매 런 발생"이라는 측정 전제(스펙 §4·§5의 타임아웃 근거)와 재현성이 깨진다
 - 커밋은 conventional commits(제목 한국어 가능), 태스크당 1커밋 이상
 - 측정(Task 10~12)은 서브에이전트 위임 금지·모델 로드는 사용자 협조·측정 중 cargo 빌드 금지 (docs/baselines.md 프로토콜)
 - **"핀 고정 인터페이스" 절과 "공통 protected 목록"은 전 태스크의 요구사항에 암묵 포함** — 태스크 단위로 디스패치할 때 반드시 태스크 본문과 함께 제공할 것
@@ -104,7 +105,7 @@ pub fn invoice_total(subtotal_krw: i64) -> i64 { subtotal_krw * 110 / 100 }
 pub fn forecast_projection(net_krw: i64) -> i64 { (net_krw as f64 * 1.10) as i64 }
 ```
 
-**과제↔함정 결선(함정 대장에 그대로 기록)**: 과제1 → #2·#8·#9(+주변 #1·#4) / 과제2 → #7(4지점)·#1(주석 옛코드에 `vat` 옛 계산 포함) / 과제3 → #11·#10·#3·#6. #5는 상주(ambient) — grep 오염 관찰용. **정답 파일 집합**: 과제1 `inv-report/src/monthly.rs` / 과제2 `inv-core/src/rules/pricing.rs`·`inv-report/src/invoice.rs`·`inv-report/src/forecast.rs`·`inv-parse/src/defaults.rs` / 과제3 `inv-core/src/rules/mod.rs`.
+**과제↔함정 결선(함정 대장에 그대로 기록)**: 과제1 → #2·#8·#9(+주변 #1·#4) / 과제2 → #7(4지점)·#1(주석 옛코드에 `vat` 옛 계산 포함) / 과제3 → #11·#10. **#3·#5·#6은 상주(ambient)** — 발동 경로가 결선된 과제는 없고 grep 오염 관찰용(과제 3 판정의 기각 케이스에 #3·#6 경로가 참고로 수록될 뿐, 대장에 결선으로 적지 말 것). **정답 파일 집합**: 과제1 `inv-report/src/monthly.rs` / 과제2 `inv-core/src/rules/pricing.rs`·`inv-report/src/invoice.rs`·`inv-report/src/forecast.rs`·`inv-parse/src/defaults.rs` / 과제3 `inv-core/src/rules/mod.rs`.
 
 **공통 protected 목록(3과제 동일, task.toml에 그대로)**:
 
@@ -177,7 +178,8 @@ members = ["inv-core", "inv-parse", "inv-store", "inv-report", "inv-cli"]
 
 ## 드리프트 방지 절차 (베이스 수정 시)
 베이스 = find-definition-large/fixture (판정 파일 tests/check_*.rs 제외).
-1. 베이스에서 수정 후 `cargo test` 녹색 확인
+1. 베이스에서 수정 후 `cargo test` — 판정 테스트(answer.txt 부재 1건) 외 전부
+   통과 확인, 직후 `cargo clean`(target/ 잔존 금지)
 2. rsync -a --delete --exclude 'tests/check_*.rs' --exclude 'target'
    find-definition-large/fixture/ fix-monthly-total/fixture/
    (update-vat-rate도 동일)
@@ -222,9 +224,10 @@ edition = "2021"
 - [ ] **Step 5: 빌드·테스트 확인**
 
 ```bash
-cd tasks-large/find-definition-large/fixture && cargo test
+cd tasks-large/find-definition-large/fixture && cargo test && cargo clean
 ```
-Expected: PASS (미완 멤버는 빈 골격이어도 각자 컴파일)
+Expected: PASS (미완 멤버는 빈 골격이어도 각자 컴파일). `cargo clean`은 글로벌
+제약(target/ 잔존 금지) — 이하 모든 픽스처 내 cargo test 스텝 공통.
 
 - [ ] **Step 6: 커밋**
 
@@ -272,7 +275,7 @@ git add tasks-large && git commit -m "feat(eval): tasks-large 골격 + inv-core 
 - [ ] **Step 3: 테스트·커밋**
 
 ```bash
-cd tasks-large/find-definition-large/fixture && cargo test
+cd tasks-large/find-definition-large/fixture && cargo test && cargo clean
 git add tasks-large && git commit -m "feat(eval): inv-parse·inv-store — 함정 1·3·4·5·6·7D 배치 (M8 Task2)"
 ```
 
@@ -308,7 +311,7 @@ bin+lib 구조(테스트 가능성): `src/main.rs`(얇은 진입, ~80), `src/lib
 - [ ] **Step 3: 베이스 전체 검증**
 
 ```bash
-cd tasks-large/find-definition-large/fixture && cargo test
+cd tasks-large/find-definition-large/fixture && cargo test && cargo clean
 find . -name '*.rs' | wc -l && wc -l $(find . -name '*.rs') | tail -1
 ```
 Expected: 전부 PASS, 파일 50개+·합계 10~20K LOC 범위 확인(범위 밖이면 잡동사니 모듈로 증감)
@@ -340,20 +343,22 @@ use std::fs;
 
 const TARGET: &str = "inv-core/src/rules/mod.rs";
 
+// M6 §3 사다리와 동일하게 따옴표 3종("·'·`)을 벗기고 후행 마침표를 제거한다
+// (기존 tasks/find-definition 사다리 이식 — 백틱·마침표 누락은 거짓 실패 재도입).
 fn strip_quotes(s: &str) -> &str {
     let b = s.as_bytes();
-    if b.len() >= 2
-        && ((b[0] == b'"' && b[b.len() - 1] == b'"')
-            || (b[0] == b'\'' && b[b.len() - 1] == b'\''))
-    {
-        &s[1..s.len() - 1]
-    } else {
-        s
+    if b.len() >= 2 {
+        let (f, l) = (b[0], b[b.len() - 1]);
+        if (f == b'"' && l == b'"') || (f == b'\'' && l == b'\'') || (f == b'`' && l == b'`') {
+            return &s[1..s.len() - 1];
+        }
     }
+    s
 }
 
 fn normalize(raw: &str) -> String {
     let t = strip_quotes(raw.trim());
+    let t = t.trim_end_matches('.');
     let t = t.replace('\\', "/");
     let t = t.strip_prefix("./").unwrap_or(&t);
     t.trim_end_matches('/').to_string()
@@ -380,6 +385,8 @@ fn ladder_accepts_variants() {
         "inv-core\\src\\rules\\mod.rs",
         "  inv-core/src/rules/mod.rs\n",
         "/sandbox/proj/inv-core/src/rules/mod.rs",
+        "`inv-core/src/rules/mod.rs`",
+        "inv-core/src/rules/mod.rs.",
     ] {
         assert!(matches_target(ok), "수용해야 함: {ok:?}");
     }
@@ -401,11 +408,18 @@ fn ladder_rejects_wrong_paths() {
 - [ ] **Step 2: task.toml 작성** — 전문:
 
 ```toml
-prompt = "함수 restock_threshold의 정의(구현 본문)가 있는 파일의 상대 경로를 프로젝트 루트의 answer.txt에 한 줄로 저장하라. 재수출(re-export) 지점이나 테스트 헬퍼가 아닌 실제 정의 위치여야 한다. 저장 후 cargo test로 확인하라."
+prompt = "함수 restock_threshold의 정의(구현 본문)가 있는 파일의 경로를 프로젝트 루트 기준 상대 경로로, 프로젝트 루트의 answer.txt에 한 줄로 저장하라. 재수출(re-export) 지점이나 테스트 헬퍼가 아닌 실제 정의 위치여야 한다. 저장 후 cargo test로 확인하라."
 check = "cargo test"
 timeout_secs = 600
 check_timeout_secs = 300
-# 공통 protected 목록(플랜 서두) 그대로
+protected = [
+  "Cargo.toml",
+  "inv-core/Cargo.toml",   "inv-core/tests",
+  "inv-parse/Cargo.toml",  "inv-parse/tests",
+  "inv-store/Cargo.toml",  "inv-store/tests",
+  "inv-report/Cargo.toml", "inv-report/tests",
+  "inv-cli/Cargo.toml",    "inv-cli/tests",
+]
 ```
 
 - [ ] **Step 3: solution 작성** — `solution/answer.txt` 전문(개행 포함 1줄):
@@ -470,13 +484,21 @@ fn monthly_total_sales_only_equals_sum() {
 }
 ```
 
-- [ ] **Step 3: task.toml** — 전문(protected는 공통 목록):
+- [ ] **Step 3: task.toml** — 전문:
 
 ```toml
 prompt = "월간 정산 보고서에서 반품이 포함된 달의 합계가 음수로 나온다는 현장 보고가 있다. 판매는 더해지고 반품만 차감되는 것이 정상이다. 원인을 찾아 고치고 cargo test로 확인하라."
 check = "cargo test"
 timeout_secs = 600
 check_timeout_secs = 300
+protected = [
+  "Cargo.toml",
+  "inv-core/Cargo.toml",   "inv-core/tests",
+  "inv-parse/Cargo.toml",  "inv-parse/tests",
+  "inv-store/Cargo.toml",  "inv-store/tests",
+  "inv-report/Cargo.toml", "inv-report/tests",
+  "inv-cli/Cargo.toml",    "inv-cli/tests",
+]
 ```
 
 - [ ] **Step 4: solution** — `solution/inv-report/src/monthly.rs` = fixture 사본에서 Sale arm만 `acc + line.amount_krw`로 되돌린 파일 전문(그 외 바이트 동일).
@@ -485,7 +507,8 @@ check_timeout_secs = 300
 
 ```bash
 cd tasks-large/fix-monthly-total/fixture && cargo test 2>&1 | tail -5   # 판정 2건만 FAIL 확인
-cd - && cargo run -- eval tasks-large --verify                          # 2/2
+cargo clean && cd -
+cargo run -- eval tasks-large --verify                                  # 2/2
 git add tasks-large && git commit -m "feat(eval): 과제1 fix-monthly-total — v2 부호 버그·verify 2/2 (M8 Task5)"
 ```
 README에 함정 #2·#8·#9 행 + 과제1 정답 파일 집합 + 버그 패치 diff 기록.
@@ -534,13 +557,21 @@ fn forecast_projection_uses_12_percent() {
 }
 ```
 
-- [ ] **Step 3: task.toml** — 전문(protected 공통):
+- [ ] **Step 3: task.toml** — 전문:
 
 ```toml
 prompt = "부가세율이 10%에서 12%로 변경되었다. 시스템 전체의 세율 적용을 빠짐없이 반영하라. 설정 기본값도 포함된다. 반영 후 cargo test로 확인하라."
 check = "cargo test"
 timeout_secs = 600
 check_timeout_secs = 300
+protected = [
+  "Cargo.toml",
+  "inv-core/Cargo.toml",   "inv-core/tests",
+  "inv-parse/Cargo.toml",  "inv-parse/tests",
+  "inv-store/Cargo.toml",  "inv-store/tests",
+  "inv-report/Cargo.toml", "inv-report/tests",
+  "inv-cli/Cargo.toml",    "inv-cli/tests",
+]
 ```
 
 - [ ] **Step 4: solution 4파일** — 각각 fixture 사본에서 해당 지점만 수정한 전문: `pricing.rs`(`* 12 / 100`), `invoice.rs`(`* 112 / 100`), `forecast.rs`(`* 1.12`), `defaults.rs`(`= 12`).
@@ -568,6 +599,7 @@ cargo clippy --all-targets -- -D warnings      # 클린
 cargo run -- eval tasks-large --verify         # 3/3
 cargo run -- eval tasks --verify               # 12/12 (기존 불변)
 git diff 23dc1fd -- src tasks                  # 빈 값 (성공 기준 2·6)
+find tasks-large -name target -type d          # 빈 값 (target/ 잔존 금지)
 ```
 
 - [ ] **Step 2: 알파벳 편향 기록** — 각 과제 fixture에서 시스템 프롬프트 트리(100항목 상한) 노출 여부를 정답 파일 기준으로 판독해 README 함정 대장에 "트리 노출: O/X" 열로 기록(§3 의도 변수).
@@ -610,13 +642,13 @@ max_output_tokens = 4096
 command_timeout_secs = 240
 ```
 
-- [ ] **Step 2: 사양표 측정 (사용자 협조 체크포인트)** — 사용자에게 ornith를 8192→16384→32768 로드 컨텍스트로 차례로 로드 요청. 각 설정에서: `curl -s localhost:1234/api/v0/models`로 로드 상태·ctx 확인, 메모리 점유는 시스템 모니터로 사용자 판독, 프리필은 6K 토큰급 고정 프롬프트(베이스 픽스처의 rules/mod.rs 앞 600줄 붙여넣기)를 스트리밍 호출해 첫 토큰 지연 측정 → tok/s 환산(스펙 §5 방법). 결과를 baselines.md 사양표에 기록 — "실운용 로드는 여유분 포함(32K 운용 = 로드 40960~49152)" 각주 필수.
+- [ ] **Step 2: 사양표 측정 (사용자 협조 체크포인트)** — 사용자에게 ornith를 8192→16384→32768 로드 컨텍스트로 차례로 로드 요청. 각 설정에서: `curl -s localhost:1234/api/v0/models`로 로드 상태·ctx 확인, 메모리 점유는 시스템 모니터로 사용자 판독, 프리필은 6K 토큰급 고정 프롬프트(베이스 픽스처의 rules/mod.rs 앞 **400~450줄** — 응답 usage의 프롬프트 토큰 수로 6K±10% 실측 보정, 8192 로드점에서도 오버플로 없이 성립해야 함)를 스트리밍 호출해 첫 토큰 지연 측정 → tok/s 환산(스펙 §5 방법). 결과를 baselines.md 사양표에 기록 — "실운용 로드는 여유분 포함(32K 운용 = 로드 40960~49152)" 각주 필수.
 
 - [ ] **Step 3: 32K 로드값 확정** — 사양표의 토큰당 KV 비용으로 40960 vs 49152의 메모리 여유를 판정해 로드값을 확정하고 baselines.md에 근거와 함께 기록(스펙 §5 순서). 커밋 `docs: ornith 실측 사양표·32K 로드값 확정 (M8 Task10)`
 
 ### Task 11: 8K 베이스라인 측정 (사용자 협조·위임 금지)
 
-- [ ] **Step 1**: `cargo build` 선완료(측정 중 빌드 금지). 트립와이어 사전 점검 `ls ${TMPDIR}/.cargo`(존재 시 수동 제거).
+- [ ] **Step 1**: `cargo build` 선완료(측정 중 빌드 금지). 트립와이어 사전 점검 `ls ${TMPDIR}/.cargo`(존재 시 수동 제거). `find tasks-large -name target -type d` 빈 값 확인(웜 빌드 오염 방지).
 - [ ] **Step 2**: 사용자에게 gemma-4-e4b 단독 로드(ctx 12288) 요청 → `cargo run -- eval tasks-large --repeats 3 --seed 0` → report.json 보존(`.loco/eval/<stamp>` 경로 기록)
 - [ ] **Step 3**: 사용자에게 ornith 단독 로드(ctx 12288) 요청 → 동일 실행
 - [ ] **Step 4**: 오버플로 하네스 중단 발생 시 스펙 §5 재시작 프로토콜(해당 배치 전체 재실행, 발생 사실은 분석에 별도 행). 두 배치 수치(관대/엄격/거짓finish/avg s/런)를 baselines.md M8 절에 기록·커밋
@@ -633,5 +665,5 @@ command_timeout_secs = 240
 - Modify: `docs/baselines.md` (M8 최종 절), `CLAUDE.md` (M8 결과 요약 갱신)
 
 - [ ] **Step 1: 런별 분류표 작성** — 3배치 × 3과제 × 3런: outcome(직렬화 실명 `finished`/`max_turns`/`repetition_stop`/`parse_failed`/`timeout` grep), 검증 타임아웃 계수(`grep -c "command timed out" run-*.jsonl`), 발동 함정 번호(트랜스크립트 판독 — README 정답 파일 집합·함정 위치 대조), 도구 사용 패턴(첫 정답 파일 도달 턴 수, grep/list_files/read_file 비율)
-- [ ] **Step 2: M9 요구사항 후보 도출** — 실패 유형별 빈도 → 스펙 §8 백로그(repo-map·검색 강화·오버플로 내성 4건)와 대조해 우선순위 제안
+- [ ] **Step 2: M9 요구사항 후보 도출** — 실패 유형별 빈도 → 스펙 §8 백로그(repo-map·검색 강화·오버플로 내성 4건)와 대조해 우선순위 제안. **관측 한계 준수(스펙 §5)**: 회복된 오버플로·pack 축약 빈도는 수집 불가이므로 "컨텍스트 압박"을 해석 축으로 만들지 말 것
 - [ ] **Step 3: 문서 3종 갱신·커밋** — 분석 노트 + baselines.md + CLAUDE.md. 커밋 `docs: M8 실패 분류·M9 요구사항 후보 (M8 Task13)`. 이후 최종 브랜치 리뷰 → main 머지(사용자 확인)는 finishing-a-development-branch 절차.
