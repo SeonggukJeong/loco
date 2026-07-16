@@ -1,9 +1,6 @@
 //! 가격 관련 규칙: 세율 적용 및 할인 규칙.
 //!
-//! 함정7 지점A: 아래 `apply_tax`는 10% 부가세를 하드코딩한 4개 지점 중
-//! 첫 번째다(나머지 세 지점은 inv-report의 invoice.rs/forecast.rs, inv-parse의
-//! defaults.rs에 흩어져 있다). 세율을 바꾸는 작업은 이 지점 하나만 고쳐서는
-//! 끝나지 않는다.
+//! 부가세를 적용해 최종 청구 금액을 계산한다.
 pub fn apply_tax(amount_krw: i64) -> i64 { amount_krw + amount_krw * 10 / 100 }
 
 /// 대량 구매 할인율(%)을 수량 구간별로 결정한다.

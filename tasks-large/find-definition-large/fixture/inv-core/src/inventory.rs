@@ -1,10 +1,7 @@
 //! 재고 스냅샷 타입.
 //!
-//! 함정11 재수출 사슬: `restock_threshold`/`WarehouseGrade`는 실제로는
-//! `crate::rules` 모듈(정확히는 `rules/mod.rs` 최하단)에 정의되어 있으나,
-//! 재고 도메인에서 자주 쓰이므로 편의상 여기서 재수출(re-export)한다.
-//! find-definition 류 작업에서 이 줄만 보고 "정의 위치"라고 오판하지 않도록
-//! 주의 — 이 줄은 정의가 아니라 재수출문이다.
+//! `restock_threshold`/`WarehouseGrade`는 재고 도메인에서 자주 함께
+//! 쓰이므로 편의상 여기서 재수출(re-export)해 둔다.
 pub use crate::rules::{restock_threshold, WarehouseGrade};
 
 /// 특정 SKU의 특정 시점 재고 스냅샷.

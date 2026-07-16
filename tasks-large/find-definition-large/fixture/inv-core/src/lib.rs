@@ -21,6 +21,7 @@ pub mod currency;
 pub mod history;
 pub mod metrics;
 pub mod schedule;
+pub mod units;
 pub mod vendor;
 
 /// 코어 크레이트 내부 리비전 문자열(semver와 별개, 디버그 로그용).
