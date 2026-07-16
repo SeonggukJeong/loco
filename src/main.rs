@@ -41,6 +41,9 @@ enum Command {
         /// 모든 과제·check 타임아웃에 곱하는 배수 (느린 머신 대응)
         #[arg(long, default_value_t = 1.0)]
         timeout_scale: f64,
+        /// 판정기 메타테스트 — LLM 없이 과제별 변별성·해결가능성만 검증 (M6)
+        #[arg(long, conflicts_with_all = ["repeats", "seed"])]
+        verify: bool,
     },
 }
 
@@ -64,17 +67,25 @@ async fn main() -> ExitCode {
 
 async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     let config = Config::load_default()?;
-    let client = OpenAiClient::new(&config.base_url, config.api_key.clone());
-    let model = resolve_model(&client, &config).await?;
-    if let Some(Command::Eval { tasks_dir, repeats, seed, timeout_scale }) = cli.command {
+    if let Some(Command::Eval { tasks_dir, repeats, seed, timeout_scale, verify }) = cli.command {
         // Duration::from_secs_f64는 음수/비유한 값뿐 아니라 u64::MAX초 초과에도
         // 패닉 — 하네스 에러(exit 1)로 선검증. 상한 1e6이면 300초 과제가 ~9.5년
         if !(timeout_scale.is_finite() && timeout_scale > 0.0 && timeout_scale <= 1_000_000.0) {
             anyhow::bail!("--timeout-scale은 0보다 크고 1000000 이하여야 합니다 (받은 값: {timeout_scale})");
         }
+        if verify {
+            // 메타테스트는 게이트 — LLM·서버 없이 동작해야 하므로 client를 만들지 않는다 (M6 §4)
+            let opts = loco::eval::verify::VerifyOptions { tasks_dir, timeout_scale };
+            let records = loco::eval::verify::run_verify(&opts).await?;
+            print!("{}", loco::eval::verify::render_verify_table(&records));
+            let all_ok = records.iter().all(|r| r.ok());
+            return Ok(if all_ok { ExitCode::SUCCESS } else { ExitCode::from(1) });
+        }
         if repeats == 0 {
             anyhow::bail!("--repeats는 1 이상이어야 합니다");
         }
+        let client = OpenAiClient::new(&config.base_url, config.api_key.clone());
+        let model = resolve_model(&client, &config).await?;
         let opts = loco::eval::EvalOptions {
             tasks_dir,
             repeats,
@@ -88,6 +99,8 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         println!("리포트: {}", run.report_path.display());
         return Ok(if run.report.interrupted { ExitCode::from(1) } else { ExitCode::SUCCESS });
     }
+    let client = OpenAiClient::new(&config.base_url, config.api_key.clone());
+    let model = resolve_model(&client, &config).await?;
     match cli.prompt {
         Some(prompt) => run_oneshot(&client, &config, &model, &prompt, cli.auto).await,
         None => {
@@ -174,5 +187,21 @@ async fn run_oneshot(
             eprintln!("(중단됨)");
             Ok(ExitCode::from(2))
         }
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn verify_conflicts_with_repeats_and_seed() {
+        assert!(Cli::try_parse_from(["loco", "eval", "tasks", "--verify", "--repeats", "2"]).is_err());
+        assert!(Cli::try_parse_from(["loco", "eval", "tasks", "--verify", "--seed", "1"]).is_err());
+        assert!(Cli::try_parse_from(["loco", "eval", "tasks", "--verify"]).is_ok(), "단독 --verify는 유효 (기본값과는 비충돌)");
+        assert!(
+            Cli::try_parse_from(["loco", "eval", "tasks", "--verify", "--timeout-scale", "2.0"]).is_ok(),
+            "--timeout-scale은 verify와 병용 가능 (check 실행 시간에 관여)"
+        );
     }
 }
