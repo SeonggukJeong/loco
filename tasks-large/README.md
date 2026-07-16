@@ -19,14 +19,42 @@
 
 (스펙 §3 카탈로그 11종 — 전부 배치 완료, Task3 기준)
 
+forecast.rs의 `required_net_for_target`가 옛 1.10 제수를 유지한다 — 판정 비대상 유사 VAT
+지점으로, update-vat-rate 실행 시 모델이 건드려도 pass/fail에 무영향(측정 해석 시 참고).
+
 ## 과제별 정답 파일 집합
 (§4 참조 — Task 4~6에서 확정)
 
-| 과제 | 정답 파일 |
-|---|---|
-| 과제1 | inv-report/src/monthly.rs |
-| 과제2 | inv-core/src/rules/pricing.rs · inv-report/src/invoice.rs · inv-report/src/forecast.rs · inv-parse/src/defaults.rs |
-| 과제3 | inv-core/src/rules/mod.rs |
+### 트리 노출 판독 (§3 의도 변수, Task7)
+시스템 프롬프트에 주입되는 프로젝트 트리는 `src/agent/prompt.rs`의 `project_tree()`가
+`src/tools/list_files.rs`의 `walk_entries`/`walker`(`ignore::WalkBuilder`, `require_git(false)`,
+`sort_by_file_name`=OsStr 바이트 비교 — 디렉터리별 알파벳 정렬 pre-order DFS)를 재사용해
+만든다. 상한이 **둘** 걸려 있다: `TREE_DEPTH=3`(fixture 루트 기준 경로 세그먼트 3단계까지만
+— 예: `inv-core/src/rules/`는 depth3라 목록에 뜨지만 그 안의 `mod.rs`/`pricing.rs`는 depth4라
+알파벳 순서와 무관하게 무조건 제외) + `TREE_MAX_ENTRIES=100`(depth 필터를 통과한 항목을
+정렬 순서대로 최대 100개, 넘으면 `[tree truncated]` 마커 추가). 판독 방법: src/를 수정하지
+않고 동일 `ignore` 크레이트(0.4.27, 로컬 캐시)로 `walker`/`walk_entries`/`project_tree`를
+세션 스크래치 바이너리에 그대로 복제해 각 fixture 루트에 대해 실행하고, 정답 파일 경로를
+정확히(전체 라인 매치) grep해 확인했다.
+
+| 과제 | 정답 파일 | 트리 노출 | 비고 |
+|---|---|---|---|
+| 과제1 | inv-report/src/monthly.rs | O | depth3, 트리 99줄(100개 상한 미도달, 자연 종료) |
+| 과제2 | inv-core/src/rules/pricing.rs | X | depth4 — depth 상한으로 무조건 제외(알파벳 순서 무관) |
+| 과제2 | inv-report/src/invoice.rs | O | depth3, 100개 절삭 지점보다 훨씬 앞에서 등장 |
+| 과제2 | inv-report/src/forecast.rs | O | depth3, 100개 절삭 지점보다 훨씬 앞에서 등장 |
+| 과제2 | inv-parse/src/defaults.rs | O | depth3, 100개 절삭 지점보다 훨씬 앞에서 등장 |
+| 과제3 | inv-core/src/rules/mod.rs | X | depth4 — depth 상한으로 무조건 제외(알파벳 순서 무관) |
+
+**플랜 가정과의 괴리**: 플랜(§3)은 "inv-parse/inv-report/inv-store가 알파벳 순서상 100개
+상한을 넘어갈 수 있다"고 가정했다. 실측 결과 세 과제 중 update-vat-rate만 실제로 100개
+상한에 걸려 절삭되지만(check_vat_*.rs 판정 파일 3벌이 추가되어 트리가 101줄 — 100개+
+`[tree truncated]`), 절삭 지점은 `inv-store/tests/store_basic.rs` 직후로, 정답 파일 4개
+(update-vat-rate) 모두 그보다 훨씬 앞에서 이미 노출된 뒤다. 즉 depth3 정답 파일은 세
+과제 어디에서도 개수 상한에 걸려 잘린 적이 없다 — 실제로 노출을 좌우하는 것은 개수
+상한이 아니라 **depth=3 재귀 상한**이다: `inv-core/src/rules/` 아래(mod.rs, pricing.rs)처럼
+src/ 밑에 한 단계 더 들어간 파일만 정확히, 그리고 항상 제외된다. 나머지 5개 정답 파일
+(전부 `inv-*/src/*.rs`, depth3)은 100개 상한 도달 여부와 무관하게 전부 노출된다.
 
 ## 판별력 수동 확인 기록
 과제2(update-vat-rate)의 지점별 부분 오버레이 확인 결과(Task 6). solution 4파일 중
