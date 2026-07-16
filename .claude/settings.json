@@ -1,10 +1,10 @@
 {
   "permissions": {
     "deny": [
-      "Edit(Cargo.toml)",
-      "Write(Cargo.toml)",
-      "Edit(Cargo.lock)",
-      "Write(Cargo.lock)",
+      "Edit(/Cargo.toml)",
+      "Write(/Cargo.toml)",
+      "Edit(/Cargo.lock)",
+      "Write(/Cargo.lock)",
       "Bash(cargo add *)",
       "Bash(cargo remove *)"
     ],
