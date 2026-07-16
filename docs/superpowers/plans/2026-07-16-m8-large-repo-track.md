@@ -224,10 +224,11 @@ edition = "2021"
 - [ ] **Step 5: 빌드·테스트 확인**
 
 ```bash
-cd tasks-large/find-definition-large/fixture && cargo test && cargo clean
+(cd tasks-large/find-definition-large/fixture && cargo test && cargo clean)
 ```
 Expected: PASS (미완 멤버는 빈 골격이어도 각자 컴파일). `cargo clean`은 글로벌
-제약(target/ 잔존 금지) — 이하 모든 픽스처 내 cargo test 스텝 공통.
+제약(target/ 잔존 금지), 서브셸 괄호는 cwd 누출 방지 — 이하 모든 픽스처 내
+cargo test 스텝 공통 형식.
 
 - [ ] **Step 6: 커밋**
 
@@ -275,7 +276,7 @@ git add tasks-large && git commit -m "feat(eval): tasks-large 골격 + inv-core 
 - [ ] **Step 3: 테스트·커밋**
 
 ```bash
-cd tasks-large/find-definition-large/fixture && cargo test && cargo clean
+(cd tasks-large/find-definition-large/fixture && cargo test && cargo clean)
 git add tasks-large && git commit -m "feat(eval): inv-parse·inv-store — 함정 1·3·4·5·6·7D 배치 (M8 Task2)"
 ```
 
@@ -311,8 +312,9 @@ bin+lib 구조(테스트 가능성): `src/main.rs`(얇은 진입, ~80), `src/lib
 - [ ] **Step 3: 베이스 전체 검증**
 
 ```bash
-cd tasks-large/find-definition-large/fixture && cargo test && cargo clean
-find . -name '*.rs' | wc -l && wc -l $(find . -name '*.rs') | tail -1
+(cd tasks-large/find-definition-large/fixture && cargo test && cargo clean)
+find tasks-large/find-definition-large/fixture -name '*.rs' | wc -l
+wc -l $(find tasks-large/find-definition-large/fixture -name '*.rs') | tail -1
 ```
 Expected: 전부 PASS, 파일 50개+·합계 10~20K LOC 범위 확인(범위 밖이면 잡동사니 모듈로 증감)
 
@@ -506,8 +508,7 @@ protected = [
 - [ ] **Step 5: 검증 + 커밋**
 
 ```bash
-cd tasks-large/fix-monthly-total/fixture && cargo test 2>&1 | tail -5   # 판정 2건만 FAIL 확인
-cargo clean && cd -
+(cd tasks-large/fix-monthly-total/fixture && cargo test 2>&1 | tail -5; cargo clean)  # 판정 2건만 FAIL 확인 후 clean(테스트가 FAIL이어도 실행되게 ';')
 cargo run -- eval tasks-large --verify                                  # 2/2
 git add tasks-large && git commit -m "feat(eval): 과제1 fix-monthly-total — v2 부호 버그·verify 2/2 (M8 Task5)"
 ```
@@ -576,7 +577,7 @@ protected = [
 
 - [ ] **Step 4: solution 4파일** — 각각 fixture 사본에서 해당 지점만 수정한 전문: `pricing.rs`(`* 12 / 100`), `invoice.rs`(`* 112 / 100`), `forecast.rs`(`* 1.12`), `defaults.rs`(`= 12`).
 
-- [ ] **Step 5: 지점별 판별력 수동 확인 (스펙 §4 요구)** — 4회 반복: solution에서 파일 1개만 임시 제외한 부분 오버레이를 fixture 사본(scratch)에 적용 → `cargo test`가 **여전히 FAIL**(남은 지점의 판정 테스트가 잡음)임을 확인. 4회 전부의 결과(제외 파일→실패한 테스트명)를 README "판별력 수동 확인 기록"에 기록.
+- [ ] **Step 5: 지점별 판별력 수동 확인 (스펙 §4 요구)** — 4회 반복: solution에서 파일 1개만 임시 제외한 부분 오버레이를 fixture 사본에 적용 → `cargo test`가 **여전히 FAIL**(남은 지점의 판정 테스트가 잡음)임을 확인. 사본은 반드시 **tasks-large/ 밖의 스크래치 디렉터리**에 만들 것(Task 7 게이트의 target/ 검사·git add에 안 걸리게). 4회 전부의 결과(제외 파일→실패한 테스트명)를 README "판별력 수동 확인 기록"에 기록.
 
 - [ ] **Step 6: 검증 + 커밋**
 
