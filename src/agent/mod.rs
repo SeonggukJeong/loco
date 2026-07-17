@@ -1,5 +1,6 @@
 pub mod approval;
 pub mod bounded;
+pub mod finish_nudge;
 pub mod protocol;
 pub mod prompt;
 pub mod repetition;
