@@ -64,6 +64,10 @@ pub const FINISH_ARGS_CORRECTION: &str = "Your finish call is missing `summary`.
 {\"thought\": \"...\", \"action\": {\"tool\": \"finish\", \"args\": {\"summary\": \"<your final answer>\"}}}. \
 Do not call finish with empty args again.";
 
+/// S/R 스트릭 2연속 시 다음 요청의 temperature (M10 §5 — 저온 복사 어트랙터
+/// 가설의 개입값, 0단계 확정). 스트릭이 끊기면 즉시 원복, 래치 없음
+const SR_PERTURB_TEMPERATURE: f32 = 0.7;
+
 pub struct Agent<C: LlmClient> {
     client: C,
     registry: std::sync::Arc<Registry>,
@@ -79,6 +83,9 @@ pub struct Agent<C: LlmClient> {
     inline_system: bool,
     /// 평가 하네스가 반복마다 다른 시드를 주입한다 (스펙 §8)
     seed: Option<u64>,
+    /// S/R 스트릭 중 일시 temperature 상향 (M10 §5). run() 지역 수명 —
+    /// 진입 시 리셋해 REPL의 다음 런으로 새지 않는다 (리뷰 2R M-1)
+    temperature_override: Option<f32>,
 }
 
 impl<C: LlmClient> Agent<C> {
@@ -101,6 +108,7 @@ impl<C: LlmClient> Agent<C> {
             use_json_schema: true,
             inline_system: false,
             seed: None,
+            temperature_override: None,
         }
     }
 
@@ -139,7 +147,7 @@ impl<C: LlmClient> Agent<C> {
         ChatRequest {
             model: self.model.clone(),
             messages,
-            temperature: self.temperature,
+            temperature: self.temperature_override.unwrap_or(self.temperature),
             max_tokens: Some(self.max_output_tokens),
             stream: false,
             response_format: self
@@ -157,6 +165,7 @@ impl<C: LlmClient> Agent<C> {
         on_event: &mut dyn FnMut(AgentEvent<'_>),
     ) -> Result<AgentOutcome, LlmError> {
         session.push_user_request(request);
+        self.temperature_override = None; // M10 §5 — run() 지역 수명
         let mut turns = 0;
         let mut tracker = repetition::RepetitionTracker::new();
         // 실행당(run 호출당) 최대 2회 — 턴을 넘나들며 누적, 턴마다 리셋하지 않는다 (스펙 §9)
@@ -318,6 +327,7 @@ impl<C: LlmClient> Agent<C> {
                         _ => finish_nudge::TurnEvent::Other, // 게이트 거부된 run_command — 불변 (§4-2 표)
                     };
                     let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+                    self.update_perturb(&tracker, on_event);
                     // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
                     if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
                         on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
@@ -380,6 +390,7 @@ impl<C: LlmClient> Agent<C> {
                 _ => finish_nudge::TurnEvent::Other, // 미지 도구 (§4-2 표)
             };
             let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+            self.update_perturb(&tracker, on_event);
             // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
             if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
                 on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
@@ -424,6 +435,20 @@ impl<C: LlmClient> Agent<C> {
         }
         let joined = notes.join("\n");
         ((!joined.is_empty()).then_some(joined), false)
+    }
+
+    /// M10 §5: 스트릭 상태를 오버라이드에 반영 — track_and_note(error_correction
+    /// 경유) 직후에만 호출한다. 무액션·finish 턴은 호출 지점에 닿지 않아 유지된다
+    fn update_perturb(
+        &mut self,
+        tracker: &repetition::RepetitionTracker,
+        on_event: &mut dyn FnMut(AgentEvent<'_>),
+    ) {
+        let want = (tracker.sr_streak() >= 2).then_some(SR_PERTURB_TEMPERATURE);
+        if want.is_some() && self.temperature_override.is_none() {
+            on_event(AgentEvent::Notice("(S/R 반복 감지 — temperature 일시 상향)".to_string()));
+        }
+        self.temperature_override = want;
     }
 
     /// 400 폴백 사다리 (스펙 §3·§4): 서버가 무엇을 거부했는지 표준적으로 알 수 없어
@@ -1452,5 +1477,94 @@ mod tests {
             assert!(matches!(outcome, AgentOutcome::RepetitionStop), "{outcome:?}");
             assert!(!session_contains(&session, "do not re-verify"), "정지 턴에는 니지를 평가하지 않는다");
         }
+    }
+
+    // M10 §5 — 암③ 디코딩 섭동: S/R 스트릭 2연속 시 다음 요청의 temperature 상향
+    #[tokio::test]
+    async fn sr_streak_of_two_raises_temperature_until_streak_breaks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        std::fs::write(dir.path().join("g.rs"), "y\n").unwrap();
+        let sr = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let read = turn("read_file", serde_json::json!({"path": "g.rs"}));
+        let script = Scripted::new(vec![ok(&sr), ok(&sr), ok(&read), ok(&finish("d"))]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        // 요청0(첫 턴)·요청1(SR 1회 후) 기본값, 요청2(SR 2연속 후) 0.7, 요청3(read 성공 후) 원복
+        assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1], "{temps:?}");
+    }
+
+    #[tokio::test]
+    async fn perturb_reactivates_without_latch_and_resets_per_run() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        std::fs::write(dir.path().join("g.rs"), "y\n").unwrap();
+        let sr = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let read = turn("read_file", serde_json::json!({"path": "g.rs"}));
+        // 1런: SR×2 → read → SR×2 (재활성 확인 — SR_CORRECTION 래치와 무관) → finish
+        let script = Scripted::new(vec![
+            ok(&sr), ok(&sr), ok(&read), ok(&sr), ok(&sr), ok(&finish("d")),
+            // 2런: 활성 상태로 끝난 뒤에도 진입 리셋 확인
+            ok(&finish("d2")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        {
+            let reqs = script.requests.lock().unwrap();
+            let temps: Vec<f32> = reqs.iter().map(|r| r.temperature).collect();
+            // 요청4는 두 번째 스트릭의 1회차 직후(아직 1연속)라 기본값, 요청5가 재활성
+            // — SR_CORRECTION 래치(1런 1회)와 무관하게 스트릭 재도달만으로 켜진다
+            assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1, 0.1, 0.7], "{temps:?}");
+        }
+        let mut session2 = new_session(&agent);
+        run_quiet(&mut agent, &mut session2, "y").await.unwrap();
+        let reqs = script.requests.lock().unwrap();
+        assert_eq!(reqs.last().unwrap().temperature, 0.1, "활성 상태로 끝난 뒤에도 run() 진입 리셋 (리뷰 2R M-1)");
+    }
+
+    #[tokio::test]
+    async fn gate_denied_edit_clears_perturb_override() {
+        // §5 핀: Denied: 본문은 스트릭 리셋 → 오버라이드 해제. 주의: SR 오류 2회는
+        // preview(dry_run)가 같은 사다리를 타므로 Err → 게이트 생략 → 디스패치가 SR
+        // 오류를 되먹여 스트릭이 쌓인다. 유효한 3번째 편집만 preview Ok → 거부 경로.
+        struct DenyEdits;
+        impl crate::agent::approval::Approver for DenyEdits {
+            fn approve(&mut self, _req: &ApprovalRequest) -> Decision {
+                Decision::Deny { reason: "테스트 거부".into() }
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        let sr = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let valid = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "y"}));
+        let script = Scripted::new(vec![ok(&sr), ok(&sr), ok(&valid), ok(&finish("d"))]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        agent.run(&mut session, "x", &mut DenyEdits, &mut |_| {}).await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        // 요청2까지 SR 2연속으로 0.7, 유효 편집이 게이트 거부(Denied:)되며 리셋 → 요청3 원복
+        assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1], "{temps:?}");
+    }
+
+    #[tokio::test]
+    async fn no_action_turns_preserve_perturb_override() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        let sr = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let script = Scripted::new(vec![
+            ok(&sr),
+            ok(&sr),
+            ok_with_reason("cut off", "length"), // 무액션 턴 — 스트릭·오버라이드 불변 (§5 핀)
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        // length-cut 턴이 오버라이드를 건드리지 않아 그다음 요청도 0.7 유지
+        assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.7], "{temps:?}");
     }
 }
