@@ -140,7 +140,7 @@ Expected: exit 0, 스탬프 기록.
 
 - [ ] **Step 5: baselines.md에 재베이스라인 절 추가**
 
-`docs/baselines.md`의 "M8 8K 베이스라인" 절 뒤에 다음 형식으로 추가 (수치는 Task 2~4 실측):
+`docs/baselines.md` **문서 말미**("M8 최종 (Task 13 실패 분류)" 소절 뒤)에 다음 형식으로 추가 (수치는 Task 2~4 실측 — M8 h2 섹션의 h3 소절 사이에 끼워 넣지 말 것):
 
 ```markdown
 ## M9 1단 재베이스라인 (리워드 픽스처, 스캐폴딩 전, 2026-07-17)
@@ -414,7 +414,7 @@ git commit -m "feat(agent): S/R 전용 2연속 스트릭 교정(전담 배제)·
 
 - [ ] **Step 2: 실패하는 테스트를 포함한 모듈 뼈대 작성**
 
-`src/agent/finish_nudge.rs` 신규 — 아래 전체 코드에서 `on_turn` 본문을 `None`만 반환하게 두고 테스트가 실패하는 것부터 확인해도 좋고, 테스트→구현 순서만 지키면 한 파일이므로 아래 최종 코드로 바로 가도 된다. 최종 코드:
+`src/agent/finish_nudge.rs` 신규. **TDD 필수 순서**: 먼저 아래 전체 코드에서 `on_turn` 본문을 `None`만 반환하는 스텁으로 두고 `cargo test --lib agent::finish_nudge`로 8건 실패(RED)를 확인한 뒤, 본문을 아래 최종 코드로 채워 GREEN을 확인한다. 최종 코드:
 
 ```rust
 //! 검증완료 후 finish 유도 상태기계 (M9 §4-2). 목표 패턴: "이미 확인한 사실을
@@ -619,7 +619,7 @@ mod tests {
 - [ ] **Step 3: 통과 확인**
 
 Run: `cargo test --lib agent::finish_nudge && cargo clippy --all-targets -- -D warnings`
-Expected: 9개 테스트 전부 PASS, clippy 0.
+Expected: 8개 테스트 전부 PASS, clippy 0.
 
 - [ ] **Step 4: 커밋**
 
@@ -667,7 +667,7 @@ Do not call finish with empty args again.";
     }
 ```
 
-테스트 (§6의 ①·⑥·⑦ — 셸 불필요, cfg 게이트 없음):
+테스트 (§6의 ①·⑦의 4-1 몫 — 셸 불필요, cfg 게이트 없음; ⑥은 아래 unix 모듈의 `invalid_finish_resets_nudge_idle_counter`):
 
 ```rust
     #[tokio::test]
@@ -814,6 +814,27 @@ Do not call finish with empty args again.";
         }
 
         #[tokio::test]
+        async fn timed_out_verification_does_not_arm_nudge() {
+            let dir = tempfile::tempdir().unwrap();
+            let mut ctx = ToolCtx::new(dir.path().to_path_buf());
+            ctx.command_timeout = std::time::Duration::from_millis(100);
+            let script = Scripted::new(vec![
+                ok(&write_turn("a.txt", "answer")),
+                ok(&run_turn("sleep 5")), // 타임아웃 본문에는 exit code 줄이 없다 — VerifyOther (§4-2 표 4행, §6 ④ 타임아웃 몫)
+                ok(&read_turn("a.txt")),
+                ok(&grep_turn("x")),
+                ok(&read_turn("a.txt")),
+                ok(&turn("list_files", serde_json::json!({}))),
+                ok(&finish("done")),
+            ]);
+            let config = Config { max_turns: 25, ..Default::default() };
+            let mut agent = Agent::new(&script, Registry::guided(), ctx, "test-model".into(), &config);
+            let mut session = new_session(&agent);
+            run_quiet(&mut agent, &mut session, "x").await.unwrap();
+            assert!(!session_contains(&session, "do not re-verify"), "타임아웃 검증은 무장하지 않음");
+        }
+
+        #[tokio::test]
         async fn invalid_finish_resets_nudge_idle_counter() {
             let dir = tempfile::tempdir().unwrap();
             let script = Scripted::new(vec![
@@ -875,7 +896,7 @@ Do not call finish with empty args again.";
 - [ ] **Step 3: 실패 확인**
 
 Run: `cargo test --lib agent::tests 2>&1 | tail -20`
-Expected: 신규 테스트 FAIL/컴파일 에러 (`FINISH_ARGS_CORRECTION` 미정의 등).
+Expected: 주입을 기대하는 양성 단언 4건(`finish_missing_summary_twice_...`, `length_cut_between_...`, `verified_then_repeated_...`, `no_action_turn_...`)이 FAIL. 부재-단언 테스트들은 배선 전에도 통과하는 것이 정상 (Step 1에서 상수는 이미 정의됨 — 컴파일 에러는 없어야 한다).
 
 - [ ] **Step 4: run() 배선 구현**
 
@@ -1038,7 +1059,7 @@ git commit -m "feat(agent): finish 규율 배선 — 인자누락 2연속 교정
 `CLAUDE.md`의 agent 항목에서 반복 감지/전략 교정 문장(`Both corrections latch once per run` 근처) 뒤에 다음 텍스트를 삽입 (영문 그대로):
 
 ```
-M9 scaffolding: edit_file's identical-search/replace rejection now appends a prescription sentence (current code in `search`, changed code in `replace`); a dedicated 2-consecutive S/R streak correction (`SR_CORRECTION`, own latch, `agent/repetition.rs`) handles that error key exclusively — the generic 3-streak correction is excluded for it, while the window-based `REPEAT_CORRECTION` still stacks at the 3rd identical call (intended escalation). finish discipline: a missing-summary finish 2-consecutive streak injects `FINISH_ARGS_CORRECTION` once per run (no-action turns preserve the streak; dispatched or gate-denied actions reset it); `agent/finish_nudge.rs` is an event-driven state machine — "mutation" = successful edit_file/write_file dispatch, arms on a post-mutation `exit code: 0` run_command, counts non-mutating turns in a K=4 window requiring ≥1 repeated call (`RepetitionTracker::seen_key`, queried before record), injects `FINISH_NUDGE` once per run; RepetitionStop takes priority on the same turn.
+M9 scaffolding: edit_file's identical-search/replace rejection now appends a prescription sentence (current code in `search`, changed code in `replace`); a dedicated 2-consecutive S/R streak correction (`SR_CORRECTION`, own latch, `agent/repetition.rs`) handles that error key exclusively — the generic 3-streak correction is excluded for it, while the window-based `REPEAT_CORRECTION` still stacks at the 3rd identical call (intended escalation). finish discipline: a missing-summary finish 2-consecutive streak injects `FINISH_ARGS_CORRECTION` once per run (no-action turns preserve the streak; dispatched or gate-denied actions reset it); `agent/finish_nudge.rs` is an event-driven state machine — "mutation" = successful edit_file/write_file dispatch, arms on a post-mutation `exit code: 0` run_command, counts armed-state read/grep/list_files and re-verification run_command turns in a K=4 window requiring ≥1 repeated call (`RepetitionTracker::seen_key`, queried before record), injects `FINISH_NUDGE` once per run; RepetitionStop takes priority on the same turn.
 ```
 
 - [ ] **Step 2: 전체 게이트 + verify**
