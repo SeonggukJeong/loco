@@ -12,6 +12,14 @@ const WINDOW: usize = 8;
 pub const EDIT_STRATEGY_CORRECTION: &str = "The same error keeps occurring. Change strategy: re-read the file, then rewrite it completely with write_file.";
 pub const GENERIC_STRATEGY_CORRECTION: &str = "The same error keeps occurring. Step back and try a different approach.";
 
+/// edit_file S/R 자기-버그 2연속 전용 교정 (M9 §3-2). 모델 대상 — 영어
+pub const SR_CORRECTION: &str = "Your `replace` is identical to `search`. Write the MODIFIED code in `replace`. \
+If you cannot produce a different `replace`, rewrite the whole file with write_file, applying the fix.";
+
+/// S/R 오류의 스트릭 키(첫 문장) — tools/edit_file.rs의 실제 오류문과
+/// sr_key_matches_actual_edit_file_error_first_sentence 테스트로 고정 (M9 §3-2)
+pub const SR_KEY: &str = "Error: edit failed: search and replace are identical - no change would be made";
+
 #[derive(Debug, PartialEq)]
 pub enum RepetitionVerdict {
     Ok,
@@ -25,6 +33,7 @@ pub struct RepetitionTracker {
     window: VecDeque<(String, u64)>,
     cycle_corrected: bool,
     error_corrected: bool,
+    sr_corrected: bool,
     last_error_key: Option<String>,
     error_streak: usize,
 }
@@ -35,6 +44,7 @@ impl RepetitionTracker {
             window: VecDeque::with_capacity(WINDOW),
             cycle_corrected: false,
             error_corrected: false,
+            sr_corrected: false,
             last_error_key: None,
             error_streak: 0,
         }
@@ -72,6 +82,15 @@ impl RepetitionTracker {
             self.last_error_key = Some(key);
             self.error_streak = 1;
         }
+        // S/R 키 스트릭은 전용 교정이 전담 — 2연속(도구 오류문이 1회차 처방을 이미
+        // 줬으므로) 발동, 일반 교정은 배제 (M9 §3-2)
+        if tool == "edit_file" && self.last_error_key.as_deref() == Some(SR_KEY) {
+            if self.error_streak >= 2 && !self.sr_corrected {
+                self.sr_corrected = true;
+                return Some(SR_CORRECTION);
+            }
+            return None;
+        }
         if self.error_streak >= 3 && !self.error_corrected {
             self.error_corrected = true;
             return Some(if matches!(tool, "edit_file" | "write_file") {
@@ -81,6 +100,13 @@ impl RepetitionTracker {
             });
         }
         None
+    }
+
+    /// 윈도에 같은 (도구|인자) 키가 이미 있는가 — FINISH_NUDGE의 반복-호출 신호
+    /// (M9 §4-2). 결과 해시는 무시하고 키만 본다. record() **전에** 조회해야
+    /// 자기-매치가 없다.
+    pub fn seen_key(&self, key: &str) -> bool {
+        self.window.iter().any(|(k, _)| k == key)
     }
 }
 
@@ -197,5 +223,75 @@ mod tests {
         t.error_correction("grep", "Error: x");
         t.error_correction("grep", "Error: x");
         assert!(t.error_correction("grep", "Error: x").is_some(), "리셋 후 다시 3연속");
+    }
+
+    #[test]
+    fn sr_error_second_consecutive_gets_dedicated_correction_once() {
+        let mut t = RepetitionTracker::new();
+        let body = format!("{SR_KEY}. Put the code as it is NOW in `search`, and the code AFTER your change in `replace`.");
+        assert!(t.error_correction("edit_file", &body).is_none(), "1회차는 도구 오류문이 담당");
+        assert_eq!(t.error_correction("edit_file", &body), Some(SR_CORRECTION), "2연속에 전용 교정 (M9 §3-2)");
+        assert!(t.error_correction("edit_file", &body).is_none(), "런당 1회 래치");
+        assert!(t.error_correction("edit_file", &body).is_none(), "S/R 스트릭에는 일반 교정도 불발 (전담 배제)");
+    }
+
+    #[test]
+    fn sr_correction_does_not_consume_generic_latch() {
+        let mut t = RepetitionTracker::new();
+        let sr = format!("{SR_KEY}. x.");
+        t.error_correction("edit_file", &sr);
+        assert_eq!(t.error_correction("edit_file", &sr), Some(SR_CORRECTION));
+        // 다른 오류 스트릭은 여전히 일반 교정을 받는다 (별도 래치)
+        t.error_correction("grep", "Error: x");
+        t.error_correction("grep", "Error: x");
+        assert_eq!(t.error_correction("grep", "Error: x"), Some(GENERIC_STRATEGY_CORRECTION));
+    }
+
+    #[test]
+    fn sr_text_via_non_edit_tool_takes_the_generic_path() {
+        let mut t = RepetitionTracker::new();
+        let sr = format!("{SR_KEY}. x.");
+        assert!(t.error_correction("write_file", &sr).is_none());
+        assert!(t.error_correction("write_file", &sr).is_none(), "전용 교정은 edit_file 한정 (§3-2 판정)");
+        assert_eq!(t.error_correction("write_file", &sr), Some(EDIT_STRATEGY_CORRECTION), "3연속 일반 경로 불변");
+    }
+
+    #[test]
+    fn sr_streak_resets_on_a_different_intervening_error() {
+        let mut t = RepetitionTracker::new();
+        let sr = format!("{SR_KEY}. x.");
+        assert!(t.error_correction("edit_file", &sr).is_none());
+        t.error_correction("edit_file", "Error: edit failed: search block not found. y");
+        assert!(t.error_correction("edit_file", &sr).is_none(), "비연속 — 리셋 후 1회차 (스펙 §6)");
+        assert_eq!(t.error_correction("edit_file", &sr), Some(SR_CORRECTION), "다시 2연속이면 발동");
+    }
+
+    #[test]
+    fn sr_key_matches_actual_edit_file_error_first_sentence() {
+        // 도구 오류문과 SR_KEY의 드리프트를 고정하는 교차 핀 (M9 §6)
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        let ctx = crate::tools::ToolCtx::new(dir.path().to_path_buf());
+        let err = crate::tools::Tool::run(
+            &crate::tools::edit_file::EditFile,
+            &serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}),
+            &ctx,
+        )
+        .unwrap_err();
+        let body = format!("Error: {err}");
+        assert_eq!(body.split('.').next().unwrap(), SR_KEY);
+    }
+
+    #[test]
+    fn seen_key_is_window_membership_by_key_only() {
+        let mut t = RepetitionTracker::new();
+        assert!(!t.seen_key("grep|{\"pattern\":\"x\"}"), "record 전에는 자기-매치 없음");
+        t.record("grep|{\"pattern\":\"x\"}", "r1");
+        assert!(t.seen_key("grep|{\"pattern\":\"x\"}"), "결과 해시가 달라도 키만 일치하면 참");
+        assert!(!t.seen_key("grep|{\"pattern\":\"y\"}"));
+        for i in 0..8 {
+            t.record(&format!("pad|{i}"), "x");
+        }
+        assert!(!t.seen_key("grep|{\"pattern\":\"x\"}"), "윈도(8) 밖으로 밀려나면 거짓");
     }
 }
