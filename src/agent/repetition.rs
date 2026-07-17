@@ -108,6 +108,14 @@ impl RepetitionTracker {
     pub fn seen_key(&self, key: &str) -> bool {
         self.window.iter().any(|(k, _)| k == key)
     }
+
+    /// S/R 오류 연속 길이 (M10 §5) — 디코딩 섭동의 트리거 술어.
+    /// error_correction()의 Some(SR_CORRECTION) 반환에 걸지 말 것 — 그쪽은 런당
+    /// 1회 래치라 "스트릭 재도달 시 재활성"이 깨진다. §5 트리거의 tool==edit_file
+    /// 술어는 생략 — SR_KEY 본문은 edit_file만 낸다(도구 층 오류문 교차 핀)
+    pub fn sr_streak(&self) -> usize {
+        if self.last_error_key.as_deref() == Some(SR_KEY) { self.error_streak } else { 0 }
+    }
 }
 
 impl Default for RepetitionTracker {
@@ -280,6 +288,23 @@ mod tests {
         .unwrap_err();
         let body = format!("Error: {err}");
         assert_eq!(body.split('.').next().unwrap(), SR_KEY);
+    }
+
+    #[test]
+    fn sr_streak_tracks_consecutive_sr_errors_only() {
+        let mut t = RepetitionTracker::new();
+        let sr = format!("{SR_KEY}. x.");
+        assert_eq!(t.sr_streak(), 0);
+        t.error_correction("edit_file", &sr);
+        assert_eq!(t.sr_streak(), 1);
+        t.error_correction("edit_file", &sr);
+        assert_eq!(t.sr_streak(), 2, "SR_CORRECTION 래치와 무관하게 스트릭은 계속 노출 (M10 §5 배선 주의)");
+        t.error_correction("edit_file", &sr);
+        assert_eq!(t.sr_streak(), 3);
+        t.error_correction("edit_file", "ok result");
+        assert_eq!(t.sr_streak(), 0, "비-S/R 결과로 리셋");
+        t.error_correction("edit_file", "Error: edit failed: search block not found. y");
+        assert_eq!(t.sr_streak(), 0, "다른 오류 키는 S/R 스트릭이 아님");
     }
 
     #[test]
