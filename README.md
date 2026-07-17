@@ -3,7 +3,17 @@
 로컬에서 서빙되는 소형 LLM(OpenAI 호환 API)으로 코딩을 지원하는 CLI.
 설계 문서: `docs/superpowers/specs/2026-07-02-loco-design.md`
 
-## 프로젝트 상태: M8 완료 · 대형 저장소 트랙 (2026-07-17)
+## 프로젝트 상태: M9 완료 · 실행·종료 스캐폴딩 (2026-07-17)
+
+M9는 M8 실패 데이터가 지목한 두 루프를 스캐폴딩으로 겨냥했다 — edit_file S/R
+자기-버그(처방 오류문 + 전용 2연속 교정)와 finish 종료 실패(인자누락 2연속 교정 +
+검증완료 후 FINISH_NUDGE). 리워드된 픽스처 재베이스라인(1단) 대비 2단 결과:
+gemma 엄격 4/9→5/9·거짓 finish 0, ornith@32K 관대 6/9→7/9. 소형 세트 교정
+실효는 확실(SR_CORRECTION 발동 5런 전부 즉시 회복, 스포트 34/36 회귀 없음)하나
+대형 저장소의 완고한 S/R 루프 1건과 재검증 루프는 잔존 — 판정 상세는
+`docs/baselines.md` M9 절.
+
+## M8 · 대형 저장소 트랙 (2026-07-17)
 
 M8은 실사용 조건 측정이다 — 수만 라인급 사내 코드베이스 항해가 실제 병목이라는
 북극성(폐쇄망 동료 배포)에 맞춰, 5크레이트 ~11.6K LOC 재고/물류 워크스페이스 픽스처
@@ -146,3 +156,7 @@ command_timeout_secs = 60
       함정 11종, `--verify` 3/3) 신설, 8K 베이스라인·32K 민감도·ornith 실측 사양표 측정,
       레퍼런스 노트 3건(aider repo-map·codex-rs·grok-build), 27런 실패 분류로 M9
       우선순위 확정. 하네스 코드 변경 0 — 위 "프로젝트 상태"와 `docs/baselines.md` 참고
+- [x] M9: 실행·종료 스캐폴딩 — edit_file S/R 처방 오류문 + 전용 2연속 교정(SR_CORRECTION),
+      finish 인자누락 2연속 교정(FINISH_ARGS_CORRECTION) + 검증완료 후 반복 재확인 감지
+      상태기계(`agent/finish_nudge.rs`), 2단 측정(리워드 재베이스라인 → 스캐폴딩 후 4배치)
+      과 행동 지표 판정 — 위 "프로젝트 상태"와 `docs/baselines.md` M9 절 참고

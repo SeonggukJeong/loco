@@ -387,3 +387,92 @@ ornith은 **하이브리드 아치**다: GGUF 메타데이터 `qwen35.full_atten
 리워드가 수치를 양방향으로 움직였다: gemma 관대 +22.3pp(44.4→66.7%)·거짓 finish 3→1,
 ornith@32K 관대 −22.2pp(88.9→66.7%) — M8 32K의 높은 관대 통과에 누출이 기여했다는 신호.
 엄격은 ornith 두 배치에서 44.4→55.6%로 소폭 상승, update-vat는 8K에서 여전히 0/3(M8과 동일 병목).
+
+## M9 2단 (스캐폴딩 후, 2026-07-17)
+
+스캐폴딩(edit_file S/R 처방+전용 교정, finish 인자누락 교정, FINISH_NUDGE — 커밋
+43020fd~9ad3804) 적용 후 재측정. 1단 대비 차이 = 스캐폴딩 효과. 스포트 배치만
+v2 조건(timeout 60s·로드 8192), 나머지는 1단과 동일 조건.
+
+| 배치 | 통과 | 엄격 | 거짓 finish | 평균 s/런 | report |
+|---|---|---|---|---|---|
+| gemma-4-e4b @8K | 6/9 | 5/9 | 0 | 84.7s | `20260717T031126Z` |
+| ornith-1.0-9b @8K | 5/9 | 4/9 | 1 | 127.0s | `20260717T032507Z` |
+| ornith-1.0-9b @32K | 7/9 | 5/9 | 0 | 204.4s | `20260717T034527Z` |
+| ornith @8K, tasks/ 스포트 | 34/36 | 33/36 | 0 | 84.6s | `20260717T041725Z` |
+
+### 행동 지표 비교 (tasks-large, 1단 → 2단; §2 소표본 규칙에 따라 발생 런 전수)
+
+**S/R 오류 발생 런** ("2시도 내 회복" = 오류 후 다음 2번의 edit/write 시도 안에 성공):
+
+| 단계 | 발생 런 (오류수, 회복) | 오류 합 | 회복 합 | S/R발 반복정지 |
+|---|---|---|---|---|
+| 1단 | B:fm0(7,1)·fm2(2,1) / C:fm0(1,1)·fm2(1,1)·uv0(5,3)·uv1(3,2) | 19 | 9 | **1** (B fm0) |
+| 2단 | D:fm1(2,1)·fm2(1,1)·uv0(1,0) / E:fm0(6,0)·fm2(1,1) / F:fm0(3,0)·fm2(1,1)·uv0(5,3)·uv1(3,0) | 23 | 7 | **1** (E fm0) |
+
+- SR_CORRECTION 발동: tasks-large 4런(E fm0, F fm0·uv0·uv1) 중 다음 시도 내 회복 1런(F uv0).
+  **tasks/ 스포트에서는 발동 5런 전부 다음 시도 내 회복** (add-function-0,
+  fix-compile-error-0, fix-off-by-one-0·2, rename-function-0) — 교정 실효가 과제
+  난이도에 갈린다.
+- E fm0 정독: 첫 편집부터 동일 S/R 호출 6연속 — 도구 처방(1회차)→SR_CORRECTION(2회차)→
+  REPEAT_CORRECTION(3회째) 3층을 전부 무시하고 5회째 반복정지. 텍스트 교정의 한계
+  케이스(스펙 §7 리스크 실증).
+
+**finish 규율**:
+
+| 지표 | 1단 | 2단 |
+|---|---|---|
+| 인자누락발 반복정지 | 0 | 0 (비악화 — 대체 판정: 단위 테스트 게이트 통과) |
+| 인자누락 finish 시도 (런/회) | 8런 17회 (최장 6회 — C fd1, max_turns 미종결) | 10런 24회 (최장 5회) |
+| FINISH_ARGS_CORRECTION 발동 | — | 2런 (D fd2, E fd1) — **둘 다 이후 유효 finish 도달** |
+| 검증 성공 런 중 finished 종결 | 14/18 | 14/18 (동률) |
+| FINISH_NUDGE 발동 | — | 2건: E fd0(7액션 뒤 finish), tasks/ rename-1(즉시 finish) — 모두 종결 |
+| 거짓 성공 finish | 2 | 1 |
+
+순수 동일-명령 재검증 루프(B/E uv1 — `cargo test` exit 0 반복 5회)는 설계대로
+반복정지가 선점해 FINISH_NUDGE 도달 전에 정지 — 1·2단 동일 패턴 각 1건.
+
+### 성공 기준 판정 (스펙 §2 전건 대조)
+
+1. **게이트 4종: 충족** — cargo test 286 통과·clippy 0·verify 12/12·3/3
+2. **행동 지표 ①(S/R): 미충족** — S/R발 반복정지 1건 잔존(1단과 동수, 동일 과제
+   fix-monthly-total), 2시도 내 회복 9/19→7/23(오류당)로 상승 아님. 단 소형
+   세트에선 SR_CORRECTION 5/5 즉시 회복 — 개입 자체는 동작하나 대형 저장소의
+   완고한 루프(ornith fm0 패턴)를 못 끊는다.
+   **행동 지표 ②(finish): 부분 충족** — 인자누락발 정지 0 유지(대체 판정 충족),
+   ARGS_CORRECTION 발동 2런 모두 종결 도달(방향성 긍정), 검증 후 finish 도달률은
+   14/18 동률(상승 아님).
+3. **통과율(보조): 부분 충족** — tasks-large 엄격: gemma 4/9→5/9 ↑,
+   ornith@32K 5/9 =, **ornith@8K 5/9→4/9 ↓1런(비악화 미달, 소표본 노이즈 범위)**.
+   tasks/ 스포트 34/36 ≥ 33/36 충족(엄격 33/36, 거짓 finish 0).
+4. **신규 모델-대면 텍스트 영문: 충족** — S/R 처방·SR_CORRECTION·
+   FINISH_ARGS_CORRECTION·FINISH_NUDGE 전부 영문.
+
+### 행동 지표 추출 레시피
+
+각 배치 디렉토리에 대해 (트랜스크립트 kind: system/user/assistant/tool_result;
+교정 노트는 별도 user 이벤트, tool_result의 도구명 필드는 `tool`):
+
+```python
+import json, sys, glob, os
+# usage: python3 m9_metrics.py .loco/eval/<stamp>
+MARKS = {
+    "sr_error": "search and replace are identical",
+    "sr_correction": "Write the MODIFIED code in `replace`",
+    "finish_missing": "finish requires a string `summary`",
+    "finish_args_corr": "Do not call finish with empty args again",
+    "finish_nudge": "do not re-verify what you have already confirmed",
+    "repeat_corr": "repeating the same tool call",
+}
+for path in sorted(glob.glob(os.path.join(sys.argv[1], "run-*.jsonl"))):
+    counts = dict.fromkeys(MARKS, 0)
+    with open(path) as f:
+        for line in f:
+            e = json.loads(line)
+            if e.get("kind") == "assistant":
+                continue  # 모델이 인용한 문구는 세지 않는다
+            c = e.get("content", "") or ""
+            for k, m in MARKS.items():
+                counts[k] += c.count(m)
+    print(os.path.basename(path), counts)
+```
