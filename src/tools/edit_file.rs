@@ -312,7 +312,9 @@ impl EditFile {
         let replace = normalize_eol(&args.replace);
         if search == replace {
             return Err(ToolError::EditFailed(
-                "search and replace are identical - no change would be made".to_string(),
+                "search and replace are identical - no change would be made. \
+                 Put the code as it is NOW in `search`, and the code AFTER your change in `replace`."
+                    .to_string(),
             ));
         }
         let outcome = apply_edit(&text, &search, &replace, args.replace_all).map_err(ToolError::EditFailed)?;
@@ -509,6 +511,19 @@ mod tests {
         let (_d, ctx) = setup("fn a() {}\n");
         let err = edit(&ctx, "fn a() {}", "fn a() {}").unwrap_err();
         assert!(err.to_string().contains("identical"), "{err}");
+    }
+
+    #[test]
+    fn identical_error_has_prescription_and_stable_first_sentence() {
+        let (_d, ctx) = setup("fn a() {}\n");
+        let err = edit(&ctx, "fn a() {}", "fn a() {}").unwrap_err();
+        let msg = format!("Error: {err}");
+        assert_eq!(
+            msg.split('.').next().unwrap(),
+            "Error: edit failed: search and replace are identical - no change would be made",
+            "스트릭 키(첫 문장)는 불변이어야 한다 (M9 §3-1): {msg}"
+        );
+        assert!(msg.contains("AFTER your change"), "처방 문장 누락: {msg}");
     }
 
     #[test]
