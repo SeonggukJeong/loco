@@ -2,7 +2,7 @@
 
 - 날짜/디렉토리: docs/experiments/2026-07-17-sr-loop-arms/
 - 스펙 근거: docs/superpowers/specs/2026-07-17-m10-experiment-infra-stubborn-loops-design.md §8
-- 상태: 초안
+- 상태: 승인됨(2026-07-17)
 
 ## 가설
 H1: 완고 S/R 루프는 행동 공간 차단(암②)으로 종결된다.
