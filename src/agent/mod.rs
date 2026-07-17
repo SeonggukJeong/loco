@@ -57,6 +57,13 @@ pub const SALVAGE_NOTE: &str =
 /// 무검증 finish 1회 반려 (M5 §7.1). 모델 대상 — 영어
 pub const VERIFY_NUDGE: &str = "You modified files but never ran a verification command. Run the project's tests (e.g. cargo test) with run_command, then finish.";
 
+/// summary 없는 finish 2연속 시 1회 주입 (M9 §4-1) — 모델이 내보내야 하는
+/// 전체 턴 형태를 제시한다 (인자 예시만 담은 FINISH_ERR 에코는 5연속 반복을
+/// 못 막은 실측이 있다). 모델 대상 — 영어
+pub const FINISH_ARGS_CORRECTION: &str = "Your finish call is missing `summary`. Respond with exactly this shape: \
+{\"thought\": \"...\", \"action\": {\"tool\": \"finish\", \"args\": {\"summary\": \"<your final answer>\"}}}. \
+Do not call finish with empty args again.";
+
 pub struct Agent<C: LlmClient> {
     client: C,
     registry: std::sync::Arc<Registry>,
@@ -156,6 +163,11 @@ impl<C: LlmClient> Agent<C> {
         let mut overflow_shrinks: u32 = 0;
         let mut mutated_since_verify = false;
         let mut verify_nudged = false;
+        let mut finish_nudge = finish_nudge::FinishNudge::new();
+        // summary 없는 finish 연속 카운트 (M9 §4-1) — 무액션 턴은 유지, 디스패치·거부된
+        // 다른 액션이 리셋
+        let mut finish_missing_streak: usize = 0;
+        let mut finish_args_corrected = false;
         while turns < self.max_turns {
             // 취소 신호 후에는 새 LLM 호출을 만들지 않는다 — run_bounded의 유예가
             // 이 경로로 빠르게 끝난다 (설계 §1). 진행 중이던 run_command는 자체
@@ -243,6 +255,8 @@ impl<C: LlmClient> Agent<C> {
                             verify_nudged = true;
                             on_event(AgentEvent::Notice("(검증 없는 종료 — 확인 요청 주입)".to_string()));
                             session.push(tool_result_message("finish", VERIFY_NUDGE));
+                            finish_missing_streak = 0;
+                            let _ = finish_nudge.on_turn(finish_nudge::TurnEvent::FinishAttempt); // idle만 리셋 — 발동 불가
                             turns += 1;
                             continue;
                         }
@@ -251,17 +265,25 @@ impl<C: LlmClient> Agent<C> {
                     None => {
                         const FINISH_ERR: &str = "Error: finish requires a string `summary` argument, e.g. {\"tool\": \"finish\", \"args\": {\"summary\": \"<your final answer>\"}}";
                         // summary 없는 finish도 반복 계수에 편입 (M5 §7.3 — 기존 §3 사각지대 폐지)
+                        finish_missing_streak += 1;
+                        // idle만 리셋 — 이 이벤트로는 발동 불가 (M9 §4-2 표 6행)
+                        let _ = finish_nudge.on_turn(finish_nudge::TurnEvent::FinishAttempt);
                         let key = format!("finish|{}", turn.action.args);
                         let verdict = tracker.record(&key, FINISH_ERR);
                         // InjectCorrection을 버리면 record()가 래치한 실행당 1회 교정 기회가
                         // 소모된다 — 같은 user 메시지에 병합해 반드시 전달 (본선 스펙 §3 연속 user 금지)
-                        let body = match verdict {
+                        let mut body = match verdict {
                             repetition::RepetitionVerdict::InjectCorrection => {
                                 on_event(AgentEvent::Notice("(반복 감지 — 교정 메시지 주입)".to_string()));
                                 format!("{FINISH_ERR}\n{REPEAT_CORRECTION}")
                             }
                             _ => FINISH_ERR.to_string(),
                         };
+                        if finish_missing_streak >= 2 && !finish_args_corrected {
+                            finish_args_corrected = true;
+                            on_event(AgentEvent::Notice("(finish 인자 누락 반복 — 교정 주입)".to_string()));
+                            body = format!("{body}\n{FINISH_ARGS_CORRECTION}");
+                        }
                         session.push(tool_result_message("finish", &body));
                         if matches!(verdict, repetition::RepetitionVerdict::Stop) {
                             on_event(AgentEvent::Notice("(같은 툴 호출이 반복돼 조기 종료합니다)".to_string()));
@@ -290,7 +312,17 @@ impl<C: LlmClient> Agent<C> {
                 if let Decision::Deny { reason } = approver.approve(&req) {
                     on_event(AgentEvent::Notice("(거부됨 — 모델에 전달)".to_string()));
                     let body = format!("Denied: {reason}");
-                    let (note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+                    finish_missing_streak = 0;
+                    let ev = match turn.action.tool.as_str() {
+                        "edit_file" | "write_file" => finish_nudge::TurnEvent::MutationAttempt,
+                        _ => finish_nudge::TurnEvent::Other, // 게이트 거부된 run_command — 불변 (§4-2 표)
+                    };
+                    let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+                    // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
+                    if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
+                        on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
+                        note = merge_note(note, nudge);
+                    }
                     session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note.as_deref());
                     if stop {
                         return Ok(AgentOutcome::RepetitionStop);
@@ -299,6 +331,10 @@ impl<C: LlmClient> Agent<C> {
                     continue;
                 }
             }
+            // M9 §4-2: 반복-호출 신호는 tracker.record()(track_and_note 내부) **전에**
+            // 조회해야 자기-매치가 없다
+            let call_key = format!("{}|{}", turn.action.tool, turn.action.args);
+            let repeated_call = tracker.seen_key(&call_key);
             // 툴 에러도 모델에 되먹이는 데이터 — 루프는 계속 (스펙 §9).
             // 디스패치는 spawn_blocking으로 — 동기 툴(향후 run_command 등)이 async
             // 런타임을 막지 않고, Ctrl+C가 REPL 쪽에서 즉시 select! 밖으로 빠질 수 있게 한다
@@ -322,7 +358,33 @@ impl<C: LlmClient> Agent<C> {
                     mutated_since_verify = true;
                 }
             }
-            let (note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+            finish_missing_streak = 0;
+            let ev = match turn.action.tool.as_str() {
+                "edit_file" | "write_file" => {
+                    if dispatch_ok {
+                        finish_nudge::TurnEvent::MutationOk
+                    } else {
+                        finish_nudge::TurnEvent::MutationAttempt
+                    }
+                }
+                // §4-2: "성공 검증" = Ok ∧ 첫 줄 exit code 0. 타임아웃·취소·Err 본문에는
+                // 이 줄이 없어 자연 배제 (VERIFY_NUDGE의 "종료코드 무관 Ok" 기준과 별개)
+                "run_command" => {
+                    if dispatch_ok && body.lines().next() == Some("exit code: 0") {
+                        finish_nudge::TurnEvent::VerifyOk { repeat: repeated_call }
+                    } else {
+                        finish_nudge::TurnEvent::VerifyOther
+                    }
+                }
+                "read_file" | "grep" | "list_files" => finish_nudge::TurnEvent::ReadOnly { repeat: repeated_call },
+                _ => finish_nudge::TurnEvent::Other, // 미지 도구 (§4-2 표)
+            };
+            let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+            // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
+            if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
+                on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
+                note = merge_note(note, nudge);
+            }
             session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note.as_deref());
             if stop {
                 return Ok(AgentOutcome::RepetitionStop);
@@ -406,6 +468,14 @@ fn looks_like_context_overflow(body: &str) -> bool {
     body.to_lowercase().contains("context")
 }
 
+/// 교정 노트에 문장 하나를 덧붙인다 (없으면 새로) — tool_result 병합 규칙 유지
+fn merge_note(note: Option<String>, extra: &str) -> Option<String> {
+    Some(match note {
+        Some(n) => format!("{n}\n{extra}"),
+        None => extra.to_string(),
+    })
+}
+
 /// system 메시지를 제거하고 그 내용을 첫 user 메시지 앞에 붙인다 (스펙 §3 폴백)
 fn inline_system_into_first_user(history: &[ChatMessage]) -> Vec<ChatMessage> {
     let Some((first, rest)) = history.split_first() else {
@@ -483,6 +553,15 @@ mod tests {
     fn make_agent(script: &Scripted, root: std::path::PathBuf, max_turns: usize) -> Agent<&Scripted> {
         let config = Config { max_turns, ..Default::default() };
         Agent::new(script, Registry::read_only(), ToolCtx::new(root), "test-model".into(), &config)
+    }
+
+    fn make_guided_agent(script: &Scripted, root: std::path::PathBuf, max_turns: usize) -> Agent<&Scripted> {
+        let config = Config { max_turns, ..Default::default() };
+        Agent::new(script, Registry::guided(), ToolCtx::new(root), "test-model".into(), &config)
+    }
+
+    fn session_contains(session: &Session, needle: &str) -> bool {
+        session.messages().iter().any(|m| m.content.contains(needle))
     }
 
     fn new_session(agent: &Agent<&Scripted>) -> Session {
@@ -654,6 +733,52 @@ mod tests {
         let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(s) if s == "이제 됐다"));
         assert!(session.messages().iter().any(|m| m.content.contains("`summary`")));
+    }
+
+    #[tokio::test]
+    async fn finish_missing_summary_twice_gets_args_correction_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty = turn("finish", serde_json::json!({}));
+        let script = Scripted::new(vec![ok(&empty), ok(&empty), ok(&finish("done"))]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        let hits = session
+            .messages()
+            .iter()
+            .filter(|m| m.content.contains("Do not call finish with empty args again"))
+            .count();
+        assert_eq!(hits, 1, "2연속에 정확히 1회 주입 (M9 §4-1)");
+    }
+
+    #[tokio::test]
+    async fn dispatched_action_resets_finish_args_streak() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let empty = turn("finish", serde_json::json!({}));
+        let read = turn("read_file", serde_json::json!({"path": "a.txt"}));
+        let script = Scripted::new(vec![ok(&empty), ok(&read), ok(&empty), ok(&finish("done"))]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(!session_contains(&session, "Do not call finish with empty args again"), "사이에 디스패치된 액션 → 리셋 (§4-1)");
+    }
+
+    #[tokio::test]
+    async fn length_cut_between_missing_finishes_keeps_the_streak() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty = turn("finish", serde_json::json!({}));
+        let script = Scripted::new(vec![
+            ok(&empty),
+            ok_with_reason("truncated...", "length"), // 무액션 턴 — 스트릭 유지 (§4-1)
+            ok(&empty),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(session_contains(&session, "Do not call finish with empty args again"));
     }
 
     fn api_400() -> Result<ChatResponse, LlmError> {
@@ -1155,5 +1280,177 @@ mod tests {
         let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
         assert!(!session.messages().iter().any(|m| m.content.contains("verification command")));
+    }
+
+    #[cfg(unix)]
+    mod finish_nudge_loop {
+        use super::*;
+
+        fn write_turn(path: &str, content: &str) -> String {
+            turn("write_file", serde_json::json!({"path": path, "content": content}))
+        }
+        fn run_turn(cmd: &str) -> String {
+            turn("run_command", serde_json::json!({"command": cmd}))
+        }
+        fn read_turn(path: &str) -> String {
+            turn("read_file", serde_json::json!({"path": path}))
+        }
+        fn grep_turn(pattern: &str) -> String {
+            turn("grep", serde_json::json!({"pattern": pattern}))
+        }
+
+        #[tokio::test]
+        async fn verified_then_repeated_rechecks_get_finish_nudge() {
+            let dir = tempfile::tempdir().unwrap();
+            let script = Scripted::new(vec![
+                ok(&write_turn("a.txt", "answer")),
+                ok(&run_turn("true")), // exit 0 — 무장
+                ok(&read_turn("a.txt")),
+                ok(&grep_turn("answer")),
+                ok(&read_turn("a.txt")), // 반복 호출
+                ok(&turn("list_files", serde_json::json!({}))), // 4번째 카운트 턴 — 발동
+                ok(&finish("done")),
+            ]);
+            let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+            let mut session = new_session(&agent);
+            let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+            assert!(matches!(outcome, AgentOutcome::Finished(_)));
+            assert!(session_contains(&session, "do not re-verify"), "§4-2 발동");
+        }
+
+        #[tokio::test]
+        async fn novel_exploration_after_verify_does_not_fire_nudge() {
+            let dir = tempfile::tempdir().unwrap();
+            let script = Scripted::new(vec![
+                ok(&write_turn("a.txt", "answer")),
+                ok(&run_turn("true")),
+                ok(&read_turn("a.txt")),
+                ok(&grep_turn("p1")),
+                ok(&grep_turn("p2")),
+                ok(&turn("list_files", serde_json::json!({}))), // 4턴 전부 신규 — 불발
+                ok(&finish("done")),
+            ]);
+            let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+            let mut session = new_session(&agent);
+            run_quiet(&mut agent, &mut session, "x").await.unwrap();
+            assert!(!session_contains(&session, "do not re-verify"), "반복-호출 조건 (§4-2)");
+        }
+
+        #[tokio::test]
+        async fn edit_attempt_after_verify_disarms_nudge() {
+            let dir = tempfile::tempdir().unwrap();
+            let script = Scripted::new(vec![
+                ok(&write_turn("a.txt", "answer")),
+                ok(&run_turn("true")),
+                ok(&read_turn("a.txt")),
+                ok(&read_turn("a.txt")), // 반복 — idle 2
+                ok(&turn("edit_file", serde_json::json!({"path": "a.txt", "search": "answer", "replace": "answer"}))), // S/R 실패 시도 — 무장 해제
+                ok(&grep_turn("x")),
+                ok(&grep_turn("y")),
+                ok(&turn("list_files", serde_json::json!({}))),
+                ok(&grep_turn("z")),
+                ok(&finish("done")),
+            ]);
+            let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+            let mut session = new_session(&agent);
+            run_quiet(&mut agent, &mut session, "x").await.unwrap();
+            assert!(!session_contains(&session, "do not re-verify"), "무장 해제 후 재검증 성공 없이는 불발 (§4-2 표 2행)");
+        }
+
+        #[tokio::test]
+        async fn failing_verification_does_not_arm_nudge() {
+            let dir = tempfile::tempdir().unwrap();
+            let script = Scripted::new(vec![
+                ok(&write_turn("a.txt", "answer")),
+                ok(&run_turn("false")), // exit 1 — 무장 안 함
+                ok(&read_turn("a.txt")),
+                ok(&grep_turn("x")),
+                ok(&read_turn("a.txt")),
+                ok(&turn("list_files", serde_json::json!({}))),
+                ok(&finish("done")),
+            ]);
+            let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+            let mut session = new_session(&agent);
+            run_quiet(&mut agent, &mut session, "x").await.unwrap();
+            assert!(!session_contains(&session, "do not re-verify"), "비0 종료코드는 무장하지 않음 (§4-2 표 4행)");
+        }
+
+        #[tokio::test]
+        async fn timed_out_verification_does_not_arm_nudge() {
+            let dir = tempfile::tempdir().unwrap();
+            let mut ctx = ToolCtx::new(dir.path().to_path_buf());
+            ctx.command_timeout = std::time::Duration::from_millis(100);
+            let script = Scripted::new(vec![
+                ok(&write_turn("a.txt", "answer")),
+                ok(&run_turn("sleep 5")), // 타임아웃 본문에는 exit code 줄이 없다 — VerifyOther (§4-2 표 4행, §6 ④ 타임아웃 몫)
+                ok(&read_turn("a.txt")),
+                ok(&grep_turn("x")),
+                ok(&read_turn("a.txt")),
+                ok(&turn("list_files", serde_json::json!({}))),
+                ok(&finish("done")),
+            ]);
+            let config = Config { max_turns: 25, ..Default::default() };
+            let mut agent = Agent::new(&script, Registry::guided(), ctx, "test-model".into(), &config);
+            let mut session = new_session(&agent);
+            run_quiet(&mut agent, &mut session, "x").await.unwrap();
+            assert!(!session_contains(&session, "do not re-verify"), "타임아웃 검증은 무장하지 않음");
+        }
+
+        #[tokio::test]
+        async fn invalid_finish_resets_nudge_idle_counter() {
+            let dir = tempfile::tempdir().unwrap();
+            let script = Scripted::new(vec![
+                ok(&write_turn("a.txt", "answer")),
+                ok(&run_turn("true")),
+                ok(&read_turn("a.txt")),
+                ok(&read_turn("a.txt")), // 반복 — idle 2
+                ok(&grep_turn("x")),     // idle 3
+                ok(&turn("finish", serde_json::json!({}))), // 무효 finish — idle 리셋 (§4-2 표 6행)
+                ok(&turn("list_files", serde_json::json!({}))), // 리셋이 없었다면 4번째 카운트 턴으로 발동했을 자리
+                ok(&finish("done")),
+            ]);
+            let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+            let mut session = new_session(&agent);
+            run_quiet(&mut agent, &mut session, "x").await.unwrap();
+            assert!(!session_contains(&session, "do not re-verify"), "무효 finish가 4-2 카운터를 리셋 (§6 ⑥)");
+        }
+
+        #[tokio::test]
+        async fn no_action_turn_preserves_nudge_idle_counter() {
+            let dir = tempfile::tempdir().unwrap();
+            let script = Scripted::new(vec![
+                ok(&write_turn("a.txt", "answer")),
+                ok(&run_turn("true")),
+                ok(&read_turn("a.txt")),
+                ok(&read_turn("a.txt")), // 반복 — idle 2
+                ok(&grep_turn("x")),     // idle 3
+                ok_with_reason("truncated...", "length"), // 무액션 턴 — 카운터 불변 (§4-2 표 7행)
+                ok(&turn("list_files", serde_json::json!({}))), // idle 4 — 발동
+                ok(&finish("done")),
+            ]);
+            let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+            let mut session = new_session(&agent);
+            run_quiet(&mut agent, &mut session, "x").await.unwrap();
+            assert!(session_contains(&session, "do not re-verify"), "무액션 턴은 카운터 불변 (§6 ⑦)");
+        }
+
+        #[tokio::test]
+        async fn pure_identical_loop_prefers_repetition_stop() {
+            let dir = tempfile::tempdir().unwrap();
+            let echo = run_turn("echo hi");
+            let script = Scripted::new(vec![
+                ok(&write_turn("a.txt", "answer")),
+                ok(&echo), // 무장 (윈도 1회째)
+                ok(&echo), // idle 1 (2회째)
+                ok(&echo), // idle 2 (3회째 — REPEAT_CORRECTION)
+                ok(&echo), // idle 3 (4회째)
+                ok(&echo), // 5회째 — RepetitionStop (idle 4 도달 전에 정지가 선점, §4-2 우선순위)
+            ]);
+            let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+            let mut session = new_session(&agent);
+            let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+            assert!(matches!(outcome, AgentOutcome::RepetitionStop), "{outcome:?}");
+            assert!(!session_contains(&session, "do not re-verify"), "정지 턴에는 니지를 평가하지 않는다");
+        }
     }
 }
