@@ -47,6 +47,9 @@ def run_metrics(events):
             counts[k] += content.count(m)
         # 정지 원인 분류는 마지막 비-assistant 본문으로 — 인자누락 finish의
         # FINISH_ERR는 tool_result가 아니라 user 이벤트로 남는다 (리뷰 I-2)
+        # 가정: 교정 노트(별도 user 이벤트)가 정지 턴에 겹치면 last_body가 교정
+        # 노트 쪽으로 덮여 오분류될 수 있으나, 교정 래치가 런당 1회라 정지 턴과
+        # 겹칠 조건 자체가 현재 코드에서는 실질 도달 불가.
         last_body = content
         # 인자누락 finish 최장 연속 (스펙 §7-3) — 다른 액션 결과(tool_result)가 끊는다
         if MARKS["finish_missing"] in content:
@@ -83,6 +86,9 @@ def run_metrics(events):
 
 
 def stop_cause(outcome, last_result):
+    # last_result는 run_metrics의 last_body(정지 직전 마지막 비-assistant 이벤트
+    # 본문) — 교정 노트가 같은 턴에 겹쳐 last_body를 덮으면 오분류될 수 있으나,
+    # 교정 래치가 런당 1회라 정지 턴과 겹칠 조건 자체가 실질 도달 불가.
     if outcome != "repetition_stop":
         return "-"
     if MARKS["sr_error"] in last_result or MARKS["sr_block"] in last_result:
