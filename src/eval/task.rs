@@ -78,6 +78,21 @@ pub fn load_tasks(tasks_dir: &Path) -> anyhow::Result<Vec<Task>> {
     Ok(tasks)
 }
 
+/// --filter 적용 (M10 §7-1): 전체 로드·검증 **후** 이름 정확 일치로 선별.
+/// 각 필터 값이 최소 1과제와 일치해야 한다 — 오타 필터가 배치를 조용히
+/// 축소한 채 완주하는 침묵 실패는 사전등록 규율과 정면 충돌
+pub fn filter_tasks(tasks: Vec<Task>, filters: &[String]) -> anyhow::Result<Vec<Task>> {
+    if filters.is_empty() {
+        return Ok(tasks);
+    }
+    for f in filters {
+        if !tasks.iter().any(|t| t.name == *f) {
+            bail!("--filter '{f}'와 일치하는 과제가 없음");
+        }
+    }
+    Ok(tasks.into_iter().filter(|t| filters.contains(&t.name)).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,6 +180,26 @@ protected = ["keep.txt"]
     fn empty_tasks_dir_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         assert!(load_tasks(dir.path()).is_err());
+    }
+
+    #[test]
+    fn filter_selects_exact_names_and_rejects_any_unmatched_value() {
+        let dir = tempfile::tempdir().unwrap();
+        write_task(dir.path(), "alpha", MINIMAL, &["keep.txt"]);
+        write_task(dir.path(), "beta", MINIMAL, &["keep.txt"]);
+        // 빈 필터 = 전체
+        assert_eq!(filter_tasks(load_tasks(dir.path()).unwrap(), &[]).unwrap().len(), 2);
+        // 정확 일치 선택
+        let picked = filter_tasks(load_tasks(dir.path()).unwrap(), &["alpha".to_string()]).unwrap();
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].name, "alpha");
+        // 값별 비매치 → 오류 (오타 하나가 섞여도 전체 실패 — 침묵 축소 금지, 스펙 §7-1)
+        let err = filter_tasks(
+            load_tasks(dir.path()).unwrap(),
+            &["alpha".to_string(), "betaa".to_string()],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("betaa"), "{err}");
     }
 
     /// 리포지토리에 커밋된 실제 과제 세트가 로더 검증을 통과하는지

@@ -44,6 +44,9 @@ enum Command {
         /// 판정기 메타테스트 — LLM 없이 과제별 변별성·해결가능성만 검증 (M6)
         #[arg(long, conflicts_with_all = ["repeats", "seed"])]
         verify: bool,
+        /// 과제 이름 정확 일치 필터 (반복 지정 가능, 값별 비매치는 오류)
+        #[arg(long)]
+        filter: Vec<String>,
     },
 }
 
@@ -67,7 +70,7 @@ async fn main() -> ExitCode {
 
 async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     let config = Config::load_default()?;
-    if let Some(Command::Eval { tasks_dir, repeats, seed, timeout_scale, verify }) = cli.command {
+    if let Some(Command::Eval { tasks_dir, repeats, seed, timeout_scale, verify, filter }) = cli.command {
         // Duration::from_secs_f64는 음수/비유한 값뿐 아니라 u64::MAX초 초과에도
         // 패닉 — 하네스 에러(exit 1)로 선검증. 상한 1e6이면 300초 과제가 ~9.5년
         if !(timeout_scale.is_finite() && timeout_scale > 0.0 && timeout_scale <= 1_000_000.0) {
@@ -75,7 +78,7 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         }
         if verify {
             // 메타테스트는 게이트 — LLM·서버 없이 동작해야 하므로 client를 만들지 않는다 (M6 §4)
-            let opts = loco::eval::verify::VerifyOptions { tasks_dir, timeout_scale };
+            let opts = loco::eval::verify::VerifyOptions { tasks_dir, timeout_scale, filters: filter };
             let records = loco::eval::verify::run_verify(&opts).await?;
             print!("{}", loco::eval::verify::render_verify_table(&records));
             let all_ok = records.iter().all(|r| r.ok());
@@ -92,6 +95,7 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             base_seed: seed,
             timeout_scale,
             cancel_grace: std::time::Duration::from_secs(5),
+            filters: filter,
         };
         let root = std::env::current_dir()?;
         let run = loco::eval::run_eval(&client, &config, &model, &opts, &root).await?;
@@ -203,5 +207,11 @@ mod cli_tests {
             Cli::try_parse_from(["loco", "eval", "tasks", "--verify", "--timeout-scale", "2.0"]).is_ok(),
             "--timeout-scale은 verify와 병용 가능 (check 실행 시간에 관여)"
         );
+    }
+
+    #[test]
+    fn filter_flag_repeats_and_combines_with_verify() {
+        assert!(Cli::try_parse_from(["loco", "eval", "tasks", "--filter", "a", "--filter", "b"]).is_ok());
+        assert!(Cli::try_parse_from(["loco", "eval", "tasks", "--verify", "--filter", "a"]).is_ok(), "표적 검증 조합 (§7-1)");
     }
 }

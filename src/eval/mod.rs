@@ -31,6 +31,8 @@ pub struct EvalOptions {
     pub timeout_scale: f64,
     /// 취소 신호 후 자연 종료 유예 — CLI 기본 5초, 테스트가 줄인다
     pub cancel_grace: Duration,
+    /// 과제 이름 정확 일치 필터 — 빈 벡터면 전체 실행 (M10 §7-1)
+    pub filters: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -46,7 +48,7 @@ pub async fn run_eval<C: LlmClient>(
     opts: &EvalOptions,
     project_root: &Path,
 ) -> anyhow::Result<EvalRun> {
-    let tasks = task::load_tasks(&opts.tasks_dir)?;
+    let tasks = task::filter_tasks(task::load_tasks(&opts.tasks_dir)?, &opts.filters)?;
     let started = Instant::now();
     let started_at = utc_stamp(now_secs());
     let report_dir = create_report_dir(project_root, &started_at)?;
@@ -437,6 +439,7 @@ mod tests {
             base_seed: 0,
             timeout_scale: 1.0,
             cancel_grace: Duration::from_millis(100),
+            filters: vec![],
         }
     }
 
@@ -542,6 +545,44 @@ protected = ["data"]
             .await
             .unwrap_err();
         assert!(err.to_string().contains("하네스 중단"), "{err:#}");
+    }
+
+    #[tokio::test]
+    async fn filter_runs_selected_task_only_but_validates_all_definitions() {
+        // 케이스 1: 정상 과제 alpha·beta + opts.filters=["alpha"] → run_eval Ok,
+        //   report.tasks.len()==1 ∧ report.tasks[0].name=="alpha" (§9 "필터 일치 과제만 수행")
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "alpha",
+            "prompt = \"p\"\ncheck = \"true\"\nprotected = [\"keep.txt\"]\n",
+            &[("keep.txt", "x")],
+        );
+        write_task(
+            tasks.path(),
+            "beta",
+            "prompt = \"p\"\ncheck = \"true\"\nprotected = [\"keep.txt\"]\n",
+            &[("keep.txt", "x")],
+        );
+        let script = Scripted::new(vec![ok(&finish("없음"))]);
+        let config = Config::default();
+        let mut o = opts(tasks.path().to_path_buf());
+        o.filters = vec!["alpha".to_string()];
+        let run = run_eval(&script, &config, "m", &o, proj.path()).await.unwrap();
+        assert_eq!(run.report.tasks.len(), 1);
+        assert_eq!(run.report.tasks[0].name, "alpha");
+
+        // 케이스 2: beta/task.toml을 `protected = []`로 깨뜨린 뒤 같은 filters →
+        //   run_eval Err (로드 후 필터 — 비선택 과제의 정의 오류도 검출, §7-1)
+        std::fs::write(
+            tasks.path().join("beta/task.toml"),
+            "prompt = \"p\"\ncheck = \"true\"\nprotected = []\n",
+        )
+        .unwrap();
+        let script2 = Scripted::new(vec![]);
+        let err = run_eval(&script2, &config, "m", &o, proj.path()).await.unwrap_err();
+        assert!(err.to_string().contains("protected"), "{err:#}");
     }
 
     #[tokio::test]

@@ -9,13 +9,15 @@ use std::sync::Arc;
 use anyhow::Context;
 
 use super::sandbox::{overlay_tree, Sandbox};
-use super::task::{load_tasks, Task};
+use super::task::{filter_tasks, load_tasks, Task};
 use super::{cargo_tripwire, scaled_timeout, with_implicit_protected};
 use crate::tools::exec::{exec_shell, ExecEnd};
 
 pub struct VerifyOptions {
     pub tasks_dir: PathBuf,
     pub timeout_scale: f64,
+    /// 과제 이름 정확 일치 필터 — 빈 벡터면 전체 실행 (M10 §7-1)
+    pub filters: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -37,7 +39,7 @@ impl VerifyRecord {
 
 /// 전 과제 검증. Ctrl+C는 하네스 에러로 전파한다 — 게이트는 부분 결과가 무의미
 pub async fn run_verify(opts: &VerifyOptions) -> anyhow::Result<Vec<VerifyRecord>> {
-    let tasks = load_tasks(&opts.tasks_dir)?;
+    let tasks = filter_tasks(load_tasks(&opts.tasks_dir)?, &opts.filters)?;
     // run_eval과 같은 장수 SIGINT 리스너 — check 실행 중 Ctrl+C가 프로세스 그룹을 죽인다
     let interrupt = Arc::new(AtomicBool::new(false));
     let listener = tokio::spawn({
@@ -241,7 +243,7 @@ mod tests {
     const TOML: &str = "prompt = \"p\"\ncheck = \"test -f solved.txt\"\nprotected = [\"keep.txt\"]\n";
 
     fn opts(dir: &Path) -> VerifyOptions {
-        VerifyOptions { tasks_dir: dir.to_path_buf(), timeout_scale: 1.0 }
+        VerifyOptions { tasks_dir: dir.to_path_buf(), timeout_scale: 1.0, filters: vec![] }
     }
 
     #[tokio::test]
