@@ -429,8 +429,13 @@ v2 조건(timeout 60s·로드 8192), 나머지는 1단과 동일 조건.
 | FINISH_NUDGE 발동 | — | 2건: E fd0(7액션 뒤 finish), tasks/ rename-1(즉시 finish) — 모두 종결 |
 | 거짓 성공 finish | 2 | 1 |
 
-순수 동일-명령 재검증 루프(B/E uv1 — `cargo test` exit 0 반복 5회)는 설계대로
-반복정지가 선점해 FINISH_NUDGE 도달 전에 정지 — 1·2단 동일 패턴 각 1건.
+B/E uv1의 동일-명령 루프(각 1건, 반복정지 종결)의 실체는 — M10 리뷰 1R
+트랜스크립트 재판독(2026-07-17)로 정정 — `cargo test`가 아니라
+`cat inv-report/tests/check_vat_report.rs`(exit 0) 반복이며, 두 런 모두
+edit_file/write_file 시도 0회·passed=false인 **미완성 탐색 루프**다.
+FINISH_NUDGE는 뮤테이션 없이는 무장하지 않으므로 "선점"이 아니라 발동 자체가
+불가능한 상태였고, 반복정지가 정당한 종결이다. 반복정지가 엄격 통과를 실제로
+버린 런은 F fd1(passed=True·repetition_stop, write_file 반복)이 유일하다.
 
 ### 성공 기준 판정 (스펙 §2 전건 대조)
 
