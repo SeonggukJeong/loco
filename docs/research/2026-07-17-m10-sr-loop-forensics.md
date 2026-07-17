@@ -61,7 +61,7 @@ E=`20260717T032507Z`(2단 ornith@8K), F=`20260717T034527Z`(2단 ornith@32K).
 | B | fix-monthly-total-2 | 2 | 단일 발생(4) 후 실수정 성공, **성공 후 재시도 회귀**(14=4, 6번 성공 이후) | 없음(edit_file로 결국 우회 성공) | ✓/finished | `run-fix-monthly-total-2.jsonl` [4,6,14] |
 | C | fix-monthly-total-0 | 1 | 단일 발생(4), 다음 호출(6)에서 실수정 — 그러나 수정 내용이 부호가 아니라 들여쓰기만 바뀜(부호 미수정) | 미해당 | ✗/repetition_stop(원인은 이후 read_file 5연속 반복, S/R과 무관) | `run-fix-monthly-total-0.jsonl` [4,6,8,10,12,15,17] |
 | C | fix-monthly-total-2 | 1 | 단일 발생(4), 다음 호출(6)에서 실수정(부호까지 정정) 성공 | 미해당 | ✓/finished | `run-fix-monthly-total-2.jsonl` [4,6] |
-| C | update-vat-rate-0 | 5 | defaults.rs 2회(22, 24 — 각각 개별 no-op, 24가 22보다 앞에 문서 주석 한 줄을 더한 변주, 다음 시도(26)에서 바로 실수정 성공) + pricing.rs 문자단위 복사 3회(28=34=36, 비연속 — 다른 시도가 끼어듦) | 없음(edit_file 실수정으로 우회) | ✗/max_turns | `run-update-vat-rate-0.jsonl` [22,24,28,34,36] |
+| C | update-vat-rate-0 | 5 | defaults.rs 2회(22, 24 — 각각 개별 no-op, 24가 22보다 앞에 문서 주석 한 줄을 더한 변주) → idx26은 주석만 삭제하고 상수값(10)은 그대로 둔 화장성 편집(S/R 가드만 회피, 버그 미수정 — 이후 이 파일은 런 종료까지 재언급되지 않음) + pricing.rs 문자단위 복사 3회(28=34=36, 비연속) — idx30도 동일하게 주석만 지운 화장성 편집(세율 값 불변) | **있음**(idx45/47/49 — write_file로 pricing.rs·invoice.rs·forecast.rs를 재작성해 세율 12%를 실제로 반영, defaults.rs만 끝까지 미수정으로 남음) | ✗/max_turns | `run-update-vat-rate-0.jsonl` [22,24,26,28,30,34,36,45] |
 | C | update-vat-rate-1 | 3 | invoice.rs 2연속 복사(38=40) 후 실수정 성공(42) → **성공 후 재시도 회귀**(46=38/40, 이미 고친 파일에 옛 텍스트로 재시도) | 없음 | ✗/max_turns | `run-update-vat-rate-1.jsonl` [38,40,42,46] |
 | D | fix-monthly-total-1(gemma) | 2 | monthly.rs 문자단위 복사 2회(44=50, 비연속 — 중간에 존재하지 않는 코드를 지어낸 시도 3회가 끼어듦) — **파일당 최대 2회, 임계(3) 미도달** | 없음(결국 실수정 성공) | ✗/max_turns(finish 못 함) | `run-fix-monthly-total-1.jsonl` [41,44,47,50,53,56] |
 | D | fix-monthly-total-2(gemma) | 1 | 단일 발생(20), 다음 호출(23)에서 실수정 성공 | 미해당 | ✓/finished | `run-fix-monthly-total-2.jsonl` [20,23] |
@@ -91,11 +91,16 @@ E=`20260717T032507Z`(2단 ornith@8K), F=`20260717T034527Z`(2단 ornith@32K).
    기록한 E fm0(4=6=9 → 12에서 두 번째 케이스를 추가한 변주 → 14=9로 회귀
    → 16=14)가 **B fm0에서도 재현됐다**(12=14=19=23 → 25에서 앞뒤 문맥을
    늘린 변주 → 27=23으로 회귀). C uv0 defaults.rs(idx22→24, 문서 주석
-   한 줄을 추가한 변주)도 같은 "범위만 넓히는 자기복사" 유형이지만, 이
-   경우는 회귀 없이 바로 다음 시도(26)에서 진짜 수정으로 넘어갔다. 세
-   경우 모두 변주 시도 자체가 여전히 `search==replace`를 벗어나지
-   못했다(진짜 교정이 아니라 범위만 넓어진 자기복사) — 복사 어트랙터
-   가설과 정합.
+   한 줄을 추가한 변주)도 같은 "범위만 넓히는 자기복사" 유형이지만, 다음
+   시도(idx26)는 회귀도 진짜 수정도 아니었다 — 문서 주석 줄만 삭제해
+   `search≠replace`를 만들어 S/R 가드만 벗어났을 뿐 상수값(10)은 그대로
+   둔 **화장성 편집**이었고(같은 런의 pricing.rs idx30도 동일 패턴),
+   실제 버그(10→12)는 defaults.rs에서 런 종료까지 고쳐지지 않았다
+   (`passed=False`, §2 표 정정). 세 경우 모두 변주 시도(idx25·idx12·
+   idx24) 자체는 여전히 `search==replace`를 벗어나지 못했다(진짜 교정이
+   아니라 범위만 넓어진 자기복사) — 복사 어트랙터 가설과 정합하지만,
+   C uv0는 가드를 벗어난 뒤에도 진짜 수정으로 이어지지 않을 수 있음을
+   보여주는 반례이기도 하다.
 3. **성공 후 재시도 회귀** — B fm2(idx4 → idx6 실수정 성공 → idx14가 idx4와
    동일 인자로 재발), C uv1(idx38/40 → idx42 실수정 성공 → idx46이 idx38/40과
    동일한 "고치기 전" 텍스트로 재발). 이미 고쳐진 파일에 대해 모델이 옛
@@ -177,7 +182,7 @@ write_file 실패(F uv1)는 크기·절삭이 아니라 인자 누락이었다.
   전체에 걸쳐 `edit_file`/`write_file` 호출이 **단 한 번도 없다** — 코드
   탐색(`read_file`/`grep`/`run_command grep|cat`)만 반복하다 마지막
   5턴이 `cat inv-report/tests/check_vat_report.rs`(exit 0) 동일 반복이고
-  (idx24/26/30/32/35/37, REPEAT_CORRECTION이 idx34에서 1회 주입됐지만
+  (idx26/30/32/35/37, REPEAT_CORRECTION이 idx34에서 1회 주입됐지만
   무시), `report.json`은 두 런 모두 `passed=False, outcome=repetition_stop,
   turns=18`. `finish_nudge`는 뮤테이션 없이는 무장하지 않으므로(M9
   스캐폴딩 설계), "정지 대신 finish 유도" 개입은 애초에 발동 조건이
@@ -267,4 +272,13 @@ write_file 실패(F uv1)는 크기·절삭이 아니라 인자 누락이었다.
   항목으로 남긴다. (2) C fm0의 repetition_stop은 S/R 오류(idx4-5) 이후
   전혀 다른 원인(부호를 고치지 못한 채 들여쓰기만 바뀐 "성공" 이후의
   read_file 반복)이었다 — 이 런을 "S/R 루프가 실패를 유발했다"는 근거로
-  쓰지 않도록 표에 명시했다.
+  쓰지 않도록 표에 명시했다. (3) 리뷰 1R 지적 반영: C uv0(update-vat-rate-0)의
+  defaults.rs idx26·pricing.rs idx30을 초안에서 "실수정 성공"/"edit_file
+  우회"로 오기록했으나, 재정독 결과 둘 다 문서 주석 한 줄만 삭제하고 세율
+  상수·값은 그대로 둔 화장성 편집이었다(§2 표·§3-ⓐ 정정) — 실제 세율
+  반영은 이후 write_file 갈아타기(idx45/47/49)로 pricing.rs·invoice.rs·
+  forecast.rs 3곳에서만 이뤄졌고, defaults.rs는 런 종료까지 미수정으로
+  남아 `passed=False`와 부합한다. §6 ⓓ의 B/E uv1 인용 목록도 idx24(실제로는
+  `cat inv-report/src/invoice.rs`로, 반복 대상인 `cat
+  .../check_vat_report.rs`가 아님)를 잘못 포함하고 있었기에 (26/30/32/35/37)
+  5개로 정정했다.
