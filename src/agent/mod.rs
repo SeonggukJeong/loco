@@ -178,6 +178,7 @@ impl<C: LlmClient> Agent<C> {
         // 다른 액션이 리셋
         let mut finish_missing_streak: usize = 0;
         let mut finish_args_corrected = false;
+        let mut status = status_note::StatusNote::new();
         while turns < self.max_turns {
             // 취소 신호 후에는 새 LLM 호출을 만들지 않는다 — run_bounded의 유예가
             // 이 경로로 빠르게 끝난다 (설계 §1). 진행 중이던 run_command는 자체
@@ -218,6 +219,13 @@ impl<C: LlmClient> Agent<C> {
                      Respond again with exactly one, much shorter JSON turn.",
                 ));
                 on_event(AgentEvent::Notice("(응답이 잘림 — 더 짧게 다시 요청)".to_string()));
+                let _ = status.on_turn(&status_note::TurnCtx {
+                    turn: turns + 1,
+                    max_turns: self.max_turns,
+                    mutation_ok: false,
+                    has_note_channel: false, // session.push 경로 — 이월
+                    mutated_since_verify,
+                });
                 turns += 1;
                 continue;
             }
@@ -267,6 +275,13 @@ impl<C: LlmClient> Agent<C> {
                             session.push(tool_result_message("finish", VERIFY_NUDGE));
                             finish_missing_streak = 0;
                             let _ = finish_nudge.on_turn(finish_nudge::TurnEvent::FinishAttempt); // idle만 리셋 — 발동 불가
+                            let _ = status.on_turn(&status_note::TurnCtx {
+                                turn: turns + 1,
+                                max_turns: self.max_turns,
+                                mutation_ok: false,
+                                has_note_channel: false, // session.push 경로 — 이월
+                                mutated_since_verify,
+                            });
                             turns += 1;
                             continue;
                         }
@@ -294,6 +309,13 @@ impl<C: LlmClient> Agent<C> {
                             on_event(AgentEvent::Notice("(finish 인자 누락 반복 — 교정 주입)".to_string()));
                             body = format!("{body}\n{FINISH_ARGS_CORRECTION}");
                         }
+                        let _ = status.on_turn(&status_note::TurnCtx {
+                            turn: turns + 1,
+                            max_turns: self.max_turns,
+                            mutation_ok: false,
+                            has_note_channel: false, // session.push 경로 — 이월
+                            mutated_since_verify,
+                        });
                         session.push(tool_result_message("finish", &body));
                         if matches!(verdict, repetition::RepetitionVerdict::Stop) {
                             on_event(AgentEvent::Notice("(같은 툴 호출이 반복돼 조기 종료합니다)".to_string()));
@@ -334,6 +356,18 @@ impl<C: LlmClient> Agent<C> {
                         on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
                         note = merge_note(note, nudge);
                     }
+                    if !stop
+                        && let Some(s) = status.on_turn(&status_note::TurnCtx {
+                            turn: turns + 1,
+                            max_turns: self.max_turns,
+                            mutation_ok: false, // 거부 — 뮤테이션 아님
+                            has_note_channel: true,
+                            mutated_since_verify,
+                        })
+                    {
+                        session.remove_status_note();
+                        note = merge_note(note, &s);
+                    }
                     session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note.as_deref());
                     if stop {
                         return Ok(AgentOutcome::RepetitionStop);
@@ -365,8 +399,12 @@ impl<C: LlmClient> Agent<C> {
             if dispatch_ok {
                 if turn.action.tool == "run_command" {
                     mutated_since_verify = false; // 검증 실행으로 인정 — 종료 코드 무관 (M5 §7.1)
+                    status.record_command_exit(&body);
                 } else if self.registry.get(&turn.action.tool).is_some_and(|t| t.is_mutating()) {
                     mutated_since_verify = true;
+                }
+                if matches!(turn.action.tool.as_str(), "edit_file" | "write_file") {
+                    status.record_mutation(&turn.action.args);
                 }
             }
             finish_missing_streak = 0;
@@ -396,6 +434,19 @@ impl<C: LlmClient> Agent<C> {
             if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
                 on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
                 note = merge_note(note, nudge);
+            }
+            if !stop
+                && let Some(s) = status.on_turn(&status_note::TurnCtx {
+                    turn: turns + 1,
+                    max_turns: self.max_turns,
+                    mutation_ok: dispatch_ok
+                        && matches!(turn.action.tool.as_str(), "edit_file" | "write_file"),
+                    has_note_channel: true,
+                    mutated_since_verify,
+                })
+            {
+                session.remove_status_note();
+                note = merge_note(note, &s);
             }
             session.push_tool_result(&turn.action.tool, &turn.action.args, &body, note.as_deref());
             if stop {
@@ -1594,5 +1645,187 @@ mod tests {
             "finish 인자누락 턴은 스트릭 불변 — 오버라이드 유지: {}",
             reqs[3].temperature
         );
+    }
+
+    #[tokio::test]
+    async fn status_note_cadence_fires_at_turn_5_when_nothing_edited() {
+        let dir = tempfile::tempdir().unwrap();
+        for n in ["a", "b", "c", "d", "e"] {
+            std::fs::write(dir.path().join(format!("{n}.txt")), "x").unwrap();
+        }
+        let reads: Vec<_> = ["a", "b", "c", "d", "e"]
+            .iter()
+            .map(|n| ok(&turn("read_file", serde_json::json!({"path": format!("{n}.txt")}))))
+            .collect();
+        let mut script_vec = reads;
+        script_vec.push(ok(&finish("done")));
+        let script = Scripted::new(script_vec);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let with_status: Vec<_> = session
+            .messages()
+            .iter()
+            .filter(|m| m.content.contains("[status]"))
+            .collect();
+        assert_eq!(with_status.len(), 1, "턴 5에서 정확히 1회");
+        assert!(
+            with_status[0].content.contains("[status] files edited: none yet | turns: 5 of 25 used"),
+            "{}",
+            with_status[0].content
+        );
+    }
+
+    #[tokio::test]
+    async fn status_note_fires_on_mutation_and_keeps_only_latest() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = |p: &str| turn("write_file", serde_json::json!({"path": p, "content": "x"}));
+        // 무검증 finish는 VERIFY_NUDGE가 1회 반려한다 — 두 번째 finish로 종결 (M5 §7.1)
+        let script = Scripted::new(vec![
+            ok(&w("a.rs")),
+            ok(&w("b.rs")),
+            ok(&finish("done")),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        let with_status: Vec<_> =
+            session.messages().iter().filter(|m| m.content.contains("[status]")).collect();
+        assert_eq!(with_status.len(), 1, "최신만 유지 — 히스토리에 상태선 1개");
+        let c = &with_status.last().unwrap().content;
+        assert!(c.contains("files edited: 2 (a.rs, b.rs)"), "{c}");
+        assert!(c.contains("verification: none since your last edit"), "{c}");
+    }
+
+    #[tokio::test]
+    async fn status_note_merges_after_existing_correction_notes() {
+        // 스펙 §8 "기존 교정문과 병합 순서" — salvage 노트가 있는 뮤테이션 턴에서
+        // 상태선은 같은 메시지의 마지막에 온다
+        let dir = tempfile::tempdir().unwrap();
+        let bad_shape =
+            r#"{"thought": "w", "action": {"tool": "write_file", "args": {"path": "a.rs"}, "content": "x"}}"#;
+        let script = Scripted::new(vec![ok(bad_shape), ok(&finish("done")), ok(&finish("done"))]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let msg = session
+            .messages()
+            .iter()
+            .find(|m| m.content.contains("[status]"))
+            .expect("salvage된 write_file 뮤테이션 턴에 상태선");
+        let salvage_pos = msg.content.find("fields outside").expect("salvage 노트 공존");
+        let status_pos = msg.content.find("[status]").unwrap();
+        assert!(status_pos > salvage_pos, "상태선은 마지막 병합: {}", msg.content);
+    }
+
+    #[tokio::test]
+    async fn status_note_threshold_on_length_turn_carries_to_next_tool_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        for n in ["a", "b", "c", "d", "e"] {
+            std::fs::write(dir.path().join(format!("{n}.txt")), "x").unwrap();
+        }
+        let rd = |n: &str| ok(&turn("read_file", serde_json::json!({"path": format!("{n}.txt")})));
+        let script = Scripted::new(vec![
+            rd("a"), rd("b"), rd("c"), rd("d"),
+            ok_with_reason("truncated…", "length"), // 턴 5 — 채널 없음, 이월
+            rd("e"),                                 // 턴 6 — 이월분 주입
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let with_status: Vec<_> =
+            session.messages().iter().filter(|m| m.content.contains("[status]")).collect();
+        assert_eq!(with_status.len(), 1);
+        assert!(with_status[0].content.contains("turns: 6 of 25"), "{}", with_status[0].content);
+    }
+
+    #[tokio::test]
+    async fn repetition_stop_still_fires_with_status_note_active() {
+        // 정지 우선순위: 동일 호출 5회 정지 턴(턴 5 = 케이던스 임계)에는 상태선을
+        // 주입하지 않는다 (!stop 가드) — 히스토리에 [status] 0개인 채 정지
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let same = turn("read_file", serde_json::json!({"path": "a.txt"}));
+        let script = Scripted::new(vec![ok(&same), ok(&same), ok(&same), ok(&same), ok(&same)]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::RepetitionStop));
+        assert!(!session_contains(&session, "[status]"), "정지 턴 주입 억제");
+    }
+
+    #[tokio::test]
+    async fn status_note_on_a_repeated_result_does_not_break_repetition_hash() {
+        // 채널 격리 실증 (스펙 §8): 턴 5에서 상태선이 병합된 결과가 이후 동일 반복돼도
+        // 해시는 body만 보므로 5회째에 RepetitionStop 도달
+        let dir = tempfile::tempdir().unwrap();
+        for n in ["a", "b", "c", "d", "e"] {
+            std::fs::write(dir.path().join(format!("{n}.txt")), "x").unwrap();
+        }
+        let rd = |n: &str| ok(&turn("read_file", serde_json::json!({"path": format!("{n}.txt")})));
+        // 턴 1-4 상이 read, 턴 5 = e.txt 1회차(케이던스 상태선 병합), 턴 6-9 = e.txt 반복
+        let script = Scripted::new(vec![
+            rd("a"), rd("b"), rd("c"), rd("d"),
+            rd("e"), rd("e"), rd("e"), rd("e"), rd("e"),
+        ]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::RepetitionStop), "e.txt 5회째(턴 9) 정지");
+        assert!(session_contains(&session, "[status]"), "턴 5의 상태선이 반복 결과에 병합돼 있었음");
+    }
+
+    #[tokio::test]
+    async fn status_note_threshold_on_finish_error_turn_carries_over() {
+        // 이월 핀 경로 ③(finish 오류 턴 — session.push 경로) 통합 검증 (스펙 §8)
+        let dir = tempfile::tempdir().unwrap();
+        for n in ["a", "b", "c", "d", "e"] {
+            std::fs::write(dir.path().join(format!("{n}.txt")), "x").unwrap();
+        }
+        let rd = |n: &str| ok(&turn("read_file", serde_json::json!({"path": format!("{n}.txt")})));
+        let script = Scripted::new(vec![
+            rd("a"), rd("b"), rd("c"), rd("d"),
+            ok(&turn("finish", serde_json::json!({}))), // 턴 5 — summary 없음, 채널 없음 → 이월
+            rd("e"),                                     // 턴 6 — 이월분 주입
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let with_status: Vec<_> =
+            session.messages().iter().filter(|m| m.content.contains("[status]")).collect();
+        assert_eq!(with_status.len(), 1);
+        assert!(with_status[0].content.contains("turns: 6 of 25"), "{}", with_status[0].content);
+    }
+
+    #[tokio::test]
+    async fn status_note_threshold_on_verify_nudge_turn_carries_over() {
+        // 이월 핀 경로 ②(VERIFY_NUDGE 반려 턴) 통합 검증 (스펙 §8) — 뮤테이션으로
+        // 케이던스가 꺼진 뒤 pacing 15를 반려 턴이 밟는 시나리오
+        let dir = tempfile::tempdir().unwrap();
+        let mut script_vec =
+            vec![ok(&turn("write_file", serde_json::json!({"path": "a.rs", "content": "x"})))]; // 턴 1 — 뮤테이션(상태선 #1)
+        for i in 0..13 {
+            let name = format!("f{i}.txt");
+            std::fs::write(dir.path().join(&name), "x").unwrap();
+            script_vec.push(ok(&turn("read_file", serde_json::json!({"path": name})))); // 턴 2-14
+        }
+        script_vec.push(ok(&finish("done"))); // 턴 15 — VERIFY_NUDGE 반려(채널 없음) + pacing 15 → 이월
+        script_vec.push(ok(&turn("read_file", serde_json::json!({"path": "f0.txt"})))); // 턴 16 — 이월분 주입
+        script_vec.push(ok(&finish("done"))); // 종결 (VERIFY_NUDGE는 런당 1회)
+        let script = Scripted::new(script_vec);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        let with_status: Vec<_> =
+            session.messages().iter().filter(|m| m.content.contains("[status]")).collect();
+        assert_eq!(with_status.len(), 1, "최신만 유지");
+        let c = &with_status[0].content;
+        assert!(c.contains("turns: 16 of 25"), "이월분이 턴 16에 주입: {c}");
+        assert!(c.contains("verification: none since your last edit"), "{c}");
     }
 }
