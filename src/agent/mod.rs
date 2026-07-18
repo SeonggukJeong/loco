@@ -4,6 +4,7 @@ pub mod finish_nudge;
 pub mod protocol;
 pub mod prompt;
 pub mod repetition;
+pub mod status_note;
 
 use crate::config::Config;
 use crate::llm::LlmClient;
