@@ -310,14 +310,17 @@ impl EditFile {
         let text = normalize_eol(&raw);
         let search = normalize_eol(&args.search);
         let replace = normalize_eol(&args.replace);
+        // M12 §4-2-2: 매치가 확정된 뒤에만 동일성을 검사한다. 순서가 반대면
+        // 파일에 없는 환각 코드가 "S/R 동일"로 위장돼 오신념이 교정 기회를 잃는다
+        let outcome = apply_edit(&text, &search, &replace, args.replace_all).map_err(ToolError::EditFailed)?;
         if search == replace {
             return Err(ToolError::EditFailed(
                 "search and replace are identical - no change would be made. \
-                 Put the code as it is NOW in `search`, and the code AFTER your change in `replace`."
+                 Put the code as it is NOW in `search`, and the code AFTER your change in `replace`. \
+                 The file was NOT modified - it still contains your search text unchanged."
                     .to_string(),
             ));
         }
-        let outcome = apply_edit(&text, &search, &replace, args.replace_all).map_err(ToolError::EditFailed)?;
         Ok((text, outcome, crlf))
     }
 }
@@ -524,6 +527,40 @@ mod tests {
             "스트릭 키(첫 문장)는 불변이어야 한다 (M9 §3-1): {msg}"
         );
         assert!(msg.contains("AFTER your change"), "처방 문장 누락: {msg}");
+    }
+
+    #[test]
+    fn hallucinated_identical_text_reports_not_found_not_sr() {
+        // 파일에 존재하지 않는 텍스트를 search/replace에 똑같이 넣으면
+        // "S/R 동일"이 아니라 0매치 오류가 나가야 한다 (M12 §4-2-2)
+        let (_d, ctx) = setup("fn real() {}\n");
+        let err = EditFile
+            .preview(
+                &serde_json::json!({
+                    "path": "f.rs",
+                    "search": "fn hallucinated() {}",
+                    "replace": "fn hallucinated() {}"
+                }),
+                &ctx,
+            )
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("identical"), "환각은 S/R 오류로 위장되면 안 된다: {msg}");
+        assert!(msg.contains("search block not found"), "{msg}");
+    }
+
+    #[test]
+    fn identical_error_states_the_file_was_not_modified() {
+        let (_d, ctx) = setup("fn real() {}\n");
+        let err = EditFile
+            .preview(&serde_json::json!({"path": "f.rs", "search": "fn real() {}", "replace": "fn real() {}"}), &ctx)
+            .unwrap_err();
+        let msg = format!("Error: {err}");
+        assert!(
+            msg.starts_with("Error: edit failed: search and replace are identical - no change would be made"),
+            "첫 문장(SR_KEY) 불변: {msg}"
+        );
+        assert!(msg.contains("The file was NOT modified"), "{msg}");
     }
 
     #[test]
