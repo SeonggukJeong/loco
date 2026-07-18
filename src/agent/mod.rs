@@ -510,15 +510,19 @@ impl<C: LlmClient> Agent<C> {
     }
 
     /// M10 §5: 스트릭 상태를 오버라이드에 반영 — track_and_note(error_correction
-    /// 경유) 직후에만 호출한다. 무액션·finish 턴은 호출 지점에 닿지 않아 유지된다
+    /// 경유) 직후에만 호출한다. 무액션·finish 턴은 호출 지점에 닿지 않아 유지된다.
+    /// M12 §3-1·§4-1: 트리거만 확대한다(메커니즘·수명·원복 규칙은 불변) —
+    /// 파일별 비연속 S/R 재발과 missing-field 오형 복사 루프도 저온 어트랙터다
     fn update_perturb(
         &mut self,
         tracker: &repetition::RepetitionTracker,
         on_event: &mut dyn FnMut(AgentEvent<'_>),
     ) {
-        let want = (tracker.sr_streak() >= 2).then_some(SR_PERTURB_TEMPERATURE);
+        let triggered =
+            tracker.sr_streak() >= 2 || tracker.sr_file_streak() >= 2 || tracker.badargs_streak() >= 2;
+        let want = triggered.then_some(SR_PERTURB_TEMPERATURE);
         if want.is_some() && self.temperature_override.is_none() {
-            on_event(AgentEvent::Notice("(S/R 반복 감지 — temperature 일시 상향)".to_string()));
+            on_event(AgentEvent::Notice("(동일 오류 반복 감지 — temperature 일시 상향)".to_string()));
         }
         self.temperature_override = want;
     }
@@ -1653,9 +1657,15 @@ mod tests {
         {
             let reqs = script.requests.lock().unwrap();
             let temps: Vec<f32> = reqs.iter().map(|r| r.temperature).collect();
-            // 요청4는 두 번째 스트릭의 1회차 직후(아직 1연속)라 기본값, 요청5가 재활성
-            // — SR_CORRECTION 래치(1런 1회)와 무관하게 스트릭 재도달만으로 켜진다
-            assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1, 0.1, 0.7], "{temps:?}");
+            // M12 §4-1로 확대된 이후: f.rs의 파일별 누적은 read로 끊긴 연속 스트릭과
+            // 무관하게 살아남는다(성공 뮤테이션 외에는 리셋되지 않음) — 두 번째
+            // 서브스트릭의 1회차 시점에 이미 누적 3(=2+1)이라 사전 §3-1 술어 중
+            // 파일별 disjunct가 즉시 켜진다(요청4). f.rs의 SR_CORRECTION 래치는 첫
+            // 서브스트릭에서 이미 소진돼 텍스트 교정은 재발화하지 않지만(래치는
+            // 파일별) 온도는 래치와 무관하게 재트리거된다 — 원래 이 테스트가 핀하려던
+            // 불변(재활성은 교정 래치에 좌우되지 않음)은 그대로 유지, 다만 트리거
+            // 시점이 확대된 술어만큼 앞당겨졌다
+            assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1, 0.7, 0.7], "{temps:?}");
         }
         let mut session2 = new_session(&agent);
         run_quiet(&mut agent, &mut session2, "y").await.unwrap();
@@ -1761,6 +1771,68 @@ mod tests {
             (reqs[3].temperature - 0.7).abs() < 1e-6,
             "finish 인자누락 턴은 스트릭 불변 — 오버라이드 유지: {}",
             reqs[3].temperature
+        );
+    }
+
+    // M12 §3-1: missing-field 오형 연속도 섭동 트리거에 포함 (기존 텍스트 교정에
+    // 개입 없던 경로 — 082449Z에서 5연속 정지로 이어진 사각)
+    #[tokio::test]
+    async fn badargs_streak_of_two_raises_temperature() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("g.rs"), "y\n").unwrap();
+        let bad = turn("write_file", serde_json::json!({"path": "a.txt"})); // content 누락
+        let read = turn("read_file", serde_json::json!({"path": "g.rs"}));
+        let script = Scripted::new(vec![ok(&bad), ok(&bad), ok(&read), ok(&finish("d"))]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1], "missing-field 2연속 → 섭동, 성공 결과로 원복 {temps:?}");
+    }
+
+    // M12 §4-1: 파일별 누적 S/R도 섭동 트리거에 포함 (연속 스트릭은 read가 끊어도
+    // 같은 파일의 비연속 재발이 저온 어트랙터인 것은 동일)
+    #[tokio::test]
+    async fn non_consecutive_sr_on_the_same_file_raises_temperature() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        std::fs::write(dir.path().join("g.rs"), "y\n").unwrap();
+        let sr = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let read = turn("read_file", serde_json::json!({"path": "g.rs"}));
+        let script = Scripted::new(vec![ok(&sr), ok(&read), ok(&sr), ok(&finish("d"))]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        // 연속 스트릭은 read가 끊었지만 f.rs 파일 누적 2로 섭동 (M12 §4-1)
+        assert_eq!(temps, vec![0.1, 0.1, 0.1, 0.7], "{temps:?}");
+    }
+
+    // T7 원복 가드: sr_file_streak()가 last_sr_file 잔류로 영구 참이 되면 이
+    // 케이스에서 요청4(성공 편집 이후)도 0.7로 걸린다 — 조건 해소 시 원복돼야 한다
+    #[tokio::test]
+    async fn sr_file_streak_trigger_reverts_after_a_successful_edit_clears_the_counter() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        let sr = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let read = turn("read_file", serde_json::json!({"path": "f.rs"}));
+        let mutate = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "y"}));
+        let script = Scripted::new(vec![
+            ok(&sr),
+            ok(&read),
+            ok(&sr),     // f.rs 파일 누적 2 → 섭동 켜짐
+            ok(&mutate), // 성공 뮤테이션 — record_mutation_ok로 f.rs 카운터 리셋
+            ok(&finish("d")), // 무검증 finish 1차 — VERIFY_NUDGE가 반려(뮤테이션 후 run_command 없음)
+            ok(&finish("d2")), // 2차로 종결
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        assert_eq!(
+            temps,
+            vec![0.1, 0.1, 0.1, 0.7, 0.1, 0.1],
+            "성공 뮤테이션으로 파일 카운터가 풀리면 다음 요청은 원복돼야 한다 {temps:?}"
         );
     }
 
