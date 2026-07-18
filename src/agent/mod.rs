@@ -55,6 +55,17 @@ Its result will not change. Try a different action, or call `finish` with your a
 pub const SALVAGE_NOTE: &str =
     "note: fields outside \"args\" were accepted this time - put them inside \"args\".";
 
+/// M12 §3-2 — args 안의 잉여 `tool` 키를 제거했을 때 붙이는 노트. SALVAGE_NOTE는
+/// "args 바깥의 필드를 안으로"라는 정반대 진술이라 이 오형에 재사용하면 오도한다
+pub const ARGS_TOOL_KEY_NOTE: &str =
+    "note: the `tool` key inside \"args\" is not a parameter - it was removed. \
+     Put only the tool's own parameters inside \"args\".";
+
+/// args가 다른 등록 도구를 지목해 그 도구로 교체 디스패치했을 때의 노트 (M12 §3-2)
+pub const ARGS_TOOL_SWITCH_NOTE: &str =
+    "note: \"args\" named a different tool, so this call was dispatched as that tool instead. \
+     Put the tool name only in \"action\".\"tool\".";
+
 /// 무검증 finish 1회 반려 (M5 §7.1). 모델 대상 — 영어
 pub const VERIFY_NUDGE: &str = "You modified files but never ran a verification command. Run the project's tests (e.g. cargo test) with run_command, then finish.";
 
@@ -235,7 +246,7 @@ impl<C: LlmClient> Agent<C> {
             // 자기 실패를 문맥으로 보는 것이 의도. max_turns에는 계상하지 않는다
             let mut text = resp.text().to_string();
             let mut attempts = 1;
-            let turn = loop {
+            let mut turn = loop {
                 match parse_turn(&text) {
                     Ok(t) => break t,
                     Err(feedback) => {
@@ -327,6 +338,26 @@ impl<C: LlmClient> Agent<C> {
                 }
             }
 
+            // M12 §3-2: args 안의 잉여 `tool` 키 정규화. 게이트·preview보다 **먼저** —
+            // 규칙 2의 교체로 비뮤테이션 액션이 뮤테이션 도구가 될 수 있고,
+            // 게이트는 교체 결과 도구를 기준으로 판정해야 한다
+            let mut args_tool_note: Option<&'static str> = None;
+            if let Some(inner) =
+                turn.action.args.get("tool").and_then(|v| v.as_str()).map(str::to_string)
+            {
+                if let Some(map) = turn.action.args.as_object_mut() {
+                    map.remove("tool");
+                }
+                if inner == turn.action.tool {
+                    args_tool_note = Some(ARGS_TOOL_KEY_NOTE); // 규칙 1
+                } else if self.registry.get(&inner).is_some() {
+                    turn.action.tool = inner; // 규칙 2 — 등록 도구면 교체
+                    args_tool_note = Some(ARGS_TOOL_SWITCH_NOTE);
+                } else {
+                    args_tool_note = Some(ARGS_TOOL_KEY_NOTE); // 규칙 3 — 미등록(finish 포함): 키만 제거
+                }
+            }
+
             on_event(AgentEvent::Action {
                 tool: &turn.action.tool,
                 args: &turn.action.args,
@@ -349,7 +380,7 @@ impl<C: LlmClient> Agent<C> {
                         "edit_file" | "write_file" => finish_nudge::TurnEvent::MutationAttempt,
                         _ => finish_nudge::TurnEvent::Other, // 게이트 거부된 run_command — 불변 (§4-2 표)
                     };
-                    let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+                    let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
                     self.update_perturb(&tracker, on_event);
                     // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
                     if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
@@ -448,7 +479,7 @@ impl<C: LlmClient> Agent<C> {
                 "read_file" | "grep" | "list_files" => finish_nudge::TurnEvent::ReadOnly { repeat: repeated_call },
                 _ => finish_nudge::TurnEvent::Other, // 미지 도구 (§4-2 표)
             };
-            let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+            let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
             self.update_perturb(&tracker, on_event);
             // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
             if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
@@ -483,11 +514,17 @@ impl<C: LlmClient> Agent<C> {
         tracker: &mut repetition::RepetitionTracker,
         turn: &protocol::ModelTurn,
         body: &str,
+        args_tool_note: Option<&'static str>,
         on_event: &mut dyn FnMut(AgentEvent<'_>),
     ) -> (Option<String>, bool) {
         let mut notes: Vec<&str> = Vec::new();
+        // 액션 레벨 필드 salvage (기존 M5 경로)
         if turn.salvaged {
             notes.push(SALVAGE_NOTE);
+        }
+        // args 안 `tool` 키 (M12 §3-2) — 위와 배타가 아니다. 한 턴에 겹칠 수 있다
+        if let Some(n) = args_tool_note {
+            notes.push(n);
         }
         let key = format!("{}|{}", turn.action.tool, turn.action.args);
         match tracker.record(&key, body) {
@@ -692,6 +729,91 @@ mod tests {
         let note = note.expect("salvage 노트가 툴 결과에 병합");
         assert_eq!(note.role, "user");
         assert!(note.content.contains("hi"), "툴 결과(파일 내용)와 같은 메시지: {}", note.content);
+    }
+
+    #[tokio::test]
+    async fn duplicate_tool_key_inside_args_is_stripped_with_a_note() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "a.txt", "tool": "read_file"}))),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let mut dispatched_args: Vec<serde_json::Value> = Vec::new();
+        agent
+            .run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |ev| {
+                if let AgentEvent::Action { args, .. } = ev {
+                    dispatched_args.push(args.clone());
+                }
+            })
+            .await
+            .unwrap();
+        assert!(session_contains(&session, "hi"), "read_file은 정상 디스패치");
+        assert!(session_contains(&session, ARGS_TOOL_KEY_NOTE), "전용 노트 (M12 §3-2 규칙 1)");
+        assert!(!session_contains(&session, SALVAGE_NOTE), "SALVAGE_NOTE는 정반대 진술이라 붙으면 안 된다");
+        assert!(
+            dispatched_args[0].get("tool").is_none(),
+            "잉여 `tool` 키가 실제로 args에서 제거돼야 한다(노트의 주장과 일치): {:?}",
+            dispatched_args[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_different_tool_named_in_args_switches_the_dispatch() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/inner.rs"), "x").unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "sub", "tool": "list_files"}))),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(!session_contains(&session, "is a directory, not a file"), "교체로 루프가 성립하지 않는다 (uv-2)");
+        assert!(session_contains(&session, "inner.rs"), "list_files로 교체 디스패치");
+        assert!(session_contains(&session, ARGS_TOOL_SWITCH_NOTE), "규칙 2 전용 노트");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_tool_name_in_args_is_only_stripped() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let script = Scripted::new(vec![
+            // finish는 레지스트리 밖 — 교체 대상이 아니다(규칙 3)
+            ok(&turn("read_file", serde_json::json!({"path": "a.txt", "tool": "finish"}))),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(s) if s == "d"), "액션 도구 유지");
+        assert!(session_contains(&session, "hi"));
+        assert!(session_contains(&session, ARGS_TOOL_KEY_NOTE));
+    }
+
+    #[tokio::test]
+    async fn the_switched_tool_is_what_the_approval_gate_sees() {
+        struct DenyAll;
+        impl crate::agent::approval::Approver for DenyAll {
+            fn approve(&mut self, _req: &ApprovalRequest) -> Decision {
+                Decision::Deny { reason: "테스트 거부".into() }
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let script = Scripted::new(vec![
+            // 교체 전이면 read_file(비뮤테이션)이라 게이트를 아예 통과하지 못한다
+            ok(&turn("read_file", serde_json::json!({"path": "a.txt", "content": "x", "tool": "write_file"}))),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        agent.run(&mut session, "x", &mut DenyAll, &mut |_| {}).await.unwrap();
+        assert!(session_contains(&session, "Denied:"), "게이트는 교체 결과 도구로 판정해야 한다 (M12 §3-2)");
+        assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "hi", "거부됐으므로 미수정");
     }
 
     #[tokio::test]
