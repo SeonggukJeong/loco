@@ -13,8 +13,11 @@ const WINDOW: usize = 8;
 /// 막는 런당 상한 (M10 arm-block에서 실측된 실패 양식의 방지선)
 const MAX_SR_CORRECTIONS: usize = 3;
 
-/// missing-field BadArgs의 스트릭 키 접두 — tools/mod.rs의 스키마 에코 경로와 교차 핀
-pub const BADARGS_KEY_PREFIX: &str = "Error: invalid arguments: missing field";
+/// missing-field BadArgs의 스트릭 키 접두 — tools/mod.rs의 스키마 에코 경로와
+/// badargs_key_prefix_matches_actual_missing_field_errors_only 테스트로 교차 핀 (M12 §3-1).
+/// 모듈 밖에서 쓰이지 않음 — T7은 이 상수가 아니라 badargs_streak() 게터를 소비한다
+/// (플랜 §Task 7), 따라서 pub을 유지할 이유가 없어 가시성을 좁힌다
+const BADARGS_KEY_PREFIX: &str = "Error: invalid arguments: missing field";
 
 pub const EDIT_STRATEGY_CORRECTION: &str = "The same error keeps occurring. Change strategy: re-read the file, then rewrite it completely with write_file.";
 pub const GENERIC_STRATEGY_CORRECTION: &str = "The same error keeps occurring. Step back and try a different approach.";
@@ -155,9 +158,6 @@ impl RepetitionTracker {
         let file = crate::agent::status_note::normalize(path);
         self.sr_by_file.remove(&file);
         self.sr_latched.remove(&file);
-        if self.last_sr_file.as_deref() == Some(file.as_str()) {
-            self.last_sr_file = None;
-        }
     }
 
     /// 마지막 S/R 오류가 난 파일의 누적치 (없으면 0) — M12 §4-1 섭동 술어
@@ -374,6 +374,45 @@ mod tests {
     }
 
     #[test]
+    fn badargs_key_prefix_matches_actual_missing_field_errors_only() {
+        // 도구 오류문(tools/mod.rs의 스키마 에코 경로)과 BADARGS_KEY_PREFIX의 드리프트를
+        // 고정하는 교차 핀 (M12 §3-1). sr_key_matches_actual_edit_file_error_first_sentence를
+        // 본떠, Registry::guided().dispatch로 실제 바디를 만들어 접두를 검증한다.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        let ctx = crate::tools::ToolCtx::new(dir.path().to_path_buf());
+        let reg = crate::tools::Registry::guided();
+
+        // missing field — edit_file/write_file/run_command 전부 접두가 매치해야 한다
+        for (tool, args) in [
+            ("edit_file", serde_json::json!({"path": "f.rs"})),
+            ("write_file", serde_json::json!({"path": "f.rs"})),
+            ("run_command", serde_json::json!({})),
+        ] {
+            let err = reg.dispatch(tool, &args, &ctx).unwrap_err();
+            let body = format!("Error: {err}");
+            assert!(
+                body.starts_with(BADARGS_KEY_PREFIX),
+                "{tool}의 missing-field 바디가 접두와 어긋남: {body}"
+            );
+        }
+
+        // invalid type — §3-1이 요구하는 배제: 스키마 에코 경로는 같지만 접두 불일치
+        for (tool, args) in [
+            ("edit_file", serde_json::json!({"path": 123, "search": "x", "replace": "y"})),
+            ("write_file", serde_json::json!({"path": "f.rs", "content": 123})),
+            ("run_command", serde_json::json!({"command": 123})),
+        ] {
+            let err = reg.dispatch(tool, &args, &ctx).unwrap_err();
+            let body = format!("Error: {err}");
+            assert!(
+                !body.starts_with(BADARGS_KEY_PREFIX),
+                "{tool}의 invalid-type 바디는 접두가 매치하면 안 됨(§3-1 배제): {body}"
+            );
+        }
+    }
+
+    #[test]
     fn sr_streak_tracks_consecutive_sr_errors_only() {
         let mut t = RepetitionTracker::new();
         let sr = format!("{SR_KEY}. x.");
@@ -416,6 +455,21 @@ mod tests {
     fn non_consecutive_sr_on_the_same_file_still_fires_the_correction() {
         let mut t = RepetitionTracker::new();
         assert!(t.error_correction("edit_file", &args("src/a.rs"), SR_BODY).is_none(), "1회차는 도구 오류문이 처방");
+
+        // T7 가드: 비-S/R 오류 바디 직후 last_sr_file이 즉시 풀리는지 (repetition.rs의
+        // 비-S/R 분기 reset). 다른 파일/도구를 써서 src/a.rs의 누적(cum=1)은 건드리지
+        // 않는다 — 이 줄이 사라지면 last_sr_file이 src/a.rs를 계속 가리켜
+        // sr_file_streak()이 그 파일과 무관한 오류 후에도 값을 노출하고, T7의 섭동
+        // 술어(sr_file_streak() >= 2)가 영구 참으로 걸릴 위험이 생긴다.
+        assert!(t.error_correction("write_file", &args("other.rs"), "Error: x").is_none());
+        assert_eq!(t.sr_file_streak(), 0, "비-S/R 오류 직후 last_sr_file 해제(T7 가드)");
+
+        // 같은 가드를 성공(비-오류) 바디 경로에서도: b.rs로 last_sr_file을 재무장한 뒤
+        // 성공 바디가 즉시 푸는지 확인 (a.rs/other.rs의 누적에는 영향 없음)
+        assert!(t.error_correction("edit_file", &args("b.rs"), SR_BODY).is_none(), "b.rs 1회차도 누적 1 — 미발화");
+        assert!(t.error_correction("read_file", &args("b.rs"), "fn main() {}").is_none());
+        assert_eq!(t.sr_file_streak(), 0, "성공 바디 직후 last_sr_file 해제(T7 가드)");
+
         // 사이에 성공적인 read가 끼어 연속 스트릭은 끊긴다
         assert!(t.error_correction("read_file", &args("src/a.rs"), "fn main() {}").is_none());
         assert_eq!(t.sr_streak(), 0, "연속 스트릭은 리셋된다(기존 계약 유지)");
