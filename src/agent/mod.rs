@@ -1638,6 +1638,28 @@ mod tests {
         assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1], "{temps:?}");
     }
 
+    // 리뷰 Important(T7): §4-1 확대 후 sr_streak() >= 2 분기가 두 개의
+    // 파일별 disjunct(sr_file_streak/badargs_streak)에 가려 무핀 상태였다.
+    // 서로 다른 파일에서 연속 S/R 오류가 나면 연속 스트릭(sr_streak)은 2에
+    // 도달하지만, 파일별 누적(sr_file_streak)은 각 파일에서 1회씩이라 2에
+    // 못 미친다 — sr_streak() 분기가 없으면 이 케이스는 섭동하지 않는다.
+    #[tokio::test]
+    async fn sr_streak_across_different_files_raises_temperature() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "x\n").unwrap();
+        std::fs::write(dir.path().join("b.rs"), "y\n").unwrap();
+        let sr_a = turn("edit_file", serde_json::json!({"path": "a.rs", "search": "x", "replace": "x"}));
+        let sr_b = turn("edit_file", serde_json::json!({"path": "b.rs", "search": "y", "replace": "y"}));
+        let script = Scripted::new(vec![ok(&sr_a), ok(&sr_b), ok(&finish("d"))]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        // 요청0(첫 턴) 기본값, 요청1(a.rs SR 1회 후 — 연속 1, 파일별 누적 1) 기본값,
+        // 요청2(b.rs SR — 연속 2, 파일별 누적은 b.rs만 1) sr_streak() 단독으로 섭동
+        assert_eq!(temps, vec![0.1, 0.1, 0.7], "{temps:?}");
+    }
+
     #[tokio::test]
     async fn perturb_reactivates_without_latch_and_resets_per_run() {
         let dir = tempfile::tempdir().unwrap();
