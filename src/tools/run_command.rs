@@ -39,6 +39,22 @@ fn has_unquoted_pipe(cmd: &str) -> bool {
     false
 }
 
+/// M12 §2-2 — 필터가 아무 테스트도 못 맞힌 exit 0을 "검증"으로 읽지 못하게 하는 노트.
+/// filtered_out > 0 조건이 "테스트가 원래 없는 크레이트"(정상)와 구분한다
+fn empty_test_note(body: &str, exit_code: &str) -> Option<String> {
+    if exit_code != "0" {
+        return None;
+    }
+    let s = crate::test_summary::parse_test_summary(body)?;
+    (s.ran == 0 && s.filtered_out > 0).then(|| {
+        format!(
+            "note: 0 tests ran ({} filtered out) - cargo test filters by test NAME, \
+             not file name; this exit 0 did not verify anything",
+            s.filtered_out
+        )
+    })
+}
+
 impl Tool for RunCommand {
     fn name(&self) -> &'static str {
         "run_command"
@@ -75,6 +91,10 @@ impl Tool for RunCommand {
                     out.push_str(
                         "\nnote: this command is a pipeline - the exit code reflects only the last command in the pipe",
                     );
+                }
+                if let Some(note) = empty_test_note(&out, &code) {
+                    out.push('\n');
+                    out.push_str(&note);
                 }
                 out
             }
@@ -209,5 +229,46 @@ mod tests {
         assert!(!super::has_unquoted_pipe("a || b"), "OR 연산자는 파이프가 아님");
         assert!(super::has_unquoted_pipe("a | b || c"), "혼합 — 실파이프가 있으면 참");
         assert!(!super::has_unquoted_pipe("echo x"));
+    }
+
+    #[test]
+    fn empty_test_run_with_exit_zero_gets_the_invalidation_note() {
+        let body = "exit code: 0\n\
+running 0 tests\n\
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s\n";
+        let note = super::empty_test_note(body, "0");
+        assert_eq!(
+            note.as_deref(),
+            Some("note: 0 tests ran (13 filtered out) - cargo test filters by test NAME, not file name; this exit 0 did not verify anything")
+        );
+    }
+
+    #[test]
+    fn a_crate_with_no_tests_at_all_gets_no_note() {
+        // filtered_out == 0 이면 "원래 테스트가 없는 크레이트" — 정상이므로 침묵
+        let body = "exit code: 0\n\
+running 0 tests\n\
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n";
+        assert!(super::empty_test_note(body, "0").is_none());
+    }
+
+    #[test]
+    fn a_real_test_run_gets_no_note() {
+        let body = "exit code: 0\n\
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s\n";
+        assert!(super::empty_test_note(body, "0").is_none());
+    }
+
+    #[test]
+    fn non_zero_exit_gets_no_note() {
+        // 실패 exit는 자체 신호가 이미 있다 (§2-2)
+        let body = "exit code: 101\n\
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s\n";
+        assert!(super::empty_test_note(body, "101").is_none());
+    }
+
+    #[test]
+    fn non_cargo_output_gets_no_note() {
+        assert!(super::empty_test_note("exit code: 0\nhello\n", "0").is_none());
     }
 }
