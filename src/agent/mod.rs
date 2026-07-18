@@ -406,9 +406,15 @@ impl<C: LlmClient> Agent<C> {
             let cmd_summary = cmd_exit
                 .as_ref()
                 .and_then(|_| crate::test_summary::parse_test_summary(&body));
+            // 공허 런 = 필터가 아무 테스트도 못 맞힌 실행. "검증"으로 인정하지 않는다 (M12 §2-4)
+            let empty_verify = cmd_summary.as_ref().is_some_and(|s| s.ran == 0 && s.filtered_out > 0);
             if dispatch_ok {
                 if turn.action.tool == "run_command" {
-                    mutated_since_verify = false; // 검증 실행으로 인정 — 종료 코드 무관 (M5 §7.1)
+                    // M12 §2-4: 공허 런은 VERIFY_NUDGE를 해제하지 않는다
+                    // (해제 조건이었던 "Ok이면 종료코드 무관"에서 공허 런만 제외)
+                    if !empty_verify {
+                        mutated_since_verify = false;
+                    }
                     status.record_command_result(cmd_exit.clone(), cmd_summary.clone());
                 } else if self.registry.get(&turn.action.tool).is_some_and(|t| t.is_mutating()) {
                     mutated_since_verify = true;
@@ -427,9 +433,10 @@ impl<C: LlmClient> Agent<C> {
                     }
                 }
                 // §4-2: "성공 검증" = Ok ∧ 첫 줄 exit code 0. 타임아웃·취소·Err 본문에는
-                // 이 줄이 없어 자연 배제 (VERIFY_NUDGE의 "종료코드 무관 Ok" 기준과 별개)
+                // 이 줄이 없어 자연 배제. M12 §2-4: 공허 런(필터 0매치)도 배제 —
+                // VerifyOther로 떨어뜨려 기존 무장까지 내린다
                 "run_command" => {
-                    if dispatch_ok && body.lines().next() == Some("exit code: 0") {
+                    if dispatch_ok && cmd_exit.as_deref() == Some("0") && !empty_verify {
                         finish_nudge::TurnEvent::VerifyOk { repeat: repeated_call }
                     } else {
                         finish_nudge::TurnEvent::VerifyOther
@@ -1539,6 +1546,72 @@ mod tests {
             assert!(matches!(outcome, AgentOutcome::RepetitionStop), "{outcome:?}");
             assert!(!session_contains(&session, "do not re-verify"), "정지 턴에는 니지를 평가하지 않는다");
         }
+    }
+
+    // M12 §2-4 — 공허 런(필터 0매치) 배제: VerifyOk 무장·VERIFY_NUDGE 해제 모두 제외
+    #[cfg(unix)]
+    const EMPTY_RUN: &str = "printf 'running 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out\n'";
+    #[cfg(unix)]
+    const REAL_RUN: &str = "printf 'running 1 test\ntest alpha ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n'";
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn empty_test_run_does_not_clear_the_verify_nudge_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "a.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": EMPTY_RUN}))),
+            ok(&finish("done")), // 공허 런은 검증 시도가 아니므로 1회 반려된다
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
+        assert!(session_contains(&session, "never ran a verification command"), "M12 §2-4");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn empty_test_run_does_not_arm_the_finish_nudge() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "answer").unwrap();
+        let read = turn("read_file", serde_json::json!({"path": "a.txt"}));
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "b.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": EMPTY_RUN}))),
+            ok(&read),
+            ok(&turn("grep", serde_json::json!({"pattern": "answer"}))),
+            ok(&read), // 반복 호출
+            ok(&turn("list_files", serde_json::json!({}))), // 무장돼 있었다면 4번째 카운트 턴
+            ok(&finish("done")),
+            ok(&finish("done")), // VERIFY_NUDGE 반려분
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(!session_contains(&session, "do not re-verify"), "공허 런은 무장하지 않는다 (M12 §2-4)");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn real_test_run_still_arms_the_finish_nudge() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "answer").unwrap();
+        let read = turn("read_file", serde_json::json!({"path": "a.txt"}));
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "b.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": REAL_RUN}))),
+            ok(&read),
+            ok(&turn("grep", serde_json::json!({"pattern": "answer"}))),
+            ok(&read),
+            ok(&turn("list_files", serde_json::json!({}))),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(session_contains(&session, "do not re-verify"), "실질 통과는 기존대로 무장 (회귀 방어)");
     }
 
     // M10 §5 — 암③ 디코딩 섭동: S/R 스트릭 2연속 시 다음 요청의 temperature 상향
