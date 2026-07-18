@@ -40,7 +40,7 @@
 | 3 | max_turns | B 실행 손실 | defaults·invoice | **cargo 0회**, forecast 읽고도 방치, 보호 테스트 파일에 무익 편집 2회, 환각 코드 S/R 1회 |
 | 4 | max_turns | B 실행 손실 | defaults·forecast | S/R 5회 중 트리거 도달 2연속만 회복, invoice S/R 2회 비연속 사각+래치 소진, pricing 미복귀 |
 | 7 | max_turns | C 가설 고착(음성) | defaults | "세율=`0.10` float" 환각 고착 — no-match grep 6연발, 실물 `* 110 / 100`을 보고도 환각 상수로 편집, **cargo 0회** |
-| 8 | finished | C 가설 고착(양성) | invoice | `cargo test -p inv-report check_vat_report` = **테스트명 필터 0매치·exit 0**을 3회 "통과"로 오독, FINISH_NUDGE가 거짓 finish 처방 |
+| 8 | finished | C 가설 고착(양성) | invoice | `cargo test -p inv-report check_vat_report` = **테스트명 필터 0매치·exit 0**을 4회(--nocapture 재시도 포함) "통과"로 오독, FINISH_NUDGE가 거짓 finish 처방 |
 
 (통과 2런: uv-6 max_turns 통과 — defaults grep 식별자 경로, uv-9 finished.)
 
@@ -100,7 +100,8 @@ defaults, 자발적 write_file)뿐. 32K 배치의 sr recovered 22/48(대조
   부분문자열 홍수(16.6KB) 직후 과제 표류, max_turns. **cargo 0회.**
 - **런 8 (거짓 양성)**: `cargo test --package inv-report check_vat_report`
   — cargo는 `check_vat_report`를 **테스트명 필터**로 해석, 0개 실행·exit 0.
-  이 공허한 초록불을 3회 모두 "통과"로 읽고 종결. 유일한 실질 검증(exit
+  이 공허한 초록불을 4회(--nocapture 재시도 포함, 스펙 리뷰 1R 실측 계수)
+  전부 "통과"로 읽고 종결. 유일한 실질 검증(exit
   101, invoice+forecast FAILED)은 직후 출력토큰 절단으로 forecast 분이
   유실. **FINISH_NUDGE가 0-테스트 exit 0으로 무장돼 거짓 finish를 직접
   처방**했고, 상태선 "verification: last command exited 0"도 거짓 초록을
