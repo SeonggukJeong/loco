@@ -54,6 +54,7 @@ def run_metrics(events):
         for k, m in MARKS.items():
             counts[k] += content.count(m)
         last_body = content
+        # finish 인자누락 연속 스트릭(스펙 §7-3): tool_result가 끼면 리셋
         if MARKS["finish_missing"] in content:
             fin_run += 1
             fin_max = max(fin_max, fin_run)
