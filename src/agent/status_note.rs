@@ -278,12 +278,15 @@ mod tests {
     fn timeout_body_clears_both_exit_and_summary() {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
-        s.record_command_result(Some("0".to_string()), Some(summary(5, 0, 0, &[])));
+        // 실패 요약으로 채운다 — 규칙 2는 exit 무관 렌더이므로, last_test_summary가
+        // 실제로 지워지지 않으면 아래 타임아웃 이후에도 "N failed"가 새어나온다
+        // (통과 요약을 쓰면 규칙 4의 exit=="0" 교차 검증에 가려 이 테스트가 공허해진다)
+        s.record_command_result(Some("101".to_string()), Some(summary(0, 3, 0, &["alpha", "beta"])));
         // 타임아웃 — exit 줄 없음. 배선 지점이 (None, None)을 넘긴다
         s.record_command_result(None, None);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
         assert!(note.contains("verification: last command gave no exit code"), "{note}");
-        assert!(!note.contains("cargo test"), "스테일 요약이 남으면 안 된다: {note}");
+        assert!(!note.contains("cargo test"), "스테일 실패 요약 잔존: {note}");
     }
 
     #[test]
