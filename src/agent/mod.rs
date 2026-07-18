@@ -795,6 +795,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn salvage_note_and_args_tool_key_note_are_not_mutually_exclusive() {
+        // 플랜 §11 (line 1546): 두 노트는 서로 다른 오형을 가리키므로 배타로 두지
+        // 않는다 — 액션 레벨 산재 필드 salvage(SALVAGE_NOTE)와 args 안 `tool` 키
+        // 오형(ARGS_TOOL_KEY_NOTE)이 한 턴에 겹치면 둘 다 나가야 한다.
+        // path는 action 레벨(산재 필드), args.tool은 action.tool과 같은 값(규칙 1) —
+        // 두 규칙이 같은 턴에서 동시에 걸리는 조합
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let both = r#"{"thought": "read", "action": {"tool": "read_file", "args": {"tool": "read_file"}, "path": "a.txt"}}"#;
+        let script = Scripted::new(vec![ok(both), ok(&finish("done"))]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "정상 디스패치 후 finish까지 도달");
+        assert!(session_contains(&session, "hi"), "read_file은 정상 디스패치");
+        assert!(session_contains(&session, SALVAGE_NOTE), "산재 필드 salvage 노트도 함께 나가야 한다");
+        assert!(session_contains(&session, ARGS_TOOL_KEY_NOTE), "args.tool 전용 노트도 함께 나가야 한다");
+    }
+
+    #[tokio::test]
     async fn the_switched_tool_is_what_the_approval_gate_sees() {
         struct DenyAll;
         impl crate::agent::approval::Approver for DenyAll {
