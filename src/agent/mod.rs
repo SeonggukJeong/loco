@@ -421,6 +421,9 @@ impl<C: LlmClient> Agent<C> {
                 }
                 if matches!(turn.action.tool.as_str(), "edit_file" | "write_file") {
                     status.record_mutation(&turn.action.args);
+                    if let Some(p) = turn.action.args.get("path").and_then(|v| v.as_str()) {
+                        tracker.record_mutation_ok(p);
+                    }
                 }
             }
             finish_missing_streak = 0;
@@ -498,7 +501,7 @@ impl<C: LlmClient> Agent<C> {
             }
             repetition::RepetitionVerdict::Ok => {}
         }
-        if let Some(strategy) = tracker.error_correction(&turn.action.tool, body) {
+        if let Some(strategy) = tracker.error_correction(&turn.action.tool, &turn.action.args, body) {
             on_event(AgentEvent::Notice("(동일 에러 반복 — 전략 교정 주입)".to_string()));
             notes.push(strategy);
         }
@@ -1658,6 +1661,37 @@ mod tests {
         run_quiet(&mut agent, &mut session2, "y").await.unwrap();
         let reqs = script.requests.lock().unwrap();
         assert_eq!(reqs.last().unwrap().temperature, 0.1, "활성 상태로 끝난 뒤에도 run() 진입 리셋 (리뷰 2R M-1)");
+    }
+
+    #[tokio::test]
+    async fn successful_mutation_unlatches_the_files_sr_correction_for_a_later_recurrence() {
+        // M12 §4-1 wiring 핀: mod.rs가 성공 디스패치 지점에서 tracker.record_mutation_ok를
+        // 실제로 호출하는지 확인한다(단위 테스트는 tracker를 직접 호출해 이 배선을
+        // 우회한다). f.rs에서 SR 2연속으로 1차 발화(래치) → 유효 편집으로 성공 뮤테이션
+        // → 같은 파일에서 SR 2연속 재발 → 배선이 없으면 래치가 안 풀려 2차 발화가
+        // 영원히 막힌다(§4-1 "편집 성공 후 재발한 루프는 별개 사건" 요구사항).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        let sr_x = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let mutate = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "y"}));
+        let sr_y = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "y", "replace": "y"}));
+        let script = Scripted::new(vec![
+            ok(&sr_x), ok(&sr_x), // 1차 SR 2연속 — 발화 + f.rs 래치
+            ok(&mutate),          // 성공 뮤테이션 — record_mutation_ok가 와이어링돼 있어야 래치 해제
+            ok(&sr_y), ok(&sr_y), // 2차 SR 2연속(같은 파일, 값만 y) — 배선돼 있어야 재발화
+            ok(&finish("d")), // 무검증 finish 1차 — VERIFY_NUDGE가 반려(뮤테이션 후 run_command 없음)
+            ok(&finish("d2")), // 2차로 종결 (VERIFY_NUDGE는 런당 1회)
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        let fires = session
+            .messages()
+            .iter()
+            .filter(|m| m.content.contains(repetition::SR_CORRECTION))
+            .count();
+        assert_eq!(fires, 2, "성공 뮤테이션이 파일별 래치를 풀어 2차 발화가 나가야 한다 (배선 누락 시 1회에 그침)");
     }
 
     #[tokio::test]
