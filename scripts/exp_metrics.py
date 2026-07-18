@@ -357,6 +357,20 @@ def selftest():
     assert perturb6 == 0, perturb6          # SR 전용 재구성은 badargs 스트릭을 안 봄
     assert perturb_ext6 == 1, perturb_ext6  # badargs_streak>=2도 확대 트리거에 포함
 
+    # T9 마무리 2R 수정(리뷰 Minor) — badargs_streak의 리셋(157행: 비-badargs
+    # 결과 턴에서 0으로 되돌림)은 이 6번 픽스처의 증가분만으로는 핀되지 않는다.
+    # `else: 0`을 `else: badargs_streak`(단조 누적)로 바꿔도 위 두 단언은 그대로
+    # 통과한다 — 3번째 턴("wrote", 비-badargs) 자체는 이미 리셋 이전 상태(streak=2)로
+    # 확대 트리거에 잡혀 perturb_ext6==1은 불변이기 때문. 리셋이 실제로 걸렸는지는
+    # 그 "다음" 결과 턴에서만 관측 가능하므로, 비-badargs 턴(3번, 기존)에 이어
+    # 아무 결과 턴이나 하나 더("ok read", 무관 read_file) 추가해 그 턴에서
+    # perturb_ext가 더는 늘지 않는지 단언한다.
+    events6b = events6 + [ev("tool_result", "ok read", "read_file", {"path": "x.rs"})]
+    r6b = run_metrics(events6b)
+    perturb_ext6b = r6b[10]
+    assert perturb_ext6b == 1, perturb_ext6b  # 리셋 정상: 4번째 턴은 badargs_streak==0이라 미증가
+    # (단조 누적 뮤턴트라면 4번째 턴 직전 badargs_streak가 2로 남아있어 2가 된다 — 킬)
+
     # M12 §2-2·§2-3: 0-테스트 무효화 노트 + 상태선 verification 5규칙 중
     # 규칙 2·3·4의 렌더 분포. verify_total은 규칙 2·4 양쪽에 매치되므로
     # verify_failed는 뺄셈으로 파생한다(브리프 Step 1) — (1,1,1)과 파생값 1.
