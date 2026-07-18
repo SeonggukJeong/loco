@@ -145,6 +145,48 @@ impl Session {
             merge_adjacent_same_role(&mut self.messages);
         }
     }
+
+    /// M11 §4 최신만 유지 — 저장 히스토리에서 기존 상태선 블록을 제거한다.
+    /// pack()의 생략 단계는 `</tool_result>` 뒤 접미(병합 노트)를 보존하므로 옛
+    /// 상태선은 축약으로 회수되지 않는다 — 새 주입 직전에 이 메서드로 걷어내
+    /// 문맥에 상태선이 항상 최대 1개이게 한다. 탐색은 각 user 메시지의 마지막
+    /// `</tool_result>` 이후 접미로 한정(툴 body 안의 가짜 마커 보호), 블록 =
+    /// 마커 줄 + 이어지는 CONT_INDENT 들여쓴 줄, 블록 뒤 텍스트(병합된 후속
+    /// 요청)는 보존. 트랜스크립트는 원본 유지(pack()과 같은 제자리 변형)
+    pub fn remove_status_note(&mut self) {
+        use crate::agent::status_note::{CONT_INDENT, STATUS_MARKER};
+        for m in &mut self.messages {
+            if m.role != "user" {
+                continue;
+            }
+            let Some(close) = m.content.rfind("</tool_result>") else { continue };
+            let split_at = close + "</tool_result>".len();
+            if !m.content[split_at..].contains(STATUS_MARKER) {
+                continue;
+            }
+            let (head, suffix) = m.content.split_at(split_at);
+            let mut in_block = false;
+            let kept: Vec<&str> = suffix
+                .lines()
+                .filter(|line| {
+                    if line.starts_with(STATUS_MARKER) {
+                        in_block = true;
+                        false
+                    } else if in_block && line.starts_with(CONT_INDENT) {
+                        false
+                    } else {
+                        in_block = false;
+                        true
+                    }
+                })
+                .collect();
+            let mut new_suffix = kept.join("\n");
+            while new_suffix.ends_with('\n') {
+                new_suffix.pop();
+            }
+            m.content = format!("{head}{new_suffix}");
+        }
+    }
 }
 
 /// 쌍 제거 후 교대 재검증 — 인접 동일 role은 병합 (스펙 §6)
@@ -415,5 +457,66 @@ mod tests {
             .find(|m| m.content.contains("이어서 이것도 해줘"))
             .expect("병합된 유저 요청이 담긴 메시지가 살아있어야 한다");
         assert!(merged.content.contains(ELIDED), "본문은 생략되어야 한다: {}", merged.content);
+    }
+
+    #[test]
+    fn remove_status_note_strips_only_the_status_block() {
+        let mut s = sess(vec![ChatMessage::system("sys")]);
+        s.push_tool_result(
+            "edit_file",
+            &serde_json::json!({}),
+            "Edited a.rs",
+            Some("note: fix your args.\n\n[status] files edited: 1 (a.rs)\n         verification: none since your last edit\n         turns: 3 of 25 used"),
+        );
+        s.remove_status_note();
+        let last = s.messages().last().unwrap();
+        assert!(!last.content.contains("[status]"), "{}", last.content);
+        assert!(last.content.contains("note: fix your args."), "교정 노트 보존: {}", last.content);
+        assert!(last.content.contains("Edited a.rs"), "body 보존: {}", last.content);
+    }
+
+    #[test]
+    fn remove_status_note_ignores_marker_inside_tool_body() {
+        // loco 자기 소스 grep 도그푸딩 — body 안의 가짜 마커는 제거 대상이 아니다 (§4 블록 경계 핀)
+        let mut s = sess(vec![ChatMessage::system("sys")]);
+        s.push_tool_result("grep", &serde_json::json!({}), "src/x.rs:1:[status] files edited: ...", None);
+        let before = s.messages().last().unwrap().content.clone();
+        s.remove_status_note();
+        assert_eq!(s.messages().last().unwrap().content, before, "tool_result 구조 불변");
+    }
+
+    #[test]
+    fn remove_status_note_preserves_merged_user_request_after_block() {
+        // MaxTurns 후 후속 요청이 상태선 블록 뒤에 병합된 경우 (§4 — truncate-to-end 금지)
+        let mut s = sess(vec![ChatMessage::system("sys")]);
+        s.push_tool_result(
+            "read_file",
+            &serde_json::json!({}),
+            "body",
+            Some("[status] files edited: none yet | turns: 25 of 25 used"),
+        );
+        s.push_user_request("이어서 이것도 해줘");
+        s.remove_status_note();
+        let last = s.messages().last().unwrap();
+        assert!(!last.content.contains("[status]"), "{}", last.content);
+        assert!(last.content.contains("이어서 이것도 해줘"), "병합 요청 보존: {}", last.content);
+    }
+
+    #[test]
+    fn remove_status_note_survives_elided_messages() {
+        // pack() 생략 후에도(접미 보존 — session.rs 실의미론) 옛 상태선을 제거할 수 있다
+        let big = "x".repeat(4_000);
+        let mut s = sess(vec![ChatMessage::system("sys")]);
+        s.push_tool_result("read_file", &serde_json::json!({}), &big,
+            Some("[status] files edited: none yet | turns: 5 of 25 used"));
+        s.push(ChatMessage::assistant("t"));
+        s.push_tool_result("read_file", &serde_json::json!({}), &big, None);
+        // 예산 1200: 생략 후 총 ≈1041토큰 ≤ 1200이라 쌍 제거 단계 미진입 — 검증 대상
+        // 메시지가 살아남는다 (800이면 drain(1..=2)이 메시지째 지워 테스트 전제가 깨짐).
+        // 기존 pack_elides_oldest_tool_results_first와 같은 검증된 상수
+        s.pack(1_200); // 첫 tool_result 본문 생략 — 접미(상태선)는 pack이 보존한다
+        assert!(s.messages().iter().any(|m| m.content.contains(ELIDED) && m.content.contains("[status]")));
+        s.remove_status_note();
+        assert!(!s.messages().iter().any(|m| m.content.contains("[status]")), "생략 메시지의 접미도 제거");
     }
 }
