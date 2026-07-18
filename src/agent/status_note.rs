@@ -4,6 +4,8 @@
 
 use std::path::{Component, Path};
 
+use crate::test_summary::TestSummary;
+
 /// 상태선 마커 — session::remove_status_note·scripts/exp_metrics.py와 공유 계약
 pub const STATUS_MARKER: &str = "[status] ";
 /// 연속 줄 들여쓰기(9칸 = 마커 길이) — 블록 경계 판정 구조 (§4 블록 경계 핀)
@@ -31,6 +33,7 @@ pub struct TurnCtx {
 pub struct StatusNote {
     mutated_paths: Vec<String>,
     last_cmd_exit: Option<String>,
+    last_test_summary: Option<TestSummary>,
     pending: bool,
 }
 
@@ -42,7 +45,12 @@ impl Default for StatusNote {
 
 impl StatusNote {
     pub fn new() -> Self {
-        Self { mutated_paths: Vec::new(), last_cmd_exit: None, pending: false }
+        Self {
+            mutated_paths: Vec::new(),
+            last_cmd_exit: None,
+            last_test_summary: None,
+            pending: false,
+        }
     }
 
     /// 성공 뮤테이션의 path 수집 — 렉시컬 정규화·중복 제거·삽입 순서 유지.
@@ -55,14 +63,17 @@ impl StatusNote {
         }
     }
 
-    /// run_command Ok의 body 첫 줄에서 exit 값을 접두 파싱 — 줄이 없으면 None으로
-    /// **덮어쓴다**(스테일 방지 핀 §4: 이전 성공의 0이 거짓 접지되지 않게)
-    pub fn record_command_exit(&mut self, body: &str) {
-        self.last_cmd_exit = body
-            .lines()
-            .next()
-            .and_then(|l| l.strip_prefix("exit code: "))
-            .map(str::to_string);
+    /// run_command Ok의 결과를 저장한다. 파싱은 배선 지점이 1회 수행해 넘긴다 (§2-3).
+    /// exit이 None(타임아웃·취소·무-exit 본문)이면 summary도 함께 None으로 **덮는다** —
+    /// 잘린 부분 출력의 통과 섹션이 "all passed"로 접지되는 거짓 초록을 봉쇄
+    pub fn record_command_result(&mut self, exit: Option<String>, summary: Option<TestSummary>) {
+        if exit.is_none() {
+            self.last_cmd_exit = None;
+            self.last_test_summary = None;
+            return;
+        }
+        self.last_cmd_exit = exit;
+        self.last_test_summary = summary;
     }
 
     /// 턴 종료 지점 판정 — 발동이면 렌더된 상태선(턴당 최대 1회는 호출 지점이
@@ -94,31 +105,68 @@ impl StatusNote {
             format!("{} ({shown})", self.mutated_paths.len())
         };
         let verification = if ctx.mutated_since_verify {
+            // 규칙 1 (불변)
             "verification: none since your last edit".to_string()
         } else {
-            match &self.last_cmd_exit {
-                Some(code) => format!("verification: last command exited {code}"),
-                None => "verification: last command gave no exit code".to_string(),
-            }
+            self.verification_line()
         };
         format!("{STATUS_MARKER}files edited: {files}\n{CONT_INDENT}{verification}\n{CONT_INDENT}{turns_line}")
+    }
+
+    /// §2-3 렌더 우선순위 2~5. 규칙 1(mutated_since_verify)은 호출자가 선점한다
+    fn verification_line(&self) -> String {
+        if let Some(s) = &self.last_test_summary {
+            // 규칙 2: 실패 실질 — exit 무관(파이프 위장에서 실패를 잡는 순기능)
+            if s.failed > 0 {
+                let shown: Vec<&str> = s.failed_names.iter().take(2).map(String::as_str).collect();
+                // 절단으로 `test … FAILED` 줄이 유실되면 이름 목록이 빈다 —
+                // 그때는 괄호부를 통째로 생략한다("3 failed ( and 3 more)" 방지)
+                if shown.is_empty() {
+                    return format!("verification: last cargo test: {} failed", s.failed);
+                }
+                let extra = s.failed.saturating_sub(shown.len());
+                let names = if extra > 0 {
+                    format!("{} and {extra} more", shown.join(", "))
+                } else {
+                    shown.join(", ")
+                };
+                return format!("verification: last cargo test: {} failed ({names})", s.failed);
+            }
+            // 규칙 3: 필터가 아무것도 못 맞힘
+            if s.ran == 0 && s.filtered_out > 0 {
+                return "verification: last cargo test ran 0 tests (filter matched nothing)".to_string();
+            }
+            // 규칙 4: 전부 통과 — exit 0 교차 검증 필수
+            if s.failed == 0 && s.ran > 0 && self.last_cmd_exit.as_deref() == Some("0") {
+                return format!("verification: last cargo test: all {} passed", s.passed);
+            }
+        }
+        // 규칙 5: 기존 문안
+        match &self.last_cmd_exit {
+            Some(code) => format!("verification: last command exited {code}"),
+            None => "verification: last command gave no exit code".to_string(),
+        }
     }
 }
 
 /// 렉시컬 정규화 — CurDir 제거·ParentDir 팝, 파일시스템 조회 없음
-/// (m10/arm-block:src/agent/sr_block.rs에서 포팅 — M10 스펙 §4)
-fn normalize(path: &str) -> String {
+/// (m10/arm-block:src/agent/sr_block.rs에서 포팅 — M10 스펙 §4).
+/// M12 §4-1: repetition의 파일별 S/R 카운터가 같은 키를 쓰도록 pub 승격
+pub fn normalize(path: &str) -> String {
     let mut parts: Vec<String> = Vec::new();
+    let mut absolute = false;
     for c in Path::new(path).components() {
         match c {
             Component::CurDir => {}
+            Component::RootDir => absolute = true,
             Component::ParentDir => {
                 parts.pop();
             }
             other => parts.push(other.as_os_str().to_string_lossy().into_owned()),
         }
     }
-    parts.join("/")
+    let joined = parts.join("/");
+    if absolute { format!("/{joined}") } else { joined }
 }
 
 #[cfg(test)]
@@ -164,13 +212,103 @@ mod tests {
     fn verified_state_shows_last_exit_and_overwrite_pins() {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
-        s.record_command_exit("exit code: 101\nfailed");
+        s.record_command_result(Some("101".to_string()), None);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
         assert!(note.contains("verification: last command exited 101"), "{note}");
         // 덮어쓰기 핀: exit 줄 없는 Ok(타임아웃 본문)는 None으로 덮는다 (§4)
-        s.record_command_exit("command timed out after 240s and was killed\n");
+        s.record_command_result(None, None);
         let note = s.on_turn(&ctx(20, false, true, false)).unwrap();
         assert!(note.contains("verification: last command gave no exit code"), "{note}");
+    }
+
+    fn summary(passed: usize, failed: usize, filtered: usize, names: &[&str]) -> crate::test_summary::TestSummary {
+        crate::test_summary::TestSummary {
+            ran: passed + failed,
+            passed,
+            failed,
+            failed_names: names.iter().map(|s| s.to_string()).collect(),
+            filtered_out: filtered,
+        }
+    }
+
+    #[test]
+    fn failed_tests_render_names_not_exit_code() {
+        let mut s = StatusNote::new();
+        s.record_mutation(&serde_json::json!({"path": "a.rs"}));
+        s.record_command_result(Some("101".to_string()), Some(summary(1, 3, 0, &["alpha", "beta", "gamma"])));
+        let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
+        assert!(note.contains("verification: last cargo test: 3 failed (alpha, beta and 1 more)"), "{note}");
+    }
+
+    #[test]
+    fn failed_render_omits_the_paren_when_names_were_truncated_away() {
+        let mut s = StatusNote::new();
+        s.record_mutation(&serde_json::json!({"path": "a.rs"}));
+        s.record_command_result(Some("101".to_string()), Some(summary(0, 3, 0, &[])));
+        let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
+        let verification = note.lines().find(|l| l.contains("verification:")).unwrap();
+        assert_eq!(verification.trim(), "verification: last cargo test: 3 failed", "{note}");
+    }
+
+    #[test]
+    fn zero_test_run_renders_filter_matched_nothing() {
+        let mut s = StatusNote::new();
+        s.record_mutation(&serde_json::json!({"path": "a.rs"}));
+        s.record_command_result(Some("0".to_string()), Some(summary(0, 0, 13, &[])));
+        let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
+        assert!(note.contains("verification: last cargo test ran 0 tests (filter matched nothing)"), "{note}");
+    }
+
+    #[test]
+    fn all_passed_requires_exit_zero_cross_check() {
+        let mut s = StatusNote::new();
+        s.record_mutation(&serde_json::json!({"path": "a.rs"}));
+        // exit 0 — 정상 승격
+        s.record_command_result(Some("0".to_string()), Some(summary(5, 0, 0, &[])));
+        let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
+        assert!(note.contains("verification: last cargo test: all 5 passed"), "{note}");
+        // exit 101인데 통과 섹션만 남은 출력(중간 절단) — 승격 금지, 규칙 5로 폴백
+        s.record_command_result(Some("101".to_string()), Some(summary(5, 0, 0, &[])));
+        let note = s.on_turn(&ctx(20, false, true, false)).unwrap();
+        assert!(note.contains("verification: last command exited 101"), "{note}");
+        assert!(!note.contains("all 5 passed"), "{note}");
+    }
+
+    #[test]
+    fn timeout_body_clears_both_exit_and_summary() {
+        let mut s = StatusNote::new();
+        s.record_mutation(&serde_json::json!({"path": "a.rs"}));
+        s.record_command_result(Some("0".to_string()), Some(summary(5, 0, 0, &[])));
+        // 타임아웃 — exit 줄 없음. 배선 지점이 (None, None)을 넘긴다
+        s.record_command_result(None, None);
+        let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
+        assert!(note.contains("verification: last command gave no exit code"), "{note}");
+        assert!(!note.contains("cargo test"), "스테일 요약이 남으면 안 된다: {note}");
+    }
+
+    #[test]
+    fn non_cargo_command_keeps_the_legacy_line() {
+        let mut s = StatusNote::new();
+        s.record_mutation(&serde_json::json!({"path": "a.rs"}));
+        s.record_command_result(Some("0".to_string()), None);
+        let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
+        assert!(note.contains("verification: last command exited 0"), "{note}");
+    }
+
+    #[test]
+    fn mutated_since_verify_still_wins_over_summary() {
+        let mut s = StatusNote::new();
+        s.record_mutation(&serde_json::json!({"path": "a.rs"}));
+        s.record_command_result(Some("0".to_string()), Some(summary(5, 0, 0, &[])));
+        let note = s.on_turn(&ctx(15, false, true, true)).unwrap(); // msv=true
+        assert!(note.contains("verification: none since your last edit"), "{note}");
+    }
+
+    #[test]
+    fn normalize_does_not_double_slash_absolute_paths() {
+        assert_eq!(normalize("/src/a.rs"), "/src/a.rs");
+        assert_eq!(normalize("./src/a.rs"), "src/a.rs");
+        assert_eq!(normalize("src//a.rs"), "src/a.rs");
     }
 
     #[test]

@@ -396,10 +396,20 @@ impl<C: LlmClient> Agent<C> {
                 Ok(Err(e)) => format!("Error: {e}"),
                 Err(join) => format!("Error: tool execution panicked: {join}"),
             };
+            // M12 §2-3: run_command 결과를 여기서 **1회** 파싱해 상태선과
+            // (T5에서) 두 술어가 공유한다. 저장 조건과 술어 조건의 계약이 한 지점에 모인다
+            let cmd_exit = if turn.action.tool == "run_command" && dispatch_ok {
+                body.lines().next().and_then(|l| l.strip_prefix("exit code: ")).map(str::to_string)
+            } else {
+                None
+            };
+            let cmd_summary = cmd_exit
+                .as_ref()
+                .and_then(|_| crate::test_summary::parse_test_summary(&body));
             if dispatch_ok {
                 if turn.action.tool == "run_command" {
                     mutated_since_verify = false; // 검증 실행으로 인정 — 종료 코드 무관 (M5 §7.1)
-                    status.record_command_exit(&body);
+                    status.record_command_result(cmd_exit.clone(), cmd_summary.clone());
                 } else if self.registry.get(&turn.action.tool).is_some_and(|t| t.is_mutating()) {
                     mutated_since_verify = true;
                 }
