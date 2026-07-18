@@ -1567,4 +1567,31 @@ mod tests {
         // length-cut 턴이 오버라이드를 건드리지 않아 그다음 요청도 0.7 유지
         assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.7], "{temps:?}");
     }
+
+    #[tokio::test]
+    async fn perturb_override_survives_finish_missing_summary_turn() {
+        // M10 §5 원복 핀: finish 시도 턴은 S/R 스트릭 불변 → 오버라이드 유지 (M11 §7 이월 소품)
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "fn a() {}\n").unwrap();
+        let sr = turn(
+            "edit_file",
+            serde_json::json!({"path": "f.rs", "search": "fn a() {}", "replace": "fn a() {}"}),
+        );
+        let script = Scripted::new(vec![
+            ok(&sr),                                    // S/R 오류 1
+            ok(&sr),                                    // S/R 오류 2 → 스트릭 2
+            ok(&turn("finish", serde_json::json!({}))), // summary 없는 finish — 스트릭 불변
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let reqs = script.requests.lock().unwrap();
+        assert!((reqs[2].temperature - 0.7).abs() < 1e-6, "스트릭 2 도달 후 요청은 섭동");
+        assert!(
+            (reqs[3].temperature - 0.7).abs() < 1e-6,
+            "finish 인자누락 턴은 스트릭 불변 — 오버라이드 유지: {}",
+            reqs[3].temperature
+        );
+    }
 }
