@@ -10,6 +10,35 @@ struct Args {
     command: String,
 }
 
+/// M11 §5: 따옴표 밖 파이프 존재 판정 — `||`(OR)는 파이프가 아니고, 따옴표
+/// 안·백슬래시 이스케이프된 `|`는 무시한다(grep 패턴 상용 — 오발 방지).
+/// 잔여 이스케이프 엣지 케이스의 오발은 허용 오차(정보 한 줄, 무해)
+fn has_unquoted_pipe(cmd: &str) -> bool {
+    let bytes = cmd.as_bytes();
+    let (mut in_single, mut in_double) = (false, false);
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if !in_single => {
+                i += 2; // 다음 문자는 이스케이프됨 (single quote 안에서만 리터럴)
+                continue;
+            }
+            b'\'' if !in_double => in_single = !in_single,
+            b'"' if !in_single => in_double = !in_double,
+            b'|' if !in_single && !in_double => {
+                if bytes.get(i + 1) == Some(&b'|') {
+                    i += 2; // `||` — OR 연산자
+                    continue;
+                }
+                return true;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
 impl Tool for RunCommand {
     fn name(&self) -> &'static str {
         "run_command"
@@ -41,7 +70,13 @@ impl Tool for RunCommand {
                     .code()
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "(terminated by signal)".to_string());
-                format!("exit code: {code}\n{}", exec.body)
+                let mut out = format!("exit code: {code}\n{}", exec.body);
+                if has_unquoted_pipe(&args.command) {
+                    out.push_str(
+                        "\nnote: this command is a pipeline - the exit code reflects only the last command in the pipe",
+                    );
+                }
+                out
             }
             ExecEnd::TimedOut => format!(
                 "command timed out after {}s and was killed\n{}",
@@ -130,5 +165,49 @@ mod tests {
             let p = RunCommand.preview(&serde_json::json!({"command": "cargo test"}), &ctx).unwrap();
             assert!(p.contains("cargo test") && p.contains("60"), "{p}");
         }
+
+        #[test]
+        fn pipeline_gets_exit_code_provenance_note() {
+            let (_d, ctx) = ctx();
+            let out = RunCommand
+                .run(&serde_json::json!({"command": "false | cat"}), &ctx)
+                .unwrap();
+            assert!(out.starts_with("exit code: 0"), "파이프 exit는 마지막 명령의 것: {out}");
+            assert!(out.contains("note: this command is a pipeline"), "{out}");
+        }
+
+        #[test]
+        fn non_pipeline_commands_get_no_note() {
+            let (_d, ctx) = ctx();
+            for cmd in ["echo hi", "grep -c 'a\\|b' /dev/null || true", "true || false"] {
+                let out = RunCommand.run(&serde_json::json!({"command": cmd}), &ctx).unwrap();
+                assert!(!out.contains("note: this command"), "{cmd} → {out}");
+            }
+        }
+
+        #[test]
+        fn timed_out_command_gets_no_pipeline_note() {
+            let (_d, mut c) = ctx();
+            c.command_timeout = Duration::from_millis(300);
+            let out = RunCommand
+                .run(&serde_json::json!({"command": "sleep 30 | cat"}), &c)
+                .unwrap();
+            assert!(out.contains("timed out") && !out.contains("note: this command"), "{out}");
+        }
+    }
+
+    #[test]
+    fn unquoted_pipe_detection() {
+        assert!(super::has_unquoted_pipe("cargo test 2>&1 | tail -50"));
+        assert!(!super::has_unquoted_pipe(r#"grep "a\|b" f.rs"#));
+        assert!(!super::has_unquoted_pipe("grep 'x|y' f.rs"));
+        assert!(!super::has_unquoted_pipe(r"grep a\|b f.rs"), "따옴표 밖 백슬래시 이스케이프");
+        assert!(
+            super::has_unquoted_pipe(r"echo 'a\' | cat"),
+            "단일따옴표 안 백슬래시는 리터럴 — 따옴표가 닫히고 파이프는 실파이프"
+        );
+        assert!(!super::has_unquoted_pipe("a || b"), "OR 연산자는 파이프가 아님");
+        assert!(super::has_unquoted_pipe("a | b || c"), "혼합 — 실파이프가 있으면 참");
+        assert!(!super::has_unquoted_pipe("echo x"));
     }
 }
