@@ -447,6 +447,72 @@ def selftest():
     perturb_ext_reset = run_metrics(events9_reset)[10]
     assert perturb_ext_reset == 1, perturb_ext_reset  # 리셋 삭제 뮤턴트에서는 2가 된다(마지막 턴이 스테일 a.rs 누적으로 오발화) — 킬
 
+    # M12 T9 2R 수정(리뷰 Item 1, Minor) — sr_corr_total 재현부의 래치/상한
+    # 자체는 위 T7 가드 3종(a/b/c)이 핀하지 않는다(그것들은 귀속 필터·파일별
+    # 분기만 다룬다). 리뷰의 뮤테이션 12종 중 5종이 생존했고 그중 3종이
+    # 34배치 집계(55)를 움직인다: discard 삭제→52, 래치 자체 삭제→52,
+    # MAX_SR_CORRECTIONS 3→1→41. 상한은 이 컬럼이 감시하는 "풍선효과 방지선"
+    # 그 자체(파일별 래치 완화가 다지점 과제에서 교정 총량을 못 키우게 막는
+    # 장치)라 파이썬 상수가 agent/repetition.rs::MAX_SR_CORRECTIONS(모듈
+    # 비공개라 크로스 임포트 불가 — BADARGS_KEY_PREFIX와 같은 사정)와
+    # 드리프트하면 워치독이 조용히 오탐지된다. 리뷰어 제안대로 최소 핀 2종을
+    # 추가한다.
+
+    # (A) 상한 핀: 서로 다른 4개 파일을 각각 비연속 재발로 누적 2까지 올린다
+    # (매 오류 사이 무관 read로 연속 스트릭을 1로 리셋 — 파일별 누적 단독
+    # 귀속만 발생시키기 위함). MAX_SR_CORRECTIONS=3이면 처음 3개 파일만
+    # 발화하고 4번째는 상한에 막혀야 한다.
+    events_cap = []
+    for f in ("cap1.rs", "cap2.rs", "cap3.rs", "cap4.rs"):
+        events_cap.append(ev("tool_result", sr, "edit_file", {"path": f}))
+        events_cap.append(ev("tool_result", "ok read", "read_file", {"path": f}))
+        events_cap.append(ev("tool_result", sr, "edit_file", {"path": f}))
+        events_cap.append(ev("tool_result", "ok read", "read_file", {"path": f}))
+    sr_corr_total_cap = run_metrics(events_cap)[11]
+    assert sr_corr_total_cap == 3, sr_corr_total_cap  # MAX 3→1 뮤턴트: 1. MAX 3→99 뮤턴트: 4. 둘 다 킬
+
+    # (B) 래치 해제 핀: e.rs가 누적 2로 1차 발화(래치 걸림) → 래치가 살아있는
+    # 채로 3번째 재발(누적 3)은 재발화하지 않아야 함(정상 래치 동작의 대조
+    # 관측) → 성공 뮤테이션(누적+래치 함께 해제, record_mutation_ok 상당) →
+    # 재발이 다시 누적 2로 2차 발화. discard만 삭제되면 2차 발화가 막혀 총
+    # 1(래치가 mutation 이후에도 살아있으므로), 래치 검사 자체가 통째로
+    # 빠지면 3번째 재발(위 대조 관측 지점)도 발화해 총 3 — 정상/두 뮤턴트가
+    # 1/2/3으로 서로 갈려 한 픽스처로 둘 다 킬한다.
+    events_latch = [
+        ev("tool_result", sr, "edit_file", {"path": "e.rs"}),
+        ev("tool_result", "ok read", "read_file", {"path": "e.rs"}),
+        ev("tool_result", sr, "edit_file", {"path": "e.rs"}),  # cum=2 — 1차 발화, e.rs 래치
+        ev("tool_result", "ok read", "read_file", {"path": "e.rs"}),
+        ev("tool_result", sr, "edit_file", {"path": "e.rs"}),  # cum=3 — 래치 중이라 재발화 안 함(대조 관측)
+        ev("tool_result", "wrote", "write_file", {"path": "e.rs", "content": "x"}),  # 성공 뮤테이션 — 누적+래치 해제
+        ev("tool_result", "ok read", "read_file", {"path": "e.rs"}),
+        ev("tool_result", sr, "edit_file", {"path": "e.rs"}),  # cum=1 (리셋 후)
+        ev("tool_result", "ok read", "read_file", {"path": "e.rs"}),
+        ev("tool_result", sr, "edit_file", {"path": "e.rs"}),  # cum=2 — 래치가 정상 해제됐으면 2차 발화
+    ]
+    sr_corr_total_latch = run_metrics(events_latch)[11]
+    assert sr_corr_total_latch == 2, sr_corr_total_latch  # discard 삭제 뮤턴트: 1. 래치 전체 삭제 뮤턴트: 3. 둘 다 킬
+
+    # (C) 리뷰가 "값싸게 죽일 수 있는지 검토"하라고 남긴 나머지 2종(MAX 3→99,
+    # reached의 streak>=2 분기 삭제)은 34배치 실측 집계에서는 불활성이지만
+    # (해당 배치들에 상한을 다투는 경합이 없었을 뿐), 상한을 다른 경로(연속
+    # 스트릭 발화)로 먼저 소진시켜 두면 로컬 픽스처에서는 죽는다 — 위 (A)가
+    # MAX 3→99를 이미 죽이므로, 여기서는 streak>=2 분기 삭제 전용으로 좁힌다.
+    # 교차 파일 연속 스트릭 2 발화(파일별 누적은 각 1뿐이라 disjunct 중
+    # streak 쪽에만 의존)를 3회 반복해 상한을 소진한 뒤, 파일별 누적 단독
+    # 발화가 그 상한에 막히는지 관찰한다.
+    events_disjunct = []
+    for fa, fb in (("g1a.rs", "g1b.rs"), ("g2a.rs", "g2b.rs"), ("g3a.rs", "g3b.rs")):
+        events_disjunct.append(ev("tool_result", sr, "edit_file", {"path": fa}))  # streak=1, cum[fa]=1
+        events_disjunct.append(ev("tool_result", sr, "edit_file", {"path": fb}))  # streak=2 → 연속 경로로 발화(상한 1 소진)
+        events_disjunct.append(ev("tool_result", "ok read", "read_file", {"path": fb}))  # 다음 쌍 전에 스트릭 리셋
+    events_disjunct.append(ev("tool_result", sr, "edit_file", {"path": "h.rs"}))
+    events_disjunct.append(ev("tool_result", "ok read", "read_file", {"path": "h.rs"}))
+    events_disjunct.append(ev("tool_result", sr, "edit_file", {"path": "h.rs"}))  # cum[h]=2지만 상한 소진으로 미발화
+    sr_corr_total_disjunct = run_metrics(events_disjunct)[11]
+    assert sr_corr_total_disjunct == 0, sr_corr_total_disjunct  # streak>=2 분기 삭제 뮤턴트: 앞의 3쌍이 전부 미발화해 상한이
+    # 비어 있는 채로 남고, h.rs의 누적 발화가 그 여유를 차지해 1이 된다 — 킬
+
     # M12 T9 수정(리뷰 Item 4·컨트롤러 결정): agent/mod.rs::ARGS_TOOL_KEY_NOTE·
     # ARGS_TOOL_SWITCH_NOTE 마커 카운트. 문구는 Rust 리터럴에서 그대로 복사.
     events_salvage_reverse = [
