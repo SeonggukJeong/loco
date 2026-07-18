@@ -1,7 +1,8 @@
 # M12 설계: 정직한 하네스 — 검증 실질 접지·오형 개입 일반화·S/R 도달률
 
 - 상태: 전문 리뷰 통과 (1R Ready=No → 전건 반영 → 2R **Ready=Yes**,
-  잔여 Minor/Nit도 본문 반영 완료) — **사용자 검토 대기**
+  잔여 Minor/Nit도 본문 반영 완료) — **사용자 승인 완료, 구현 진행 중**
+  (SDD Task 1-8 완료, Task 9 문서·게이트 마감)
 - 작성: 2026-07-18
 - 스코핑 입력: `docs/research/2026-07-18-uv-residual-failure-analysis.md`
   (082449Z uv 실패 8런 정독 — 실패 3층 구조 + 인자 누락 오형 센서스)
@@ -174,11 +175,13 @@ not file name; this exit 0 did not verify anything
 원인). 규칙(디스패치 지점 — 레지스트리 조회 가능):
 
 1. args에 문자열 값의 `tool` 키 존재 ∧ 값 == 액션 tool → 키 제거
-   (salvaged 마크·전용 교정 노트)
+   (전용 교정 노트 — 아래 문단대로 별도 채널; `turn.salvaged` 필드는
+   세우지 않는다)
 2. 값 != 액션 tool ∧ 값이 등록 도구명 → **액션 tool을 args의 값으로
-   교체**하고 키 제거(salvaged + 전용 교정 노트 — 모델의 최신 의도가
+   교체**하고 키 제거(전용 교정 노트 — 모델의 최신 의도가
    args 쪽에 표현된 관측 사례 기반; 교체 후 args가 새 도구 시그니처와
-   불일치하면 해당 도구의 BadArgs 에코 경로가 처리하므로 안전)
+   불일치하면 해당 도구의 BadArgs 에코 경로가 처리하므로 안전. 마찬가지로
+   `turn.salvaged`는 비변경)
 3. 값이 미등록 이름 → 키만 제거(잔여는 해당 도구의 BadArgs 경로가 처리)
 
 교정 노트는 **전용 문안을 플랜에서 핀**한다 — 기존 SALVAGE_NOTE("fields

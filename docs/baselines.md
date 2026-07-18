@@ -613,3 +613,25 @@ exit code 출처(마지막 명령) 한 줄 안내. 판정 문서: 사전등록
 3차부터 setsid 분리 실행으로 완주 — 상세는 report.md §2. 60분 초과 배치는 분리
 실행 필수(운영 교훈). 잔여 관측(M12 후보): fm@8K 8/10, 32K sr recovered 22/48
 (대조 36/45), write_file content 누락 버그(F uv1 계열 — M10부터 이월).
+
+## M12 — 지표 비교 주의 각주 (정직한 하네스, 2026-07-18)
+
+M12(스펙 `2026-07-18-m12-honest-harness-design.md`, 커밋 fc560f8)는 새 측정
+배치를 만들지 않는다(스코핑 결정 §0-3 — 회귀 게이트로 축소). 아래 두 각주는
+M12 이후 배치를 M11 이전 배치와 비교할 때 반드시 참조할 것.
+
+- **sr_error 비교 주의:** T1(`tools/edit_file.rs`)이 `search==replace` 동일성
+  검사를 `apply_edit`(매치 확정) **뒤로** 옮겼다. 그 결과 M12 이후 배치의
+  `sr_error`/`sr_correction`(그리고 `exp_metrics.py`의 동명 컬럼)은 "매치가
+  실재하는 진짜 S/R"만 센다 — 이전에는 이 카운터에 섞여 있던 두 오형이 각각
+  분리된 오류로 이동했다: 파일에 없는 환각 코드(0매치)는 "not found"로,
+  `replace_all` 없이 2곳 이상 매치하는 모호한 S/R은 "N locations"로. 즉 M12
+  이후 배치의 `sr_error` 수는 M11 이전 배치보다 구조적으로 **낮게** 나올 수
+  있다(오류 종류가 재분류된 것이지 개입 효과가 아니다) — 직접 비교하지 말 것.
+- **normalize 표기 영향:** `agent/status_note.rs::normalize`가 M12 전
+  `Path::new("/src/a.rs").components()`의 `RootDir`를 빈 파츠로 흘려 보내
+  `join("/")`가 `"//src/a.rs"`(슬래시 중복)를 만드는 버그가 있었다(T4가 수선,
+  `absolute` 플래그로 `"/"` 1개만 합성). 절대경로를 인자로 받는 편집 후에는
+  상태선의 파일 목록 표기가 M12 이후 `//src/a.rs` → `/src/a.rs`로 바뀐다 —
+  화면 표기만의 변화이며, `exp_metrics.py`의 `sr_files` 컬럼은 `os.path.basename`
+  기준이라 이 표기 변화에 무관(지표 자체는 영향 없음).
