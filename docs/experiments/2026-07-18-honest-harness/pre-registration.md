@@ -3,7 +3,12 @@
 - 날짜/디렉토리: `docs/experiments/2026-07-18-honest-harness/`
 - 스펙 근거: `docs/superpowers/specs/2026-07-18-m12-honest-harness-design.md`
   §5(측정: 회귀 게이트), §6(지표·문서)
-- 상태: **초안**
+- 상태: **승인됨 (2026-07-19)** — 사용자가 승인 판정을 독립 리뷰어에게 명시
+  위임("문서 나오면 별도 리뷰어한테 검토 받아서 통과되면 진행해"), 리뷰어가
+  1R NOT APPROVED(중단 규칙의 "배치 사망" 미정의 → 정상 종료한 낮은 통과 수
+  배치를 재수행할 seam) → 수정 `34d0321` → 2R **APPROVED**. 리뷰어 실측 확인:
+  대조군 스탬프 2종의 `report.json`·`effective_config` 일치, 명령줄 실행 가능성,
+  `sr recovered 23/30` 재현, 해석 규율 5건의 baselines.md 대조.
 - 대상 커밋: `b87dca3b02f62a1b78898016edd0694b2f14fe14`(T9 완료 시점,
   브랜치 `m12/honest-harness`)
 - 대상 커밋 이후 배치 시점까지의 커밋은 **문서 전용이어야 한다** —
