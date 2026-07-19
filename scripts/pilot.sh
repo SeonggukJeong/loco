@@ -14,7 +14,14 @@ command -v git >/dev/null || { echo "git이 필요합니다"; exit 1; }
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "git 레포 안에서 실행하세요"; exit 1; }
 
 # 세션 시작(타이밍/리비전 캡처) 전에 확인 — 실패해도 사용자 비용이 0이어야 한다.
-command -v "$LOCO_BIN" >/dev/null 2>&1 || { echo "LOCO_BIN이 실행 가능한 파일이 아닙니다: $LOCO_BIN"; exit 1; }
+if echo "$LOCO_BIN" | grep -q /; then
+  # Path with slash: verify it's an executable file (not a directory)
+  [ -f "$LOCO_BIN" ] && [ -x "$LOCO_BIN" ] || { echo "LOCO_BIN이 실행 가능한 파일이 아닙니다: $LOCO_BIN"; exit 1; }
+else
+  # Bare name: resolve via command -v first, then verify it's executable
+  resolved_bin=$(command -v "$LOCO_BIN" 2>/dev/null) || { echo "LOCO_BIN이 실행 가능한 파일이 아닙니다: $LOCO_BIN"; exit 1; }
+  [ -f "$resolved_bin" ] && [ -x "$resolved_bin" ] || { echo "LOCO_BIN이 실행 가능한 파일이 아닙니다: $LOCO_BIN"; exit 1; }
+fi
 
 if [ -n "$(git status --porcelain)" ]; then
   printf '워킹트리가 더럽습니다. 세션 diff가 오염됩니다. 계속할까요? [y/N] '
