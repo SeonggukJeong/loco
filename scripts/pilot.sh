@@ -25,6 +25,21 @@ else
   [ -f "$resolved_bin" ] && [ -x "$resolved_bin" ] || { echo "LOCO_BIN이 실행 가능한 파일이 아닙니다: $LOCO_BIN"; exit 1; }
 fi
 
+# 원장 경로도 같은 이유로 여기서 확인한다 — 지금까지는 세션 전체가 끝난 뒤,
+# 파이썬 헤레독 안에서야 실패했다. 원장 실패는 LOCO_BIN 실패보다 비용이 크다:
+# 세션 시간 전부가 날아간다.
+ledger_dir=$(dirname "$PILOT_LEDGER")
+[ -d "$ledger_dir" ] || { echo "원장 디렉터리가 없습니다: $ledger_dir"; exit 1; }
+if [ -e "$PILOT_LEDGER" ]; then
+  [ -f "$PILOT_LEDGER" ] || { echo "원장 경로가 파일이 아닙니다: $PILOT_LEDGER"; exit 1; }
+  [ -w "$PILOT_LEDGER" ] || { echo "원장 파일에 쓸 수 없습니다: $PILOT_LEDGER"; exit 1; }
+else
+  # 없으면 지금 만들어 본다 — 별도 프로브 파일 없이 실제 원장 파일 생성 자체를
+  # 사전 점검으로 쓴다: 실패하면(권한 등) 아무 파일도 남지 않고, 성공하면
+  # 그 파일이 곧 첫 줄을 받을 실제 원장이다(첫 줄은 원장이 스스로 만들 수 있어야 한다).
+  ( : > "$PILOT_LEDGER" ) 2>/dev/null || { echo "원장 파일을 만들 수 없습니다: $PILOT_LEDGER"; exit 1; }
+fi
+
 if [ -n "$(git status --porcelain)" ]; then
   printf '워킹트리가 더럽습니다. 세션 diff가 오염됩니다. 계속할까요? [y/N] '
   read -r ans
@@ -42,6 +57,15 @@ read -r TASK_DESC
 SESSION_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 START_REV="$(git rev-parse HEAD)"
 START_TS="$(date +%s)"
+
+# loco에는 위 "과제 한 줄"이 자동으로 전달되지 않는다 — 사용자가 loco> 프롬프트에서
+# 직접 다시 입력해야 한다. 안내가 없으면 응답 후 돌아온 loco> 프롬프트를 멈춤/종료로
+# 오인한다(실측: 세션은 살아 있었고 판정 프롬프트가 뒤에서 기다리고 있었을 뿐이었다).
+echo ""
+echo "방금 입력한 과제: $TASK_DESC"
+echo "loco> 프롬프트가 뜨면 위 문장을 붙여넣으세요 (자동으로 전달되지 않습니다)."
+echo "세션 종료는 loco> 프롬프트에서 /quit 또는 Ctrl+D 입니다 — 그 후에 판정/사유를 묻고 원장에 기록합니다."
+echo ""
 
 # --- 세션 ---------------------------------------------------------------------
 LOCO_EXIT=0
@@ -78,7 +102,7 @@ read -r REASON
 # 더 나쁜 것은 조용한 쪽이다: 손상된 diff도 유효한 JSON이고 길이가 0이 아니라
 # "검증 통과"로 보인다. 그리고 T10의 survival()은 git grep -F 고정 문자열
 # 대조라 손상된 줄이 전부 불일치 처리되어 생존율이 체계적으로 과소 계상된다.
-DIFF="$DIFF" REPO="$REPO" TASK_TYPE="$TASK_TYPE" DIFFICULTY="$DIFFICULTY" \
+if DIFF="$DIFF" REPO="$REPO" TASK_TYPE="$TASK_TYPE" DIFFICULTY="$DIFFICULTY" \
 TASK_DESC="$TASK_DESC" TRANSCRIPT="$TRANSCRIPT" VERDICT="$VERDICT" \
 REASON="$REASON" SESSION_ID="$SESSION_ID" START_REV="$START_REV" \
 END_REV="$END_REV" DURATION="$DURATION" LOCO_EXIT="$LOCO_EXIT" \
@@ -103,3 +127,12 @@ with open(sys.argv[1], "a") as f:
     f.write(json.dumps(row, ensure_ascii=False) + "\n")
 print(f"원장에 기록: {row['session_id']} ({row['verdict']})")
 PYEOF
+then
+  :
+else
+  py_status=$?
+  # 위 파이썬 트레이스백을 지우지 않는다(원인 확인용) — 그 위에 사용자용 한국어
+  # 요약을 더한다. set -e에 걸리지 않도록 if/else로 상태를 그대로 보존해 종료한다.
+  echo "원장 기록에 실패했습니다: $PILOT_LEDGER — 이 회차는 원장에 남지 않았습니다. 위 오류를 확인해 수동으로 기록하거나 다시 시도하세요." >&2
+  exit "$py_status"
+fi
