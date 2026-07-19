@@ -137,6 +137,14 @@ impl<C: LlmClient> Agent<C> {
         self.seed = Some(seed);
     }
 
+    /// 이 런에서 json_schema 폴백(400 → response_format 제거)이 발동했는가.
+    /// eval이 report.json에 기록해 "조용한 전면 실패"를 배치 후 기계적으로
+    /// 판별할 수 있게 한다 (M13 스펙 §3-6-1). Agent는 런마다 새로 만들어지므로
+    /// (src/eval/mod.rs) 이 값은 런 지역이다.
+    pub fn schema_fallback_fired(&self) -> bool {
+        !self.use_json_schema
+    }
+
     /// 스펙 §6: (context − max_output) × 0.9
     fn input_budget(&self) -> usize {
         self.context_tokens.saturating_sub(self.max_output_tokens as usize) * 9 / 10
@@ -722,6 +730,15 @@ mod tests {
         request: &str,
     ) -> Result<AgentOutcome, LlmError> {
         agent.run(session, request, &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await
+    }
+
+    #[test]
+    fn schema_fallback_fired_is_false_on_a_fresh_agent() {
+        // 폴백 게터의 초기 상태 핀 — use_json_schema가 true로 시작하므로 false여야
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![]);
+        let agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        assert!(!agent.schema_fallback_fired(), "새 에이전트는 폴백 미발동");
     }
 
     #[tokio::test]

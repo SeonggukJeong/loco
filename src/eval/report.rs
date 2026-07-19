@@ -37,6 +37,9 @@ pub struct RunRecord {
     pub turns: usize,
     /// 에이전트 실행 시간(agent.run)만 — 판정 check·샌드박스 준비 제외 (M7 §4)
     pub duration_secs: f64,
+    /// json_schema 폴백이 이 런에서 발동했는가 — true면 그 런은 스키마 강제 없이
+    /// 돈 것이라 측정값으로 신뢰할 수 없다 (M13 스펙 §3-6-1 기계 검사)
+    pub schema_fallback: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -162,11 +165,17 @@ mod tests {
     use super::*;
 
     fn run(passed: bool, turns: usize, secs: f64) -> RunRecord {
-        RunRecord { repeat: 0, seed: 0, passed, outcome: RunOutcome::Finished, turns, duration_secs: secs }
+        RunRecord {
+            repeat: 0, seed: 0, passed, outcome: RunOutcome::Finished, turns,
+            duration_secs: secs, schema_fallback: false,
+        }
     }
 
     fn run_with(passed: bool, outcome: RunOutcome) -> RunRecord {
-        RunRecord { repeat: 0, seed: 0, passed, outcome, turns: 1, duration_secs: 1.0 }
+        RunRecord {
+            repeat: 0, seed: 0, passed, outcome, turns: 1,
+            duration_secs: 1.0, schema_fallback: false,
+        }
     }
 
     #[test]

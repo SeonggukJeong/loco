@@ -211,7 +211,11 @@ async fn run_once<C: LlmClient>(
             return Ok(None);
         }
         Err(Stopped::TimedOut) => {
-            let rec = judge(&sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat, interrupt, cargo_snapshot).await;
+            let rec = judge(
+                &sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat, interrupt, cargo_snapshot,
+                agent.schema_fallback_fired(),
+            )
+            .await;
             sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
             return rec;
         }
@@ -224,7 +228,11 @@ async fn run_once<C: LlmClient>(
         // eval에선 도달하지 않음(플래그는 run_bounded만 세우고 그 경로는 위에서 반환) — 방어적 매핑
         AgentOutcome::Cancelled => RunOutcome::Timeout,
     };
-    let rec = judge(&sb, t, opts, kind, turns, elapsed, seed, repeat, interrupt, cargo_snapshot).await;
+    let rec = judge(
+        &sb, t, opts, kind, turns, elapsed, seed, repeat, interrupt, cargo_snapshot,
+        agent.schema_fallback_fired(),
+    )
+    .await;
     sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
     rec
 }
@@ -244,6 +252,7 @@ async fn judge(
     repeat: usize,
     interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
     cargo_snapshot: &integrity::CargoConfigSnapshot,
+    schema_fallback: bool,
 ) -> anyhow::Result<Option<RunRecord>> {
     sb.sync_protected(&t.fixture, &with_implicit_protected(&t.spec.protected))?;
     cargo_tripwire(&sb.root)?;
@@ -262,7 +271,11 @@ async fn judge(
         return Ok(None);
     }
     let passed = matches!(exec.end, ExecEnd::Done(s) if s.success());
-    Ok(Some(RunRecord { repeat, seed, passed, outcome, turns, duration_secs: elapsed.as_secs_f64() }))
+    Ok(Some(RunRecord {
+        repeat, seed, passed, outcome, turns,
+        duration_secs: elapsed.as_secs_f64(),
+        schema_fallback,
+    }))
 }
 
 /// `<root>/.loco/eval/<stamp>/` 생성 + `.loco/.gitignore` 보장 (스펙 §7과 동일 정책)
