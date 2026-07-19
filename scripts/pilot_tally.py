@@ -36,26 +36,35 @@ except ImportError as exc:  # 조용한 폴백 금지 (사용자 결정) — 크
 # "loco 비정상 종료(exit≠0)"는 T10에서 loco_exit 필드가 원장 스키마에 추가된
 # 것(T9 리뷰 수정)에 대응해 이 시점에 신설한다 — 역시 세션 1 이전이므로
 # "신규 추가 시 추가 시점을 원장에 기록할 것"이라는 조항의 대상은 아니다
-# (사후 추가가 아니라 최초 사전선언의 일부다). 아래 세 범주는 이름은
+# (사후 추가가 아니라 최초 사전선언의 일부다). 아래 두 범주는 이름은
 # 사전선언돼 있지만 **이 스크립트는 기계 판정을 시도하지 않는다** — 이유는
-# classify()의 docstring에 각각 적어 둔다. 항상 0으로 나오는 것은 버그가
-# 아니라 알려진 계측 공백이며, 아래에 명시적으로 문서화한다:
+# classify()의 docstring과 아래 UNINSTRUMENTED에 적어 둔다. 항상 0으로
+# 나오는 것은 버그가 아니라 알려진 계측 공백이며, 출력 표에서도 △로 표시해
+# "측정해서 0건"과 구분한다(M13 T10 리뷰 Important 2):
 #   - "컨텍스트 오버플로": agent/mod.rs의 재시도/포기 알림은 AgentEvent::Notice
 #     로만 나가고 session.push()를 타지 않으므로 .loco/sessions/*.jsonl에
 #     아무 흔적도 남지 않는다(직접 확인, src/agent/mod.rs 208-228행).
 #   - "엉뚱한 파일 편집": "정답 파일이 무엇이었는가"를 원장 스키마 자체가
 #     기록하지 않으므로 기계 판정 대상 밖이다.
-#   - "length 루프": 실제로는 감지 가능한 신호가 있다(finish_reason: length
-#     재시도 시 세션에 push되는 고정 문구, src/agent/mod.rs 236-239행) — 하지만
-#     그 문구를 마커 상수로 쓰려면 scripts/exp_metrics.py에 새 상수를 신설해야
-#     하고, 그 상수는 (BADARGS_KEY_PREFIX와 달리) 러스트 쪽에서 교차 핀하는
-#     테스트가 아직 없다. 이번 태스크의 결정 범위(§4-4 리터럴 드리프트 방지)를
-#     벗어나는 신규 계측 확장이라 T10에서는 보류하고 공백으로 문서화만 한다.
+# "length 루프"는 반대로 M13 T10 리뷰(Important 1)에서 계측을 신설했다:
+# finish_reason=="length" 재시도 시 세션에 push되는 고정 문구
+# (src/agent/mod.rs 234-239행)를 scripts/exp_metrics.py에 MARKS["length_retry"]로
+# 신설해 참조한다(리터럴 복제 금지 결정 — 위 모듈 docstring 참조) — 이제
+# S/R 루프·BadArgs와 동급의 기계 판정 범주다(classify() 참조).
 CATEGORIES = [
     "실패 없음", "S/R 루프", "뮤테이션 0회 거짓 finish", "뮤테이션 없는 탐색 루프",
     "컨텍스트 오버플로", "엉뚱한 파일 편집", "length 루프", "인자 누락(BadArgs)",
     "loco 비정상 종료(exit≠0)",
 ]
+
+# 위 주석의 계측 공백 목록 — 값은 출력 표 각주에 그대로 쓰는 사유 한 줄.
+# classify()는 이 두 범주에 절대 라벨을 붙이지 않는다: 항상 0이 "발생 안 함"이
+# 아니라 "잴 방법이 없음"임을 표에서 시각적으로 구분한다(M13 T10 리뷰
+# Important 2 — 그렇지 않으면 측정한 0과 못 잰 0이 인쇄에서 똑같아 보인다).
+UNINSTRUMENTED = {
+    "컨텍스트 오버플로": "AgentEvent::Notice 전용 알림 — session.push()를 안 타 트랜스크립트에 안 남음",
+    "엉뚱한 파일 편집": "정답 파일 오라클이 원장 스키마에 없음",
+}
 
 # T9 리뷰가 loco_exit을 추가한 이유(브리핑 참조): "$LOCO_BIN || true"로는
 # "loco가 크래시함"과 "loco가 애초에 안 돎"을 구분할 수 없어, 스키마상
@@ -66,6 +75,16 @@ CATEGORIES = [
 # 스크립트만으로는 알 수 없다. 사람이 reason 필드를 읽고 필요하면 사후에
 # 더 구체적인 범주로 재분류해야 한다 — 그래서 "미분류 세부" 절을 출력한다.
 CODE_CHANGE_TASK_TYPES = {"bugfix", "feature", "refactor", "test"}
+
+# pilot.sh가 세션 전 수집 프롬프트에서 사용자에게 제시하는 안내 어휘
+# (scripts/pilot.sh 35행: "bugfix/feature/refactor/explore/test/other") — 그러나
+# 실제 입력은 read -r로 받는 무제약 자유 텍스트라 이 목록 밖의 값(오타·동의어)이
+# 원장에 그대로 들어갈 수 있다. CODE_CHANGE_TASK_TYPES(위)는 그중 "코드 변경이
+# 기대되는" 부분집합이고, 이 집합은 classify()가 아는 전체 어휘다 — 여기 없는
+# 값은 조용히 "실패 없음"/"기타"로 흡수되지 않도록 별도 진단 절에서 표면화한다
+# (M13 T10 리뷰 Important 3): 정확히 이 방식의 조용한 흡수가 §4-4 범주 분리가
+# 막으려는 실패이므로, 정규화하거나 추측해서 재분류하지 않고 사람이 읽게 한다.
+KNOWN_TASK_TYPES = CODE_CHANGE_TASK_TYPES | {"explore", "other"}
 
 # T9의 원장 스키마(scripts/pilot.sh 참조) — 이 중 하나라도 없는 줄은 손상된
 # 원장으로 간주해 즉시 중단한다(자기검토 요구사항: 손상된 줄이 조용히
@@ -163,8 +182,11 @@ def classify(row):
 
     - "loco 비정상 종료": transcript 유무와 무관하게 항상 기계 판정이다
       (loco_exit은 셸 종료 상태 그대로 기록된 필드라 해석의 여지가 없다).
-    - "S/R 루프"/"인자 누락(BadArgs)": transcript 본문에서 검색한 고정
-      마커(둘 다 exp_metrics.py에서 import, 아래 참조) — 기계 판정.
+    - "S/R 루프"/"인자 누락(BadArgs)"/"length 루프": transcript 본문에서 검색한
+      고정 마커(모두 exp_metrics.py에서 import, 아래 참조) — 기계 판정.
+      "length 루프"의 마커(MARKS["length_retry"])는 finish_reason=="length"일
+      때 session.push(ChatMessage::user(...))로 남는 고정 재시도 문구다
+      (src/agent/mod.rs 234-239행) — kind가 "user"라 bodies에 포함된다.
     - "뮤테이션 0회 거짓 finish"/"뮤테이션 없는 탐색 루프": 뮤테이션
       성공 횟수(기계, transcript 파싱)를 verdict(사용자 자기보고)로 가른다.
       가르는 축인 뮤테이션 카운트 자체가 transcript 파싱 결과이므로
@@ -178,8 +200,8 @@ def classify(row):
       확인해 준 게 아니다).
     - "기타": 위 어느 것도 아님 — 아래 미분류 세부에서 reason을 사람이 읽어야 한다.
 
-    "컨텍스트 오버플로"/"엉뚱한 파일 편집"/"length 루프"는 이 함수가 절대
-    붙이지 않는다 — 이유는 위 CATEGORIES 옆 주석 참조(계측 공백, 버그 아님).
+    "컨텍스트 오버플로"/"엉뚱한 파일 편집"(UNINSTRUMENTED의 두 키)은 이 함수가
+    절대 붙이지 않는다 — 이유는 위 CATEGORIES 옆 주석 참조(계측 공백, 버그 아님).
     """
     cats = []  # [(category, source)]
 
@@ -212,6 +234,8 @@ def classify(row):
             cats.append(("S/R 루프", "machine"))
         if BADARGS_KEY_PREFIX in bodies:
             cats.append(("인자 누락(BadArgs)", "machine"))
+        if MARKS["length_retry"] in bodies:
+            cats.append(("length 루프", "machine"))
         if muts == 0:
             if row.get("verdict") == "성공" and row.get("task_type") in CODE_CHANGE_TASK_TYPES:
                 cats.append(("뮤테이션 0회 거짓 finish", "machine"))
@@ -247,12 +271,20 @@ def main():
             cat_src_counts[(cat, src)] += 1
 
     print("## 범주별 건수 (주 산출물, 스펙 §4-4)")
-    print("다중 라벨 — 합계는 세션 수와 같지 않다. 괄호는 증거 출처(기계 판정/사용자 사유) 내역\n")
+    print("다중 라벨 — 합계는 세션 수와 같지 않다. 괄호는 증거 출처(기계 판정/사용자 사유) 내역")
+    print("△ 표시 행은 계측 공백이다 — 항상 0이며, 아래 각주 참조\n")
     extra = [c for c in cat_counts if c not in CATEGORIES]
     for c in CATEGORIES + extra:
         m = cat_src_counts[(c, "machine")]
         u = cat_src_counts[(c, "user")]
-        print(f"  {c:<28} {cat_counts[c]:>3}   (기계 {m} / 사용자 {u})")
+        flag = "△" if c in UNINSTRUMENTED else " "
+        print(f"{flag} {c:<28} {cat_counts[c]:>3}   (기계 {m} / 사용자 {u})")
+    if any(c in UNINSTRUMENTED for c in CATEGORIES + extra):
+        print("\n  △ = 계측 불가(이 스크립트가 절대 세지 않아 항상 0) — '측정해서 0건'이")
+        print("  아니라 '잴 방법이 없음'이다. 실제 발생 여부는 이 표에서 알 수 없다:")
+        for c in CATEGORIES:
+            if c in UNINSTRUMENTED:
+                print(f"    - {c}: {UNINSTRUMENTED[c]}")
 
     crashed = [r for r in rows if r["loco_exit"] != 0]
     if crashed:
@@ -267,6 +299,21 @@ def main():
         for r in others:
             reason = r.get("reason") or "(사유 미기재)"
             print(f"  {r['session_id']}  [{r.get('task_type', '?')}] {r.get('verdict')} — {reason}")
+
+    unknown_types = {}  # task_type 값 -> [session_id, ...]
+    for r in rows:
+        tt = r.get("task_type")
+        if tt not in KNOWN_TASK_TYPES:
+            unknown_types.setdefault(tt, []).append(r["session_id"])
+    if unknown_types:
+        print("\n## 미확인 task_type 세부 — pilot.sh 안내 어휘"
+              f"({', '.join(sorted(KNOWN_TASK_TYPES))}) 밖의 값이다.")
+        print("오타·동의어일 수 있으나 자동 정규화·재분류하지 않는다 — 아래 세션의 분류 결과를")
+        print("사람이 직접 확인할 것(코드 변경 과제인데 어휘가 어긋나 '실패 없음'으로 조용히")
+        print("흡수됐을 위험이 가장 크다):")
+        for tt in sorted(unknown_types, key=str):
+            ids = unknown_types[tt]
+            print(f"  task_type={tt!r}  {len(ids)}건 — {', '.join(ids)}")
 
     print("\n## 판정 분포 (기술 통계)")
     for v, n in Counter(r.get("verdict") for r in rows).most_common():

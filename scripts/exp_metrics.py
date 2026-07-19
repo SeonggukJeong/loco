@@ -37,6 +37,14 @@ MARKS = {
     # 노트 2종. 부분문자열은 Rust 리터럴에서 문자 그대로 복사(백틱·따옴표 포함).
     "args_tool_key": "the `tool` key inside \"args\" is not a parameter",
     "args_tool_switch": "\"args\" named a different tool, so this call was dispatched as that tool instead",
+    # M13 T10 리뷰 수정(Important 1) — agent/mod.rs가 finish_reason=="length"일
+    # 때 session.push(ChatMessage::user(...))로 남기는 고정 재시도 문구(직접
+    # 확인, src/agent/mod.rs 234-239행). 러스트 리터럴에서 문자 그대로 복사.
+    # 이 파일이 손으로 미러링하는 상수라 드리프트 감시 대상이다 — 위
+    # BADARGS_KEY_PREFIX·args_tool_key/switch와 같은 사정(크로스임포트 불가,
+    # 자동 드리프트 감지 없음): 러스트 쪽 문구가 바뀌면 이 리터럴도 사람이
+    # 함께 고쳐야 한다.
+    "length_retry": "cut off by the output token limit",
 }
 COLS = ["run", "outcome", "passed"] + list(MARKS) + [
     "sr_recovered", "sr_recovery_denom", "finish_missing_maxrun", "perturb_turns", "stop_cause",
@@ -613,6 +621,18 @@ def selftest():
     counts_notes = run_metrics(events_salvage_reverse)[0]
     assert counts_notes["args_tool_key"] == 1, counts_notes
     assert counts_notes["args_tool_switch"] == 1, counts_notes
+
+    # M13 T10 리뷰 수정(Important 1) — length_retry 마커. finish_reason=="length"
+    # 재시도 문구는 assistant가 아니라 session.push(ChatMessage::user(...))로
+    # 남는 user 이벤트다(직접 확인, src/agent/mod.rs 234-239행) — 그래서
+    # assistant를 건너뛰는 마커 카운트 루프를 통과해 실제로 세어진다.
+    events_length = [
+        ev("assistant", "(empty)"),
+        ev("user", "Your previous response was cut off by the output token limit. "
+           "Respond again with exactly one, much shorter JSON turn."),
+    ]
+    counts_length = run_metrics(events_length)[0]
+    assert counts_length["length_retry"] == 1, counts_length
 
     # M12 T9 수정(리뷰 Item 2): verify_failed·sr_corr_total은 이제 process()를
     # 실제로 호출해 출력 테이블 값으로 검증한다(로컬 재계산이 아니라 실 코드
