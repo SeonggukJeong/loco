@@ -286,7 +286,9 @@ def classify(row):
 
 def main():
     if len(sys.argv) != 2:
-        print(__doc__)
+        print(f"오류: 인자 개수가 잘못됐습니다 (주어진 {len(sys.argv)-1}개, 필요 1개 — 원장 경로만)")
+        print("새로운 형식: python3 scripts/pilot_tally.py <ledger.jsonl>")
+        print("참고: 레포는 ledger 행의 repo 필드에서 읽습니다 (더 이상 CLI 인자가 아닙니다)")
         sys.exit(1)
     ledger_path = sys.argv[1]
     rows = load_ledger(ledger_path)
@@ -374,10 +376,12 @@ def main():
         sub = by_repo[repo]
         print(f"\n### {repo}")
         repo_alive, repo_lines, repo_judged = 0.0, 0, 0
+        repo_unjudgeable_count = 0  # 이 repo에서 판정 불가(경로 문제)인 행 수
         for r in sub:
             rate, n, reason = survival(repo, r.get("diff") or "", r["session_id"])
             if reason is not None:
                 unjudgeable.append((r["session_id"], repo, reason))
+                repo_unjudgeable_count += 1
                 continue
             if rate is None:
                 continue
@@ -391,7 +395,10 @@ def main():
             overall_lines += repo_lines
             overall_judged += repo_judged
         else:
-            print("  판정 가능한 세션 없음 (모든 diff가 공백이거나 유의미한 추가 줄이 없음)")
+            if repo_unjudgeable_count == len(sub):
+                print("  판정 가능한 세션 없음 (모든 세션이 레포 경로 문제로 판정 불가)")
+            else:
+                print("  판정 가능한 세션 없음 (모든 diff가 공백이거나 유의미한 추가 줄이 없음)")
 
     if unjudgeable:
         print("\n## 판정 불가 — 레포 경로 문제 (0%로 세지 않음, 스펙 §4-3 왜곡 5종과는 별개)")
@@ -399,6 +406,7 @@ def main():
         print("아래 행은 생존율 집계에서 완전히 제외됐다 — 원인을 사람이 확인할 것:")
         for sid, r_path, reason in unjudgeable:
             print(f"  {sid}  repo={r_path} — {reason}")
+        print(f"\n  총 {len(unjudgeable)}건 판정 제외")
 
     print()
     if overall_lines:
