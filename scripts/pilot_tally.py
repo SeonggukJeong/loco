@@ -142,15 +142,47 @@ def load_ledger(path):
     return rows
 
 
-def added_lines(diff):
-    """diff에서 유의미한 추가 줄만 — 공백/괄호/짧은 줄은 생존 판정 노이즈."""
-    out = []
+def added_lines_by_file(diff):
+    """diff에서 유의미한 추가 줄만, 그 줄이 실제로 속한 파일 경로와 짝지어 뽑는다.
+
+    반환: [(path, body), ...] — path는 `+++ b/<path>` 헤더에서 읽은 대상 경로.
+    공백/괄호/짧은 줄은 이전과 동일하게 생존 판정 노이즈로 걸러진다.
+
+    (T10 현장 수선 6 — 파일 귀속이 없던 예전 버전은 diff 전체에서 "+"로 시작하는
+    줄만 모아 레포 전역을 git grep했다. 실제 파일럿 원장으로 발견한 사례
+    (가설이 아니라 실측): session 20260719T134645Z(zoxide)가 src/util.rs에 추가한
+    `#[cfg(test)] mod tests { ... }` 블록 10줄 중 세션이 실제로 쓴 내용은 HEAD에
+    하나도 없었는데, `#[cfg(test)]`/`mod tests {`/`    use super::*;`/
+    `    #[test]` 네 줄이 같은 레포의 src/db/mod.rs·src/db/stream.rs에 있던 기존
+    테스트 상용구와 글자 그대로 일치해 "30.0%(10줄) 생존"으로 찍혔다 — 세션이
+    실제로 만든 파일과 무관한 매치라 이 파일 귀속으로 바로잡는다.)
+
+    `+++ /dev/null`(파일 삭제)은 이 hunk에 귀속되는 파일이 없다는 뜻이라
+    이후 "+" 줄을 아예 수집하지 않는다(삭제 diff는 애초에 "+" 줄을 내지 않지만,
+    방어적으로 처리) — path=None으로 두고 최종 결과에서 자동으로 빠진다.
+    """
+    out = []  # [(path, body), ...]
+    current = None  # 지금 보고 있는 hunk가 귀속된 파일 경로 (헤더 못 만나면 None)
     for line in diff.splitlines():
-        if not line.startswith("+") or line.startswith("+++"):
+        if line.startswith("+++ "):
+            target = line[4:].strip()
+            if target == "/dev/null":
+                current = None
+            elif target.startswith("b/"):
+                current = target[2:]
+            else:
+                # --no-prefix 등 낯선 형식 — pilot.sh는 git diff 기본 프리픽스만
+                # 쓰므로(스크립트 확인) 실사용에서는 도달하지 않지만 방어적으로
+                # 헤더 그대로를 경로로 취급한다(크래시보다 낫다).
+                current = target
+            continue
+        if not line.startswith("+"):
+            continue
+        if current is None:
             continue
         body = line[1:].strip()
         if len(body) > 10 and body not in ("{", "}", "*/"):
-            out.append(body)
+            out.append((current, body))
     return out
 
 
@@ -183,17 +215,47 @@ def survival(repo, diff, session_id="?"):
     git grep -F 고정 문자열 대조라 diff 줄에 정규식 메타문자(., *, [ 등)가
     있어도 문자 그대로 비교된다 — 정규식으로 오인돼 오매칭/에러가 나는
     일은 없다.
+
+    T10 현장 수선 6(실측, 가설 아님): 예전 버전은 `git grep HEAD`를 pathspec
+    없이 돌려 레포 전체를 뒤졌다 — 그러면 세션이 만든 줄이 아니라 그 글자와
+    "우연히 같은" 다른 파일의 기존 코드가 매치돼도 "생존"으로 잡힌다
+    (added_lines_by_file의 docstring에 있는 zoxide 세션 실측 사례 참조).
+    지금은 각 줄을 diff가 귀속한 파일(`git grep ... -- <path>`)로 한정해서만
+    찾는다. 그 파일 자체가 HEAD에 없으면(이동/삭제) grep이 못 찾는 이유가
+    "그 줄이 지워짐"이 아니라 "찾을 파일이 없음"이라 서로 다른 사유다 — 아래
+    루프에서 cat-file로 파일 존재를 먼저 갈라 이 둘을 구분해서 다루되(파일
+    없음 쪽은 stderr 한 줄로 알림), 생존 판정 결과 자체(미생존 0)는 둘 다 같다.
     """
     reason = _repo_problem(repo)
     if reason is not None:
         return None, 0, reason
-    lines = added_lines(diff)
+    lines = added_lines_by_file(diff)
     if not lines:
         return None, 0, None
     alive = 0
-    for body in lines:
+    file_exists = {}  # path -> HEAD에 그 파일이 있는지 (파일당 1회만 확인)
+    for path, body in lines:
+        if path not in file_exists:
+            e = subprocess.run(
+                ["git", "-C", repo, "cat-file", "-e", f"HEAD:{path}"],
+                capture_output=True,
+            )
+            file_exists[path] = e.returncode == 0
+            if not file_exists[path]:
+                print(
+                    f"  경고: 대상 파일이 HEAD에 없음(session {session_id}, {path}) "
+                    "— 이동/삭제됐을 수 있음. 이 파일 소속 줄은 '그 줄이 지워짐'이",
+                    file=sys.stderr,
+                )
+                print(
+                    "  아니라 '찾을 파일 자체가 없음'으로 미생존 처리한다",
+                    file=sys.stderr,
+                )
+        if not file_exists[path]:
+            continue  # 파일이 없으니 그 안 줄도 당연히 미생존 — grep 돌릴 필요 없음
         r = subprocess.run(
-            ["git", "-C", repo, "grep", "-qF", body, "HEAD"], capture_output=True
+            ["git", "-C", repo, "grep", "-qF", body, "HEAD", "--", path],
+            capture_output=True,
         )
         if r.returncode == 0:
             alive += 1
@@ -365,6 +427,10 @@ def main():
     print("레포별로 나눈다 — 레포 규모가 20배 이상 차이 나 pooled 수치 하나면 큰 레포가")
     print("작은 레포를 가려버린다(T10 리뷰 수선 2). 아래는 보조 지표 안에서의 세부일")
     print("뿐, 위 범주별 건수(주 산출물)를 밀어내는 것은 아니다.")
+    print("여섯째 왜곡(발견·수선 완료): 예전 버전은 생존 검사를 레포 전체에 돌려")
+    print("세션이 만든 적 없는 다른 파일의 상용구까지 '생존'으로 셌다 — 실제 파일럿")
+    print("원장에서 실측(session 20260719T134645Z, 가설 아님): 진짜 세션 산출물 0줄인데")
+    print("30.0%(10줄)로 찍혔다. 지금은 diff가 귀속한 파일 안에서만 찾도록 닫았다.")
 
     by_repo = {}
     for r in rows:
