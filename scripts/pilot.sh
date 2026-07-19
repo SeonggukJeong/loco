@@ -156,7 +156,15 @@ run_with_timeout() {
   wait "$_rwt_pid" 2>/dev/null || _rwt_status=$?
   # 제시간에 끝났다면 감시자를 정리한다 — 안 그러면 timeout초가 다 지날 때까지
   # 백그라운드에 남아 다음 확인(cargo test)의 감시자와 뒤섞일 수 있다.
-  kill "$_rwt_watcher" 2>/dev/null || true
+  #
+  # 반드시 kill_tree로 죽인다. 감시자는 서브셸이고 그 안의 `sleep`은 별도
+  # 프로세스라, 서브셸만 kill하면 sleep이 PPID 1로 고아가 되어 살아남는다
+  # (실측 확인: 감시자 kill 후 `ps`에 `sleep 120`이 PPID 1로 잔존). 고아 sleep은
+  # 스크립트의 stdout을 물려받은 채 타임아웃 전체를 버티므로, 파이프로 읽는
+  # 호출자(스크립트를 파이프에 물린 자동화·터미널 래퍼)는 세션이 끝난 뒤에도
+  # 타임아웃초만큼 매달린다 — 실제로 빌드/테스트가 1초에 끝난 스모크가 600초를
+  # 넘겼고 그 원인이 이것이었다.
+  kill_tree "$_rwt_watcher" TERM
   wait "$_rwt_watcher" 2>/dev/null || true
   if [ -f "$_rwt_out.timedout" ]; then
     _RWT_TIMEDOUT=1
