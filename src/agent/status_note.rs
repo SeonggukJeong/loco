@@ -11,8 +11,12 @@ pub const STATUS_MARKER: &str = "[status] ";
 /// 연속 줄 들여쓰기(9칸 = 마커 길이) — 블록 경계 판정 구조 (§4 블록 경계 핀)
 pub const CONT_INDENT: &str = "         ";
 
-/// 뮤테이션 0회 케이던스 (조건 2 — 탐색 루프 겨냥)
-const ZERO_MUT_CADENCE: [usize; 4] = [5, 10, 15, 20];
+/// 뮤테이션 0회 케이던스 (조건 2 — 탐색 루프 겨냥).
+/// M13 §5-2-1에서 [5,10,15,20] → 초기 조밀화. M12 법의학이 확인한 두 사례
+/// (fix-failing-test-1·update-vat-rate-0)가 모두 turn5를 finish가 소비해
+/// 렌더되지 못했고, 3이 있었다면 둘 다 turn3에서 렌더됐을 것이다.
+/// (turn2에서 finish하는 런은 어떤 케이던스로도 도달 불가 — 이 수선의 상한)
+const ZERO_MUT_CADENCE: [usize; 6] = [3, 5, 7, 10, 15, 20];
 /// 무조건 페이싱 임계 (조건 3 — 턴 소진 겨냥)
 const PACING: [usize; 2] = [15, 20];
 
@@ -95,7 +99,11 @@ impl StatusNote {
     fn render(&self, ctx: &TurnCtx) -> String {
         let turns_line = format!("turns: {} of {} used", ctx.turn, ctx.max_turns);
         if self.mutated_paths.is_empty() {
-            return format!("{STATUS_MARKER}files edited: none yet | {turns_line}");
+            // M13 §5-2-2 — 뮤테이션이 없어도 마지막 검증 결과는 접지한다.
+            // 규칙 1(mutated_since_verify)은 뮤테이션을 전제하므로 여기선 도달 불가:
+            // verification_line()의 규칙 2~5만 탄다.
+            let verification = self.verification_line();
+            return format!("{STATUS_MARKER}files edited: none yet | {verification} | {turns_line}");
         }
         let shown = self.mutated_paths.iter().take(5).cloned().collect::<Vec<_>>().join(", ");
         let extra = self.mutated_paths.len().saturating_sub(5);
@@ -178,13 +186,44 @@ mod tests {
     }
 
     #[test]
-    fn zero_mutation_cadence_fires_at_5_10_15_20_only() {
+    fn zero_mutation_cadence_fires_at_3_5_7_10_15_20() {
         let mut s = StatusNote::new();
         for t in 1..=25 {
             let got = s.on_turn(&ctx(t, false, true, false)).is_some();
-            let want = matches!(t, 5 | 10 | 15 | 20);
+            let want = matches!(t, 3 | 5 | 7 | 10 | 15 | 20);
             assert_eq!(got, want, "turn {t}");
         }
+    }
+
+    #[test]
+    fn zero_mutation_note_renders_verification_line() {
+        // 수선 B — 뮤테이션 0회에서도 마지막 cargo test 결과를 접지한다.
+        // fix-failing-test-1 재현: turn1 cargo test가 1 failed(max_of_list)
+        let mut s = StatusNote::new();
+        s.record_command_result(
+            Some("101".to_string()),
+            Some(TestSummary {
+                ran: 5,
+                passed: 4,
+                failed: 1,
+                failed_names: vec!["max_of_list".to_string()],
+                filtered_out: 0,
+            }),
+        );
+        let note = s.on_turn(&ctx(3, false, true, false)).expect("케이던스 3 발동");
+        assert!(note.contains("files edited: none yet"), "{note}");
+        assert!(note.contains("1 failed (max_of_list)"), "검증 줄이 실려야 함: {note}");
+        assert!(note.contains("turns: 3 of 25 used"), "{note}");
+    }
+
+    #[test]
+    fn zero_mutation_note_without_any_command_keeps_the_old_shape() {
+        // run_command가 한 번도 없었으면 검증 줄은 규칙 5로 떨어진다 —
+        // 없는 사실을 지어내지 않는지 핀
+        let mut s = StatusNote::new();
+        let note = s.on_turn(&ctx(3, false, true, false)).expect("케이던스 3 발동");
+        assert!(note.contains("files edited: none yet"), "{note}");
+        assert!(note.contains("gave no exit code"), "{note}");
     }
 
     #[test]
@@ -203,9 +242,14 @@ mod tests {
 
     #[test]
     fn zero_mutation_render_is_single_line() {
+        // 수선 B 이후에도 여전히 한 줄이다 — 검증 줄이 파이프로 끼어들 뿐
         let mut s = StatusNote::new();
         let note = s.on_turn(&ctx(5, false, true, false)).unwrap();
-        assert_eq!(note, "[status] files edited: none yet | turns: 5 of 25 used");
+        assert_eq!(
+            note,
+            "[status] files edited: none yet | verification: last command gave no exit code | turns: 5 of 25 used"
+        );
+        assert_eq!(note.lines().count(), 1, "여전히 한 줄: {note}");
     }
 
     #[test]
@@ -328,11 +372,13 @@ mod tests {
 
     #[test]
     fn threshold_on_channelless_turn_carries_over_once() {
+        // 세 번째 프로브는 케이던스 아닌 턴이어야 "이월 소진"과 "새 케이던스 발동"이
+        // 구별된다 — turn 7은 M13에서 케이던스 지점이 됐으므로 turn 8로 옮긴다
         let mut s = StatusNote::new();
         assert!(s.on_turn(&ctx(5, false, false, false)).is_none(), "채널 없음 — 이월");
         let note = s.on_turn(&ctx(6, false, true, false)).expect("이월분 1회 주입");
         assert!(note.contains("turns: 6 of 25"), "{note}");
-        assert!(s.on_turn(&ctx(7, false, true, false)).is_none(), "이월은 1회로 소진");
+        assert!(s.on_turn(&ctx(8, false, true, false)).is_none(), "이월은 1회로 소진");
     }
 
     #[test]

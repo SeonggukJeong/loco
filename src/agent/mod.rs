@@ -2108,9 +2108,13 @@ mod tests {
             .iter()
             .filter(|m| m.content.contains("[status]"))
             .collect();
+        // remove_status_note가 최신만 유지 — 턴 3(케이던스)의 노트가 턴 5에서
+        // 교체돼 히스토리에는 여전히 1개만 남는다 (M13 조밀화로 늘지 않음)
         assert_eq!(with_status.len(), 1, "턴 5에서 정확히 1회");
         assert!(
-            with_status[0].content.contains("[status] files edited: none yet | turns: 5 of 25 used"),
+            with_status[0].content.contains(
+                "[status] files edited: none yet | verification: last command gave no exit code | turns: 5 of 25 used"
+            ),
             "{}",
             with_status[0].content
         );
@@ -2184,8 +2188,12 @@ mod tests {
 
     #[tokio::test]
     async fn repetition_stop_still_fires_with_status_note_active() {
-        // 정지 우선순위: 동일 호출 5회 정지 턴(턴 5 = 케이던스 임계)에는 상태선을
-        // 주입하지 않는다 (!stop 가드) — 히스토리에 [status] 0개인 채 정지
+        // 정지 우선순위: 동일 호출 5회 정지 턴(턴 5)에는 상태선을 주입하지 않는다
+        // (!stop 가드). M13 조밀화로 턴 3이 케이던스 지점이 되어 정지 이전에
+        // 상태선이 히스토리에 등장하므로(session_contains 전체 검사는 더 이상
+        // "주입 안 됐다"를 핀할 수 없다) — 정지 턴 자체의 tool_result만 좁혀서 본다.
+        // stop==true 경로는 push_tool_result 직후 바로 반환하므로 마지막 메시지가
+        // 곧 정지 턴의 결과다.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), "x").unwrap();
         let same = turn("read_file", serde_json::json!({"path": "a.txt"}));
@@ -2194,7 +2202,12 @@ mod tests {
         let mut session = new_session(&agent);
         let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::RepetitionStop));
-        assert!(!session_contains(&session, "[status]"), "정지 턴 주입 억제");
+        let stop_turn_result = session.messages().last().expect("정지 턴 tool_result 존재");
+        assert!(
+            !stop_turn_result.content.contains("[status]"),
+            "정지 턴 자체에는 주입되지 않음: {}",
+            stop_turn_result.content
+        );
     }
 
     #[tokio::test]
