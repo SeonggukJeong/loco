@@ -13,6 +13,9 @@ REPO="$(pwd)"
 command -v git >/dev/null || { echo "git이 필요합니다"; exit 1; }
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "git 레포 안에서 실행하세요"; exit 1; }
 
+# 세션 시작(타이밍/리비전 캡처) 전에 확인 — 실패해도 사용자 비용이 0이어야 한다.
+command -v "$LOCO_BIN" >/dev/null 2>&1 || { echo "LOCO_BIN이 실행 가능한 파일이 아닙니다: $LOCO_BIN"; exit 1; }
+
 if [ -n "$(git status --porcelain)" ]; then
   printf '워킹트리가 더럽습니다. 세션 diff가 오염됩니다. 계속할까요? [y/N] '
   read -r ans
@@ -32,7 +35,8 @@ START_REV="$(git rev-parse HEAD)"
 START_TS="$(date +%s)"
 
 # --- 세션 ---------------------------------------------------------------------
-"$LOCO_BIN" || true   # 비정상 종료도 기록 대상이다
+LOCO_EXIT=0
+"$LOCO_BIN" || LOCO_EXIT=$?   # 비정상 종료도 기록 대상이다
 
 END_TS="$(date +%s)"
 END_REV="$(git rev-parse HEAD)"
@@ -68,7 +72,7 @@ read -r REASON
 DIFF="$DIFF" REPO="$REPO" TASK_TYPE="$TASK_TYPE" DIFFICULTY="$DIFFICULTY" \
 TASK_DESC="$TASK_DESC" TRANSCRIPT="$TRANSCRIPT" VERDICT="$VERDICT" \
 REASON="$REASON" SESSION_ID="$SESSION_ID" START_REV="$START_REV" \
-END_REV="$END_REV" DURATION="$DURATION" \
+END_REV="$END_REV" DURATION="$DURATION" LOCO_EXIT="$LOCO_EXIT" \
 python3 - "$PILOT_LEDGER" <<'PYEOF'
 import json, os, sys
 row = {
@@ -82,6 +86,7 @@ row = {
     "transcript": os.environ["TRANSCRIPT"],
     "diff": os.environ["DIFF"],
     "duration_secs": int(os.environ["DURATION"]),
+    "loco_exit": int(os.environ["LOCO_EXIT"]),
     "verdict": os.environ["VERDICT"],
     "reason": os.environ["REASON"],
 }
