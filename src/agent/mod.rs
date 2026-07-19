@@ -55,6 +55,17 @@ Its result will not change. Try a different action, or call `finish` with your a
 pub const SALVAGE_NOTE: &str =
     "note: fields outside \"args\" were accepted this time - put them inside \"args\".";
 
+/// M12 §3-2 — args 안의 잉여 `tool` 키를 제거했을 때 붙이는 노트. SALVAGE_NOTE는
+/// "args 바깥의 필드를 안으로"라는 정반대 진술이라 이 오형에 재사용하면 오도한다
+pub const ARGS_TOOL_KEY_NOTE: &str =
+    "note: the `tool` key inside \"args\" is not a parameter - it was removed. \
+     Put only the tool's own parameters inside \"args\".";
+
+/// args가 다른 등록 도구를 지목해 그 도구로 교체 디스패치했을 때의 노트 (M12 §3-2)
+pub const ARGS_TOOL_SWITCH_NOTE: &str =
+    "note: \"args\" named a different tool, so this call was dispatched as that tool instead. \
+     Put the tool name only in \"action\".\"tool\".";
+
 /// 무검증 finish 1회 반려 (M5 §7.1). 모델 대상 — 영어
 pub const VERIFY_NUDGE: &str = "You modified files but never ran a verification command. Run the project's tests (e.g. cargo test) with run_command, then finish.";
 
@@ -235,7 +246,7 @@ impl<C: LlmClient> Agent<C> {
             // 자기 실패를 문맥으로 보는 것이 의도. max_turns에는 계상하지 않는다
             let mut text = resp.text().to_string();
             let mut attempts = 1;
-            let turn = loop {
+            let mut turn = loop {
                 match parse_turn(&text) {
                     Ok(t) => break t,
                     Err(feedback) => {
@@ -266,6 +277,13 @@ impl<C: LlmClient> Agent<C> {
             session.push(ChatMessage::assistant(text));
             on_event(AgentEvent::Thought(&turn.thought));
 
+            // 최종 리뷰 Minor 3(의도된 동작, 문서화만): finish 분기가 아래 M12 §3-2
+            // args.tool 정규화 블록보다 먼저이므로, action.tool == "finish"이면서
+            // args.tool == "write_file"(또는 다른 등록 도구)인 턴은 정규화를 절대 타지
+            // 않는다 — args.tool은 그대로 무시된 채 finish로 처리된다. 스펙 §3-2는
+            // args.tool == "finish" 케이스만 다루므로 이 순서는 스펙 범위 밖이며,
+            // "정규화 없음"이 안전한 방향(뮤테이션 도구로 오인해 finish를 억누르지
+            // 않음)이라 의도적으로 그대로 둔다 — "고치지" 말 것
             if turn.action.tool == "finish" {
                 match turn.action.args.get("summary").and_then(|v| v.as_str()) {
                     Some(s) => {
@@ -327,6 +345,29 @@ impl<C: LlmClient> Agent<C> {
                 }
             }
 
+            // M12 §3-2: args 안의 잉여 `tool` 키 정규화. 게이트·preview보다 **먼저** —
+            // 규칙 2의 교체로 비뮤테이션 액션이 뮤테이션 도구가 될 수 있고,
+            // 게이트는 교체 결과 도구를 기준으로 판정해야 한다
+            // (최종 리뷰 Minor 3) action.tool == "finish"인 턴은 위에서 이미
+            // return/continue로 빠져 여기 도달하지 않는다 — finish + args.tool =
+            // "write_file" 같은 조합은 절대 정규화되지 않음. 의도된 동작이니 참조
+            let mut args_tool_note: Option<&'static str> = None;
+            if let Some(inner) =
+                turn.action.args.get("tool").and_then(|v| v.as_str()).map(str::to_string)
+            {
+                if let Some(map) = turn.action.args.as_object_mut() {
+                    map.remove("tool");
+                }
+                if inner == turn.action.tool {
+                    args_tool_note = Some(ARGS_TOOL_KEY_NOTE); // 규칙 1
+                } else if self.registry.get(&inner).is_some() {
+                    turn.action.tool = inner; // 규칙 2 — 등록 도구면 교체
+                    args_tool_note = Some(ARGS_TOOL_SWITCH_NOTE);
+                } else {
+                    args_tool_note = Some(ARGS_TOOL_KEY_NOTE); // 규칙 3 — 미등록(finish 포함): 키만 제거
+                }
+            }
+
             on_event(AgentEvent::Action {
                 tool: &turn.action.tool,
                 args: &turn.action.args,
@@ -349,7 +390,7 @@ impl<C: LlmClient> Agent<C> {
                         "edit_file" | "write_file" => finish_nudge::TurnEvent::MutationAttempt,
                         _ => finish_nudge::TurnEvent::Other, // 게이트 거부된 run_command — 불변 (§4-2 표)
                     };
-                    let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+                    let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
                     self.update_perturb(&tracker, on_event);
                     // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
                     if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
@@ -396,15 +437,34 @@ impl<C: LlmClient> Agent<C> {
                 Ok(Err(e)) => format!("Error: {e}"),
                 Err(join) => format!("Error: tool execution panicked: {join}"),
             };
+            // M12 §2-3: run_command 결과를 여기서 **1회** 파싱해 상태선과
+            // (T5에서) 두 술어가 공유한다. 저장 조건과 술어 조건의 계약이 한 지점에 모인다
+            let cmd_exit = if turn.action.tool == "run_command" && dispatch_ok {
+                body.lines().next().and_then(|l| l.strip_prefix("exit code: ")).map(str::to_string)
+            } else {
+                None
+            };
+            let cmd_summary = cmd_exit
+                .as_ref()
+                .and_then(|_| crate::test_summary::parse_test_summary(&body));
+            // 공허 런 = 필터가 아무 테스트도 못 맞힌 실행. "검증"으로 인정하지 않는다 (M12 §2-4)
+            let empty_verify = cmd_summary.as_ref().is_some_and(|s| s.ran == 0 && s.filtered_out > 0);
             if dispatch_ok {
                 if turn.action.tool == "run_command" {
-                    mutated_since_verify = false; // 검증 실행으로 인정 — 종료 코드 무관 (M5 §7.1)
-                    status.record_command_exit(&body);
+                    // M12 §2-4: 공허 런은 VERIFY_NUDGE를 해제하지 않는다
+                    // (해제 조건이었던 "Ok이면 종료코드 무관"에서 공허 런만 제외)
+                    if !empty_verify {
+                        mutated_since_verify = false;
+                    }
+                    status.record_command_result(cmd_exit.clone(), cmd_summary.clone());
                 } else if self.registry.get(&turn.action.tool).is_some_and(|t| t.is_mutating()) {
                     mutated_since_verify = true;
                 }
                 if matches!(turn.action.tool.as_str(), "edit_file" | "write_file") {
                     status.record_mutation(&turn.action.args);
+                    if let Some(p) = turn.action.args.get("path").and_then(|v| v.as_str()) {
+                        tracker.record_mutation_ok(p);
+                    }
                 }
             }
             finish_missing_streak = 0;
@@ -417,9 +477,10 @@ impl<C: LlmClient> Agent<C> {
                     }
                 }
                 // §4-2: "성공 검증" = Ok ∧ 첫 줄 exit code 0. 타임아웃·취소·Err 본문에는
-                // 이 줄이 없어 자연 배제 (VERIFY_NUDGE의 "종료코드 무관 Ok" 기준과 별개)
+                // 이 줄이 없어 자연 배제. M12 §2-4: 공허 런(필터 0매치)도 배제 —
+                // VerifyOther로 떨어뜨려 기존 무장까지 내린다
                 "run_command" => {
-                    if dispatch_ok && body.lines().next() == Some("exit code: 0") {
+                    if dispatch_ok && cmd_exit.as_deref() == Some("0") && !empty_verify {
                         finish_nudge::TurnEvent::VerifyOk { repeat: repeated_call }
                     } else {
                         finish_nudge::TurnEvent::VerifyOther
@@ -428,7 +489,7 @@ impl<C: LlmClient> Agent<C> {
                 "read_file" | "grep" | "list_files" => finish_nudge::TurnEvent::ReadOnly { repeat: repeated_call },
                 _ => finish_nudge::TurnEvent::Other, // 미지 도구 (§4-2 표)
             };
-            let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, on_event);
+            let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
             self.update_perturb(&tracker, on_event);
             // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
             if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
@@ -463,11 +524,17 @@ impl<C: LlmClient> Agent<C> {
         tracker: &mut repetition::RepetitionTracker,
         turn: &protocol::ModelTurn,
         body: &str,
+        args_tool_note: Option<&'static str>,
         on_event: &mut dyn FnMut(AgentEvent<'_>),
     ) -> (Option<String>, bool) {
         let mut notes: Vec<&str> = Vec::new();
+        // 액션 레벨 필드 salvage (기존 M5 경로)
         if turn.salvaged {
             notes.push(SALVAGE_NOTE);
+        }
+        // args 안 `tool` 키 (M12 §3-2) — 위와 배타가 아니다. 한 턴에 겹칠 수 있다
+        if let Some(n) = args_tool_note {
+            notes.push(n);
         }
         let key = format!("{}|{}", turn.action.tool, turn.action.args);
         match tracker.record(&key, body) {
@@ -481,7 +548,7 @@ impl<C: LlmClient> Agent<C> {
             }
             repetition::RepetitionVerdict::Ok => {}
         }
-        if let Some(strategy) = tracker.error_correction(&turn.action.tool, body) {
+        if let Some(strategy) = tracker.error_correction(&turn.action.tool, &turn.action.args, body) {
             on_event(AgentEvent::Notice("(동일 에러 반복 — 전략 교정 주입)".to_string()));
             notes.push(strategy);
         }
@@ -490,15 +557,19 @@ impl<C: LlmClient> Agent<C> {
     }
 
     /// M10 §5: 스트릭 상태를 오버라이드에 반영 — track_and_note(error_correction
-    /// 경유) 직후에만 호출한다. 무액션·finish 턴은 호출 지점에 닿지 않아 유지된다
+    /// 경유) 직후에만 호출한다. 무액션·finish 턴은 호출 지점에 닿지 않아 유지된다.
+    /// M12 §3-1·§4-1: 트리거만 확대한다(메커니즘·수명·원복 규칙은 불변) —
+    /// 파일별 비연속 S/R 재발과 missing-field 오형 복사 루프도 저온 어트랙터다
     fn update_perturb(
         &mut self,
         tracker: &repetition::RepetitionTracker,
         on_event: &mut dyn FnMut(AgentEvent<'_>),
     ) {
-        let want = (tracker.sr_streak() >= 2).then_some(SR_PERTURB_TEMPERATURE);
+        let triggered =
+            tracker.sr_streak() >= 2 || tracker.sr_file_streak() >= 2 || tracker.badargs_streak() >= 2;
+        let want = triggered.then_some(SR_PERTURB_TEMPERATURE);
         if want.is_some() && self.temperature_override.is_none() {
-            on_event(AgentEvent::Notice("(S/R 반복 감지 — temperature 일시 상향)".to_string()));
+            on_event(AgentEvent::Notice("(동일 오류 반복 감지 — temperature 일시 상향)".to_string()));
         }
         self.temperature_override = want;
     }
@@ -668,6 +739,111 @@ mod tests {
         let note = note.expect("salvage 노트가 툴 결과에 병합");
         assert_eq!(note.role, "user");
         assert!(note.content.contains("hi"), "툴 결과(파일 내용)와 같은 메시지: {}", note.content);
+    }
+
+    #[tokio::test]
+    async fn duplicate_tool_key_inside_args_is_stripped_with_a_note() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "a.txt", "tool": "read_file"}))),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let mut dispatched_args: Vec<serde_json::Value> = Vec::new();
+        agent
+            .run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |ev| {
+                if let AgentEvent::Action { args, .. } = ev {
+                    dispatched_args.push(args.clone());
+                }
+            })
+            .await
+            .unwrap();
+        assert!(session_contains(&session, "hi"), "read_file은 정상 디스패치");
+        assert!(session_contains(&session, ARGS_TOOL_KEY_NOTE), "전용 노트 (M12 §3-2 규칙 1)");
+        assert!(!session_contains(&session, SALVAGE_NOTE), "SALVAGE_NOTE는 정반대 진술이라 붙으면 안 된다");
+        assert!(
+            dispatched_args[0].get("tool").is_none(),
+            "잉여 `tool` 키가 실제로 args에서 제거돼야 한다(노트의 주장과 일치): {:?}",
+            dispatched_args[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_different_tool_named_in_args_switches_the_dispatch() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/inner.rs"), "x").unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "sub", "tool": "list_files"}))),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(!session_contains(&session, "is a directory, not a file"), "교체로 루프가 성립하지 않는다 (uv-2)");
+        assert!(session_contains(&session, "inner.rs"), "list_files로 교체 디스패치");
+        assert!(session_contains(&session, ARGS_TOOL_SWITCH_NOTE), "규칙 2 전용 노트");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_tool_name_in_args_is_only_stripped() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let script = Scripted::new(vec![
+            // finish는 레지스트리 밖 — 교체 대상이 아니다(규칙 3)
+            ok(&turn("read_file", serde_json::json!({"path": "a.txt", "tool": "finish"}))),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(s) if s == "d"), "액션 도구 유지");
+        assert!(session_contains(&session, "hi"));
+        assert!(session_contains(&session, ARGS_TOOL_KEY_NOTE));
+    }
+
+    #[tokio::test]
+    async fn salvage_note_and_args_tool_key_note_are_not_mutually_exclusive() {
+        // 플랜 §11 (line 1546): 두 노트는 서로 다른 오형을 가리키므로 배타로 두지
+        // 않는다 — 액션 레벨 산재 필드 salvage(SALVAGE_NOTE)와 args 안 `tool` 키
+        // 오형(ARGS_TOOL_KEY_NOTE)이 한 턴에 겹치면 둘 다 나가야 한다.
+        // path는 action 레벨(산재 필드), args.tool은 action.tool과 같은 값(규칙 1) —
+        // 두 규칙이 같은 턴에서 동시에 걸리는 조합
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let both = r#"{"thought": "read", "action": {"tool": "read_file", "args": {"tool": "read_file"}, "path": "a.txt"}}"#;
+        let script = Scripted::new(vec![ok(both), ok(&finish("done"))]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "정상 디스패치 후 finish까지 도달");
+        assert!(session_contains(&session, "hi"), "read_file은 정상 디스패치");
+        assert!(session_contains(&session, SALVAGE_NOTE), "산재 필드 salvage 노트도 함께 나가야 한다");
+        assert!(session_contains(&session, ARGS_TOOL_KEY_NOTE), "args.tool 전용 노트도 함께 나가야 한다");
+    }
+
+    #[tokio::test]
+    async fn the_switched_tool_is_what_the_approval_gate_sees() {
+        struct DenyAll;
+        impl crate::agent::approval::Approver for DenyAll {
+            fn approve(&mut self, _req: &ApprovalRequest) -> Decision {
+                Decision::Deny { reason: "테스트 거부".into() }
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let script = Scripted::new(vec![
+            // 교체 전이면 read_file(비뮤테이션)이라 게이트를 아예 통과하지 못한다
+            ok(&turn("read_file", serde_json::json!({"path": "a.txt", "content": "x", "tool": "write_file"}))),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        agent.run(&mut session, "x", &mut DenyAll, &mut |_| {}).await.unwrap();
+        assert!(session_contains(&session, "Denied:"), "게이트는 교체 결과 도구로 판정해야 한다 (M12 §3-2)");
+        assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "hi", "거부됐으므로 미수정");
     }
 
     #[tokio::test]
@@ -1531,6 +1707,131 @@ mod tests {
         }
     }
 
+    // M12 §2-4 — 공허 런(필터 0매치) 배제: VerifyOk 무장·VERIFY_NUDGE 해제 모두 제외
+    #[cfg(unix)]
+    const EMPTY_RUN: &str = "printf 'running 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out\n'";
+    #[cfg(unix)]
+    const REAL_RUN: &str = "printf 'running 1 test\ntest alpha ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n'";
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn empty_test_run_does_not_clear_the_verify_nudge_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "a.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": EMPTY_RUN}))),
+            ok(&finish("done")), // 공허 런은 검증 시도가 아니므로 1회 반려된다
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
+        assert!(session_contains(&session, "never ran a verification command"), "M12 §2-4");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn empty_test_run_does_not_arm_the_finish_nudge() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "answer").unwrap();
+        let read = turn("read_file", serde_json::json!({"path": "a.txt"}));
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "b.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": EMPTY_RUN}))),
+            ok(&read),
+            ok(&turn("grep", serde_json::json!({"pattern": "answer"}))),
+            ok(&read), // 반복 호출
+            ok(&turn("list_files", serde_json::json!({}))), // 무장돼 있었다면 4번째 카운트 턴
+            ok(&finish("done")),
+            ok(&finish("done")), // VERIFY_NUDGE 반려분
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(!session_contains(&session, "do not re-verify"), "공허 런은 무장하지 않는다 (M12 §2-4)");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn real_test_run_still_arms_the_finish_nudge() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "answer").unwrap();
+        let read = turn("read_file", serde_json::json!({"path": "a.txt"}));
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "b.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": REAL_RUN}))),
+            ok(&read),
+            ok(&turn("grep", serde_json::json!({"pattern": "answer"}))),
+            ok(&read),
+            ok(&turn("list_files", serde_json::json!({}))),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(session_contains(&session, "do not re-verify"), "실질 통과는 기존대로 무장 (회귀 방어)");
+    }
+
+    // 최종 리뷰 Minor 1 — 에이전트 레벨 공허 런 술어(`s.ran == 0 && s.filtered_out > 0`)를
+    // `s.ran == 0`로 뮤테이션하면 죽는지 핀. "테스트가 원래 없는 크레이트"(0 ran, 0
+    // filtered out — 정당한 런)와 "필터 미스"(0 ran, N filtered out — M12가 잡으려는
+    // 공허 런)를 구분하는 것이 이 술어의 존재 이유다. 뮤테이션되면 둘 다 공허 런으로
+    // 오분류돼, 정당한 검증인데도 VERIFY_NUDGE가 불필요하게 반려한다
+    #[cfg(unix)]
+    const NO_TESTS_IN_CRATE_RUN: &str =
+        "printf 'running 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n'";
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn zero_ran_zero_filtered_out_is_a_real_verification_not_a_vacuous_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "a.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": NO_TESTS_IN_CRATE_RUN}))),
+            ok(&finish("done")), // 진짜 테스트-프리 크레이트 — 반려 없이 바로 종결돼야 한다
+            ok(&finish("done2")), // 뮤테이션 시에만 소모됨(VERIFY_NUDGE가 1회 더 반려)
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
+        assert!(
+            !session_contains(&session, "never ran a verification command"),
+            "0 ran/0 filtered out은 공허 런이 아니다 — filtered_out>0 조건 없이는 오분류된다 (Minor 1)"
+        );
+    }
+
+    // 최종 리뷰 Minor 2 — cmd_summary는 cmd_exit가 Some일 때만(= 본문 첫 줄이 실제로
+    // "exit code: "일 때만) 파싱해야 한다는 계약을 핀. 가드를 제거하면 TimedOut/Cancelled
+    // 처럼 "exit code: " 줄이 없는 본문에서도(그 이전에 찍힌 출력이 우연히 test-summary
+    // 형태면) 그걸 유효 검증 신호로 읽어 공허 런 판정에 흘러든다
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timed_out_body_is_not_scanned_for_a_stray_test_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ctx = ToolCtx::new(dir.path().to_path_buf());
+        ctx.command_timeout = std::time::Duration::from_millis(100);
+        // 요약과 닮은 텍스트를 찍고서 타임아웃 — 본문 첫 줄은 "command timed out..."이지
+        // "exit code: "가 아니다. cmd_exit는 None이어야 한다
+        let cmd = "printf 'running 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out\n'; sleep 5";
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "a.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": cmd}))),
+            ok(&finish("done")), // 타임아웃은 empty_verify가 아니므로 VERIFY_NUDGE를 해제한다
+            ok(&finish("done2")), // 뮤테이션 시에만 소모됨(오탐 empty_verify로 1회 더 반려)
+        ]);
+        let config = Config { max_turns: 25, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(), ctx, "test-model".into(), &config);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
+        assert!(
+            !session_contains(&session, "never ran a verification command"),
+            "타임아웃 본문에는 exit code 줄이 없다 — 우연히 섞인 요약 문구를 검증으로 읽으면 안 된다 (Minor 2)"
+        );
+    }
+
     // M10 §5 — 암③ 디코딩 섭동: S/R 스트릭 2연속 시 다음 요청의 temperature 상향
     #[tokio::test]
     async fn sr_streak_of_two_raises_temperature_until_streak_breaks() {
@@ -1546,6 +1847,28 @@ mod tests {
         let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
         // 요청0(첫 턴)·요청1(SR 1회 후) 기본값, 요청2(SR 2연속 후) 0.7, 요청3(read 성공 후) 원복
         assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1], "{temps:?}");
+    }
+
+    // 리뷰 Important(T7): §4-1 확대 후 sr_streak() >= 2 분기가 두 개의
+    // 파일별 disjunct(sr_file_streak/badargs_streak)에 가려 무핀 상태였다.
+    // 서로 다른 파일에서 연속 S/R 오류가 나면 연속 스트릭(sr_streak)은 2에
+    // 도달하지만, 파일별 누적(sr_file_streak)은 각 파일에서 1회씩이라 2에
+    // 못 미친다 — sr_streak() 분기가 없으면 이 케이스는 섭동하지 않는다.
+    #[tokio::test]
+    async fn sr_streak_across_different_files_raises_temperature() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "x\n").unwrap();
+        std::fs::write(dir.path().join("b.rs"), "y\n").unwrap();
+        let sr_a = turn("edit_file", serde_json::json!({"path": "a.rs", "search": "x", "replace": "x"}));
+        let sr_b = turn("edit_file", serde_json::json!({"path": "b.rs", "search": "y", "replace": "y"}));
+        let script = Scripted::new(vec![ok(&sr_a), ok(&sr_b), ok(&finish("d"))]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        // 요청0(첫 턴) 기본값, 요청1(a.rs SR 1회 후 — 연속 1, 파일별 누적 1) 기본값,
+        // 요청2(b.rs SR — 연속 2, 파일별 누적은 b.rs만 1) sr_streak() 단독으로 섭동
+        assert_eq!(temps, vec![0.1, 0.1, 0.7], "{temps:?}");
     }
 
     #[tokio::test]
@@ -1567,14 +1890,51 @@ mod tests {
         {
             let reqs = script.requests.lock().unwrap();
             let temps: Vec<f32> = reqs.iter().map(|r| r.temperature).collect();
-            // 요청4는 두 번째 스트릭의 1회차 직후(아직 1연속)라 기본값, 요청5가 재활성
-            // — SR_CORRECTION 래치(1런 1회)와 무관하게 스트릭 재도달만으로 켜진다
-            assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1, 0.1, 0.7], "{temps:?}");
+            // M12 §4-1로 확대된 이후: f.rs의 파일별 누적은 read로 끊긴 연속 스트릭과
+            // 무관하게 살아남는다(성공 뮤테이션 외에는 리셋되지 않음) — 두 번째
+            // 서브스트릭의 1회차 시점에 이미 누적 3(=2+1)이라 사전 §3-1 술어 중
+            // 파일별 disjunct가 즉시 켜진다(요청4). f.rs의 SR_CORRECTION 래치는 첫
+            // 서브스트릭에서 이미 소진돼 텍스트 교정은 재발화하지 않지만(래치는
+            // 파일별) 온도는 래치와 무관하게 재트리거된다 — 원래 이 테스트가 핀하려던
+            // 불변(재활성은 교정 래치에 좌우되지 않음)은 그대로 유지, 다만 트리거
+            // 시점이 확대된 술어만큼 앞당겨졌다
+            assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1, 0.7, 0.7], "{temps:?}");
         }
         let mut session2 = new_session(&agent);
         run_quiet(&mut agent, &mut session2, "y").await.unwrap();
         let reqs = script.requests.lock().unwrap();
         assert_eq!(reqs.last().unwrap().temperature, 0.1, "활성 상태로 끝난 뒤에도 run() 진입 리셋 (리뷰 2R M-1)");
+    }
+
+    #[tokio::test]
+    async fn successful_mutation_unlatches_the_files_sr_correction_for_a_later_recurrence() {
+        // M12 §4-1 wiring 핀: mod.rs가 성공 디스패치 지점에서 tracker.record_mutation_ok를
+        // 실제로 호출하는지 확인한다(단위 테스트는 tracker를 직접 호출해 이 배선을
+        // 우회한다). f.rs에서 SR 2연속으로 1차 발화(래치) → 유효 편집으로 성공 뮤테이션
+        // → 같은 파일에서 SR 2연속 재발 → 배선이 없으면 래치가 안 풀려 2차 발화가
+        // 영원히 막힌다(§4-1 "편집 성공 후 재발한 루프는 별개 사건" 요구사항).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        let sr_x = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let mutate = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "y"}));
+        let sr_y = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "y", "replace": "y"}));
+        let script = Scripted::new(vec![
+            ok(&sr_x), ok(&sr_x), // 1차 SR 2연속 — 발화 + f.rs 래치
+            ok(&mutate),          // 성공 뮤테이션 — record_mutation_ok가 와이어링돼 있어야 래치 해제
+            ok(&sr_y), ok(&sr_y), // 2차 SR 2연속(같은 파일, 값만 y) — 배선돼 있어야 재발화
+            ok(&finish("d")), // 무검증 finish 1차 — VERIFY_NUDGE가 반려(뮤테이션 후 run_command 없음)
+            ok(&finish("d2")), // 2차로 종결 (VERIFY_NUDGE는 런당 1회)
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        let fires = session
+            .messages()
+            .iter()
+            .filter(|m| m.content.contains(repetition::SR_CORRECTION))
+            .count();
+        assert_eq!(fires, 2, "성공 뮤테이션이 파일별 래치를 풀어 2차 발화가 나가야 한다 (배선 누락 시 1회에 그침)");
     }
 
     #[tokio::test]
@@ -1644,6 +2004,68 @@ mod tests {
             (reqs[3].temperature - 0.7).abs() < 1e-6,
             "finish 인자누락 턴은 스트릭 불변 — 오버라이드 유지: {}",
             reqs[3].temperature
+        );
+    }
+
+    // M12 §3-1: missing-field 오형 연속도 섭동 트리거에 포함 (기존 텍스트 교정에
+    // 개입 없던 경로 — 082449Z에서 5연속 정지로 이어진 사각)
+    #[tokio::test]
+    async fn badargs_streak_of_two_raises_temperature() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("g.rs"), "y\n").unwrap();
+        let bad = turn("write_file", serde_json::json!({"path": "a.txt"})); // content 누락
+        let read = turn("read_file", serde_json::json!({"path": "g.rs"}));
+        let script = Scripted::new(vec![ok(&bad), ok(&bad), ok(&read), ok(&finish("d"))]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        assert_eq!(temps, vec![0.1, 0.1, 0.7, 0.1], "missing-field 2연속 → 섭동, 성공 결과로 원복 {temps:?}");
+    }
+
+    // M12 §4-1: 파일별 누적 S/R도 섭동 트리거에 포함 (연속 스트릭은 read가 끊어도
+    // 같은 파일의 비연속 재발이 저온 어트랙터인 것은 동일)
+    #[tokio::test]
+    async fn non_consecutive_sr_on_the_same_file_raises_temperature() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        std::fs::write(dir.path().join("g.rs"), "y\n").unwrap();
+        let sr = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let read = turn("read_file", serde_json::json!({"path": "g.rs"}));
+        let script = Scripted::new(vec![ok(&sr), ok(&read), ok(&sr), ok(&finish("d"))]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        // 연속 스트릭은 read가 끊었지만 f.rs 파일 누적 2로 섭동 (M12 §4-1)
+        assert_eq!(temps, vec![0.1, 0.1, 0.1, 0.7], "{temps:?}");
+    }
+
+    // T7 원복 가드: sr_file_streak()가 last_sr_file 잔류로 영구 참이 되면 이
+    // 케이스에서 요청4(성공 편집 이후)도 0.7로 걸린다 — 조건 해소 시 원복돼야 한다
+    #[tokio::test]
+    async fn sr_file_streak_trigger_reverts_after_a_successful_edit_clears_the_counter() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
+        let sr = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "x"}));
+        let read = turn("read_file", serde_json::json!({"path": "f.rs"}));
+        let mutate = turn("edit_file", serde_json::json!({"path": "f.rs", "search": "x", "replace": "y"}));
+        let script = Scripted::new(vec![
+            ok(&sr),
+            ok(&read),
+            ok(&sr),     // f.rs 파일 누적 2 → 섭동 켜짐
+            ok(&mutate), // 성공 뮤테이션 — record_mutation_ok로 f.rs 카운터 리셋
+            ok(&finish("d")), // 무검증 finish 1차 — VERIFY_NUDGE가 반려(뮤테이션 후 run_command 없음)
+            ok(&finish("d2")), // 2차로 종결
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let temps: Vec<f32> = script.requests.lock().unwrap().iter().map(|r| r.temperature).collect();
+        assert_eq!(
+            temps,
+            vec![0.1, 0.1, 0.1, 0.7, 0.1, 0.1],
+            "성공 뮤테이션으로 파일 카운터가 풀리면 다음 요청은 원복돼야 한다 {temps:?}"
         );
     }
 
