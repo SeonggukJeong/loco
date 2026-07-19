@@ -41,7 +41,7 @@ MARKS = {
 COLS = ["run", "outcome", "passed"] + list(MARKS) + [
     "sr_recovered", "sr_recovery_denom", "finish_missing_maxrun", "perturb_turns", "stop_cause",
     "first_mut_turn", "cargo_after_mut", "zero_mut_end", "status_in_args", "sr_files",
-    "verify_failed", "sr_corr_total", "perturb_turns_ext",
+    "verify_failed", "sr_corr_total", "perturb_turns_ext", "parse_fail_first",
 ]
 
 # M12 §3-1 badargs_streak()이 세는 "missing field" BadArgs 접두 — tools/mod.rs
@@ -73,6 +73,52 @@ def normalize_path(path):
         parts.append(seg)
     joined = "/".join(parts)
     return f"/{joined}" if absolute else joined
+
+
+def parse_fail_first(events):
+    """첫 assistant 메시지가 유효한 에이전트 턴으로 파싱되지 않으면 1.
+
+    M13 스펙 §3-6-1의 기계 검사 — C1형 조용한 전면 실패(json_schema 폴백이
+    영구 발동해 매 턴 파싱이 실패하는데 배치는 정상 종료)를 배치 후에
+    기계적으로 잡는다.
+
+    Rust의 protocol.rs::parse_turn을 완전 재현하지 않는다. 판별력 있는 최소
+    검사만 한다: 코드펜스를 벗기고 JSON 객체를 찾은 뒤, thought가 있고
+    action이 tool 키를 가진 객체인지 본다. 실제 parse_turn은 salvage 관용이
+    더 넓으므로 이 검사는 **거짓 양성을 내지 않는 쪽으로만 보수적**이다 —
+    판정 불가(assistant 없음, JSON 못 찾음)는 전부 0으로 둔다.
+    """
+    for ev in events:
+        if ev.get("kind") != "assistant":
+            continue
+        text = ev.get("content") or ""
+        # 코드펜스 제거
+        if "```" in text:
+            parts = text.split("```")
+            for p in parts:
+                p = p.lstrip()
+                if p.startswith("json"):
+                    p = p[4:]
+                if p.lstrip().startswith("{"):
+                    text = p
+                    break
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            return 0  # JSON을 못 찾음 — 판정 불가, 거짓 양성 금지
+        try:
+            obj = json.loads(text[start:end + 1])
+        except (ValueError, TypeError):
+            return 0  # 파싱 불가 — 판정 불가
+        if not isinstance(obj, dict):
+            return 0
+        action = obj.get("action")
+        if not isinstance(action, dict) or "tool" not in action:
+            return 1  # action이 객체가 아니거나 tool이 없다 = 스키마 미강제 형태
+        if "thought" not in obj:
+            return 1
+        return 0
+    return 0  # assistant 없음 — 판정 불가
 
 
 def run_metrics(events):
@@ -221,6 +267,7 @@ def process(stamp_dir):
     stops = {"sr": 0, "finish": 0, "other": 0}
     zero_mut = {"max_turns": 0, "finished": 0, "other": 0}
     mut_runs, cargo_runs = 0, 0
+    parse_fail_total = 0
     for path in sorted(glob.glob(os.path.join(stamp_dir, "run-*.jsonl"))):
         events = [json.loads(l) for l in open(path)]
         (counts, rec, den, fin_max, perturb, last,
@@ -242,6 +289,8 @@ def process(stamp_dir):
             totals[k] += counts[k]
         total_rec += rec
         total_den += den
+        pff = parse_fail_first(events)
+        parse_fail_total += pff
         files_col = ",".join(f"{os.path.basename(p)}:{n}" for p, n in sorted(sr_files.items())) or "-"
         # M12 §6 파생 컬럼: verify_failed(규칙 2)는 verify_total(규칙 2·4 합)에서
         # verify_allpass(규칙 4)를 뺀 나머지 — 실패 개수가 가변이라 고정
@@ -258,13 +307,14 @@ def process(stamp_dir):
         row = [name, outcome, str(passed)] + [str(counts[k]) for k in MARKS]
         row += [str(rec), str(den), str(fin_max), str(perturb), cause,
                 str(first_mut), str(cargo_mut), zme, str(st_args), files_col,
-                str(verify_failed), str(sr_corr_total), str(perturb_ext)]
+                str(verify_failed), str(sr_corr_total), str(perturb_ext), str(pff)]
         print("\t".join(row))
     marks = " ".join(f"{k}={totals[k]}" for k in MARKS)
     print(f"# summary {marks} recovered={total_rec}/{total_den} "
           f"stops sr={stops['sr']} finish={stops['finish']} other={stops['other']} "
           f"zero_mut max_turns={zero_mut['max_turns']} finished={zero_mut['finished']} "
-          f"other={zero_mut['other']} cargo_after_mut={cargo_runs}/{mut_runs}")
+          f"other={zero_mut['other']} cargo_after_mut={cargo_runs}/{mut_runs} "
+          f"parse_fail_first(총): {parse_fail_total}  <- 0이 아니면 그 배치는 앵커/게이트로 쓸 수 없다")
 
 
 def selftest():
@@ -560,6 +610,25 @@ def selftest():
         col = {name: i for i, name in enumerate(header)}
         assert row[col["verify_failed"]] == "1", row       # process()의 뺄셈식이 실제로 실행됐는지
         assert row[col["sr_corr_total"]] == "1", row        # process()가 run_metrics의 실 반환값을 그대로 쓰는지
+
+    # M13 — parse_fail_first: 첫 assistant가 유효 턴이 아니면 1 (C1형 조용한 실패 포착)
+    broken = [
+        {"kind": "system", "content": "sys", "ts": "t"},
+        {"kind": "user", "content": "do it", "ts": "t"},
+        # 스키마 강제가 꺼진 응답 — action이 객체가 아니라 문자열
+        {"kind": "assistant", "content": '```json\n{"action": "read_file", "path": "a.rs"}\n```', "ts": "t"},
+    ]
+    assert parse_fail_first(broken) == 1, "깨진 첫 assistant는 1"
+    ok = [
+        {"kind": "system", "content": "sys", "ts": "t"},
+        {"kind": "user", "content": "do it", "ts": "t"},
+        {"kind": "assistant",
+         "content": '{"thought": "look", "action": {"tool": "read_file", "args": {"path": "a.rs"}}}',
+         "ts": "t"},
+    ]
+    assert parse_fail_first(ok) == 0, "정상 첫 assistant는 0"
+    # assistant가 아예 없는 런(즉시 취소 등)은 판정 불가 → 0 (거짓 양성 금지)
+    assert parse_fail_first(ok[:2]) == 0, "assistant 없으면 0"
 
     print("selftest ok")
 
