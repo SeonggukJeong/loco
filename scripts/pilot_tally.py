@@ -89,8 +89,23 @@ CATEGORIES = [
     "실패 없음", "S/R 루프", "반복 루프(교정 발동)", "뮤테이션 0회 거짓 finish",
     "뮤테이션 없는 탐색 루프", "턴 소진(finish 미호출)",
     "컨텍스트 오버플로", "엉뚱한 파일 편집", "length 루프", "인자 누락(BadArgs)",
-    "loco 비정상 종료(exit≠0)",
+    "loco 비정상 종료(exit≠0)", "산출물 빌드/테스트 실패",
 ]
+
+# "산출물 빌드/테스트 실패"는 세션 14/20(R4) 관측에서 신설했다. 추가 시점을
+# 남기는 이유는 ad2a5e9(범주 2종 현장 추가)와 같다 — 사후에 "언제부터 세기
+# 시작했나"를 복원할 수 있어야 한다.
+#
+# 신설 사유는 범주가 없어서가 아니라 **신호를 안 읽고 있어서**였다. 2e22f41이
+# 원장에 build_status/test_status를 넣었는데 이 스크립트가 그 필드를 한 번도
+# 참조하지 않았다. R4는 컴파일되지 않는 트리를 내놓았는데 범주표에는
+# "인자 누락(BadArgs) 1건"으로만 잡혀 거의 깨끗한 세션처럼 보였다.
+# 이 누락은 세 번째 재발이다(F3의 length_retry, 세션 7의 repeat_corr) — 전부
+# "신호는 데이터에 있는데 집계기가 참조를 안 한다"는 같은 형태다.
+#
+# 적용 범위 주의: build_status는 2e22f41 이후 세션(원장 10행 F5부터)에만 있다.
+# 1~9행은 필드 자체가 없어 None이며, 이 범주는 그 행들에 대해 침묵한다
+# (없음을 "통과"로 읽지 않는다). 몇 행이 미계측인지는 표 아래 각주로 찍는다.
 
 # 위 주석의 계측 공백 목록 — 값은 출력 표 각주에 그대로 쓰는 사유 한 줄.
 # classify()는 이 두 범주에 절대 라벨을 붙이지 않는다: 항상 0이 "발생 안 함"이
@@ -457,6 +472,11 @@ def classify(row):
       기운다). 세션 6/20 관측(CATEGORIES 옆 주석 참조)에서 신설 — "뮤테이션
       없는 탐색 루프"와 다중 라벨로 함께 붙을 수 있다(같은 세션이 무뮤테이션
       *이면서* 턴도 다 썼을 수 있다).
+    - "산출물 빌드/테스트 실패": 원장의 build_status/test_status가 "fail"일 때 —
+      기계 판정(pilot.sh가 세션 후 직접 cargo를 돌려 기록한 값). transcript가
+      아니라 원장 필드를 읽는 유일한 범주다. 필드가 없는 행(2e22f41 이전)에는
+      침묵한다 — None을 "pass"로 읽으면 못 잰 것이 통과로 둔갑한다. 세션
+      14/20(R4) 관측에서 신설, 사유는 CATEGORIES 옆 주석 참조.
     - "실패 없음": 위 어떤 범주도 안 걸렸고 verdict가 성공일 때만 — 순수
       사용자 자기보고(반증하는 기계 신호가 없다는 뜻일 뿐, 기계가 "성공"을
       확인해 준 게 아니다).
@@ -516,6 +536,12 @@ def classify(row):
             if ceiling is not None and _turns_used_no_finish(events) >= ceiling:
                 cats.append(("턴 소진(finish 미호출)", "machine"))
 
+    # "산출물 빌드/테스트 실패" — transcript가 아니라 원장 필드에서 읽는다.
+    # pilot.sh가 세션 후 직접 cargo를 돌려 기록한 값이라 기계 판정이다.
+    # 필드가 없는 행(2e22f41 이전)에는 침묵한다 — None을 "pass"로 읽지 않는다.
+    if row.get("build_status") == "fail" or row.get("test_status") == "fail":
+        cats.append(("산출물 빌드/테스트 실패", "machine"))
+
     if not cats and row.get("verdict") == "성공":
         cats.append(("실패 없음", "user"))
     if not cats:
@@ -559,6 +585,25 @@ def main():
         for c in CATEGORIES:
             if c in UNINSTRUMENTED:
                 print(f"    - {c}: {UNINSTRUMENTED[c]}")
+
+    # 부분 계측 각주 — build_status가 없는 행이 있으면 몇 행인지 밝힌다.
+    # UNINSTRUMENTED(항상 0)와 달리 이건 "일부 행만 잴 수 있다"라서 △가 아니다.
+    no_build = [r for r in rows if r.get("build_status") is None]
+    if no_build:
+        print(f"\n  ※ '산출물 빌드/테스트 실패'는 {len(rows)}행 중 {len(no_build)}행을 못 잰다 —")
+        print("  build_status/test_status 필드가 2e22f41 이후 세션에만 있다. 못 잰 행은")
+        print("  이 범주에서 침묵하므로, 이 수치는 하한이다(실제 발생은 이보다 많을 수 있다).")
+
+    build_failed = [
+        r for r in rows
+        if r.get("build_status") == "fail" or r.get("test_status") == "fail"
+    ]
+    if build_failed:
+        print("\n## 산출물 빌드/테스트 실패 세부 — 판정이 '성공'이어도 트리가 깨졌을 수 있다")
+        for r in build_failed:
+            detail = (r.get("build_detail") or r.get("test_detail") or "(상세 미기재)").strip()
+            print(f"  {r['session_id']}  build={r.get('build_status')} test={r.get('test_status')}  판정={r.get('verdict')}")
+            print(f"    {detail[:160]}")
 
     crashed = [r for r in rows if r["loco_exit"] != 0]
     if crashed:
