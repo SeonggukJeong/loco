@@ -1,7 +1,7 @@
 # M13 설계 — llama.cpp 전환과 실사용 파일럿
 
 - 상태: **개정 2 — 전문 리뷰 2R `Ready: Yes`(조건부) 조건 4건 전건 반영 완료.
-  사용자 검토 대기**
+  사용자 승인 완료(2026-07-19). 플랜 작성 단계**
 - 작성일: 2026-07-19
 - 기준 커밋: `2343c54` (= `origin/main`, M12 완료 시점)
 - 선행 문서: `docs/experiments/2026-07-18-honest-harness/report.md`, `docs/baselines.md` "M12"
