@@ -160,8 +160,12 @@ repo-map은 강등(모델들이 트리를 안 보고 grep 직행), 최우선은 
 
 ## 시작하기
 
-1. LM Studio(또는 Ollama, llama.cpp server 등)에서 모델을 로드하고 서버 시작
-   - LM Studio 기본 주소 `http://localhost:1234/v1` 는 설정 없이 바로 동작
+1. 모델 서버를 기동한다
+   - **llama.cpp (권장, 배포 기준 스택)**: `scripts/serve.sh` — 측정·배포 조건을
+     핀으로 고정해 기동한다. 기본 `http://localhost:8080/v1`
+   - LM Studio: 기본 주소 `http://localhost:1234/v1` 는 설정 없이 바로 동작
+   - `base_url` 기본값은 `http://localhost:1234/v1` 이므로, llama-server를 쓰면
+     `./.loco/config.toml` 에 `base_url = "http://localhost:8080/v1"` 를 둔다
 2. 실행:
 
    ```
