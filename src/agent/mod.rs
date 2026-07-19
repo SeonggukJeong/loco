@@ -1125,6 +1125,7 @@ mod tests {
         assert!(reqs[0].response_format.is_some());
         assert!(reqs[1].response_format.is_none(), "폴백: json_schema 끔 (스펙 §4)");
         assert!(!notices.is_empty(), "폴백 알림 이벤트");
+        assert!(agent.schema_fallback_fired(), "400 폴백 후 폴백 게터는 true (스펙 M13 §3-6-1)");
     }
 
     #[tokio::test]

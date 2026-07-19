@@ -305,6 +305,7 @@ mod tests {
         }
         assert_eq!(v["tasks"][0]["runs"][0]["seed"], 0, "시드 기록 (스펙 §8 재현성)");
         assert_eq!(v["tasks"][0]["runs"][0]["outcome"], "finished");
+        assert!(v["tasks"][0]["runs"][0].get("schema_fallback").is_some(), "RunRecord에 schema_fallback 필드가 있어야 함 (M13 스펙 §3-6-1)");
     }
 
     #[test]
