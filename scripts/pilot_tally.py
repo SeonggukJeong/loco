@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """M13 파일럿 원장 집계 (스펙 §4-3·§4-4). stdlib 전용.
 
-  python3 scripts/pilot_tally.py <ledger.jsonl> <repo-path>
+  python3 scripts/pilot_tally.py <ledger.jsonl>
+
+레포는 CLI 인자가 아니라 각 행 자신의 repo 필드에서 읽는다 — 파일럿이 4개
+레포(zoxide/fd/ripgrep/just)에 걸치도록 확장되면서, 예전처럼 레포 경로 하나를
+모든 행에 일괄 적용하면 다른 레포 소속 행은 git grep이 전부 미스 처리돼
+생존율이 아무 표시 없이 체계적으로 과소 계상됐다(T10 리뷰 수선 2 — repo는
+이미 REQUIRED_FIELDS라 누락 행은 여전히 즉시 중단되고, 생존율은 레포별로
+나눠 낸다 + 전체 가중치도 별도 표시).
 
 산출:
   1) 범주별 건수 — 주 산출물(스펙 §4-4). 다중 라벨이므로 합 != 세션 수
-  2) 줄 생존율 — 기술 통계 보조 지표. 대리 지표이며 왜곡 5종이 알려져 있다
-     (스펙 §4-3). 헤드라인으로 인용하지 말 것 — 아래 경고 참조
+  2) 줄 생존율 — 기술 통계 보조 지표, 레포별 소계 + 전체 가중치. 대리 지표이며
+     왜곡 5종이 알려져 있다(스펙 §4-3). 헤드라인으로 인용하지 말 것 — 아래 경고 참조
 
 마커 판정 상수(오류 문자열 리터럴 등)는 이 파일에서 다시 선언하지 않고
 scripts/exp_metrics.py에서 그대로 import한다. 그쪽이 검증된(러스트 소스와
@@ -147,16 +154,42 @@ def added_lines(diff):
     return out
 
 
+def _repo_problem(repo):
+    """repo 경로가 없거나 git 레포가 아니면 사유 문자열, 정상이면 None.
+
+    레포가 이동·삭제된 경우를 "그 안 코드가 삭제됨"(생존율 0%)과 절대
+    혼동하면 안 된다(T10 리뷰 수선 2) — survival()이 git grep을 실행하기
+    전에 이 확인을 먼저 통과시켜, 두 경우를 반환값에서부터 분리한다.
+    """
+    if not repo or not os.path.isdir(repo):
+        return f"경로가 디렉터리로 존재하지 않음(이동/삭제됐을 수 있음): {repo!r}"
+    r = subprocess.run(
+        ["git", "-C", repo, "rev-parse", "--git-dir"], capture_output=True
+    )
+    if r.returncode != 0:
+        err = r.stderr.decode(errors="replace").strip()
+        return f"git 레포가 아님: {repo!r}" + (f" ({err})" if err else "")
+    return None
+
+
 def survival(repo, diff, session_id="?"):
-    """추가 줄 중 현재 HEAD 트리에 남아 있는 비율. (None, 0) = 판정 대상 없음.
+    """추가 줄 중 현재 HEAD 트리에 남아 있는 비율.
+
+    반환값은 (rate, n, reason) 세 가지 경우:
+      (None, 0, None)   — 판정 대상 없음 (diff에 유의미한 추가 줄이 없음)
+      (None, 0, reason) — 판정 불가 (레포 경로 문제) — 0%와 혼동 금지, reason에 사유 문자열
+      (rate, n, None)   — 정상 판정, n줄 중 rate 비율 생존
 
     git grep -F 고정 문자열 대조라 diff 줄에 정규식 메타문자(., *, [ 등)가
     있어도 문자 그대로 비교된다 — 정규식으로 오인돼 오매칭/에러가 나는
     일은 없다.
     """
+    reason = _repo_problem(repo)
+    if reason is not None:
+        return None, 0, reason
     lines = added_lines(diff)
     if not lines:
-        return None, 0
+        return None, 0, None
     alive = 0
     for body in lines:
         r = subprocess.run(
@@ -169,7 +202,7 @@ def survival(repo, diff, session_id="?"):
             # "미매치"로 조용히 뭉개면 생존율이 이유 없이 낮게 잡힌다
             err = r.stderr.decode(errors="replace").strip()
             print(f"  경고: git grep 실패(session {session_id}): {err}", file=sys.stderr)
-    return alive / len(lines), len(lines)
+    return alive / len(lines), len(lines), None
 
 
 def classify(row):
@@ -252,10 +285,10 @@ def classify(row):
 
 
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) != 2:
         print(__doc__)
         sys.exit(1)
-    ledger_path, repo = sys.argv[1], sys.argv[2]
+    ledger_path = sys.argv[1]
     rows = load_ledger(ledger_path)
     print(f"# 파일럿 집계 — 세션 {len(rows)}개")
     print("※ 헤드라인은 아래 '범주별 건수'다. 그 다음 절들(판정 분포·난이도·줄 생존율)은")
@@ -327,19 +360,54 @@ def main():
             print(f"  난이도 {d}: {len(sub)}세션, 성공 {ok}")
 
     print("\n## 줄 생존율 (보조 대리 지표 — 왜곡 5종 알려짐, 스펙 §4-3. 주 산출물 아님)")
-    tot_alive, tot_lines, judged = 0.0, 0, 0
+    print("레포별로 나눈다 — 레포 규모가 20배 이상 차이 나 pooled 수치 하나면 큰 레포가")
+    print("작은 레포를 가려버린다(T10 리뷰 수선 2). 아래는 보조 지표 안에서의 세부일")
+    print("뿐, 위 범주별 건수(주 산출물)를 밀어내는 것은 아니다.")
+
+    by_repo = {}
     for r in rows:
-        rate, n = survival(repo, r.get("diff") or "", r["session_id"])
-        if rate is None:
-            continue
-        judged += 1
-        tot_alive += rate * n
-        tot_lines += n
-        print(f"  {r['session_id']}  {rate:5.1%} ({n}줄)  {r.get('verdict')}")
-    if tot_lines:
-        print(f"\n  가중 생존율: {tot_alive / tot_lines:.1%} ({judged}세션, {tot_lines}줄)")
+        by_repo.setdefault(r["repo"], []).append(r)
+
+    overall_alive, overall_lines, overall_judged = 0.0, 0, 0
+    unjudgeable = []  # [(session_id, repo, reason), ...] — 레포 경로 문제로 아예 판정 못 한 행
+    for repo in sorted(by_repo):
+        sub = by_repo[repo]
+        print(f"\n### {repo}")
+        repo_alive, repo_lines, repo_judged = 0.0, 0, 0
+        for r in sub:
+            rate, n, reason = survival(repo, r.get("diff") or "", r["session_id"])
+            if reason is not None:
+                unjudgeable.append((r["session_id"], repo, reason))
+                continue
+            if rate is None:
+                continue
+            repo_judged += 1
+            repo_alive += rate * n
+            repo_lines += n
+            print(f"  {r['session_id']}  {rate:5.1%} ({n}줄)  {r.get('verdict')}")
+        if repo_lines:
+            print(f"  레포 소계: {repo_alive / repo_lines:.1%} ({repo_judged}세션, {repo_lines}줄)")
+            overall_alive += repo_alive
+            overall_lines += repo_lines
+            overall_judged += repo_judged
+        else:
+            print("  판정 가능한 세션 없음 (모든 diff가 공백이거나 유의미한 추가 줄이 없음)")
+
+    if unjudgeable:
+        print("\n## 판정 불가 — 레포 경로 문제 (0%로 세지 않음, 스펙 §4-3 왜곡 5종과는 별개)")
+        print("레포가 이동/삭제된 경우를 '그 안 코드가 삭제됨'(생존율 0%)과 혼동하면 안 된다.")
+        print("아래 행은 생존율 집계에서 완전히 제외됐다 — 원인을 사람이 확인할 것:")
+        for sid, r_path, reason in unjudgeable:
+            print(f"  {sid}  repo={r_path} — {reason}")
+
+    print()
+    if overall_lines:
+        print(
+            f"  전체 가중 생존율: {overall_alive / overall_lines:.1%} "
+            f"({overall_judged}세션, {overall_lines}줄, {len(by_repo)}개 레포)"
+        )
     else:
-        print("\n  판정 가능한 세션 없음 (모든 diff가 공백이거나 유의미한 추가 줄이 없음)")
+        print("  판정 가능한 세션 없음 (모든 diff가 공백이거나 유의미한 추가 줄이 없음)")
     print("\n  경고: 생존율은 채택의 대리 지표일 뿐이다. 삭제가 가치였던 세션·진단만")
     print("  내놓은 세션은 0으로 잡히고, 무관한 리팩터링에 휩쓸린 채택은 미채택으로")
     print("  잡힌다. 반드시 위 범주별 건수·판정 분포와 교차해서 읽을 것 — 이 수치")
