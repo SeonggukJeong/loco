@@ -84,14 +84,38 @@ def parse_fail_first(events):
 
     Rust의 protocol.rs::parse_turn을 완전 재현하지 않는다. 판별력 있는 최소
     검사만 한다: 코드펜스를 벗기고 JSON 객체를 찾은 뒤, thought가 있고
-    action이 tool 키를 가진 객체인지 본다. 실제 parse_turn은 salvage 관용이
-    더 넓으므로 이 검사는 **거짓 양성을 내지 않는 쪽으로만 보수적**이다 —
-    판정 불가(assistant 없음, JSON 못 찾음)는 전부 0으로 둔다.
+    action이 tool 키를 가진 객체인지 본다.
+
+    "{" 전무는 예외적으로 확정 판정(1)이다 — 판정 불가가 아니라 증명된
+    실패다(T4 리뷰 Finding 1). Rust parse_turn(직접 확인, protocol.rs
+    21-46행)의 세 사다리(그대로 파싱 → 펜스 제거 후 파싱 →
+    first_json_object 스캔) 중 마지막 관문 first_json_object는
+    `text.find('{')?`로 시작한다 — 앞 두 사다리가 전부 폴스루해도 텍스트에
+    "{"가 하나도 없으면 이 관문에서 즉시 실패해 "Your reply contained no
+    JSON object" 에러로 귀결된다. 즉 세 사다리 전부가 실패하는 게 보장되는
+    유일한 무-JSON 형태이며, 이 형태(모델이 순수 산문만 출력)가 바로 이
+    컬럼이 잡으려는 실패의 가장 흔한 모양이다. 나머지 미판정 케이스
+    ("{"는 있으나 닫는 "}"를 못 찾음/파싱 실패, assistant 자체가 없음)는
+    여전히 거짓 양성 금지 원칙에 따라 0으로 둔다.
+
+    알려진 과소검출(T4 리뷰 Finding 2 — 의도적으로 미수선): 산문 속 디코이
+    "{...}"가 실제(펜스로 감싼) JSON 턴보다 앞에 오는 메시지에서는, Rust의
+    first_json_object가 그 디코이의 첫 균형 중괄호에 커밋해 파싱에
+    실패하는 반면, 이 파이썬 검사는 펜스 분리 단계에서 디코이를 건너뛰고
+    뒤쪽의 진짜 JSON을 찾아내 0(파싱 성공)을 반환한다 — 두 판정이 갈린다.
+    제대로 고치려면 Rust의 문자열 인지 중괄호 스캐너를 그대로 재현해야
+    하는데, 이는 브리프가 의도한 "판별력 있는 최소 검사" 설계와 충돌한다.
+    비용 대비 이 형태의 실측 사례가 아직 없어 고치지 않고 이 사례만
+    기록해 둔다 — 이 검사가 1을 반환하면 그 판정은 (위 no-"{" 사유로)
+    믿을 수 있지만, 0을 반환했다고 해서 Rust가 반드시 파싱에 성공했다는
+    보장은 아니다.
     """
     for ev in events:
         if ev.get("kind") != "assistant":
             continue
         text = ev.get("content") or ""
+        if "{" not in text:
+            return 1  # 위 독스트링 참조 — 증명된 실패, 판정 불가 아님
         # 코드펜스 제거
         if "```" in text:
             parts = text.split("```")
@@ -105,13 +129,14 @@ def parse_fail_first(events):
         start = text.find("{")
         end = text.rfind("}")
         if start < 0 or end <= start:
-            return 0  # JSON을 못 찾음 — 판정 불가, 거짓 양성 금지
+            return 0  # "{"는 있었으나(위 통과) 닫는 "}"를 못 찾음 — 판정 불가
         try:
             obj = json.loads(text[start:end + 1])
         except (ValueError, TypeError):
             return 0  # 파싱 불가 — 판정 불가
         if not isinstance(obj, dict):
-            return 0
+            return 0  # 방어적 belt-and-suspenders: 위 슬라이스는 "{"로 시작·"}"로
+            # 끝나도록 구성되므로 json.loads가 성공하면 dict 아닌 결과는 도달 불가
         action = obj.get("action")
         if not isinstance(action, dict) or "tool" not in action:
             return 1  # action이 객체가 아니거나 tool이 없다 = 스키마 미강제 형태
@@ -629,6 +654,38 @@ def selftest():
     assert parse_fail_first(ok) == 0, "정상 첫 assistant는 0"
     # assistant가 아예 없는 런(즉시 취소 등)은 판정 불가 → 0 (거짓 양성 금지)
     assert parse_fail_first(ok[:2]) == 0, "assistant 없으면 0"
+
+    # T4 리뷰 수선(Finding 1·3-1): "{"가 전혀 없는 assistant 메시지(순수
+    # 산문)는 증명된 실패라 1 — 수선 전 코드는 이 사례를 "JSON 못 찾음"으로
+    # 뭉뚱그려 0을 반환했으므로, 이 단언은 수선 전 코드에서는 반드시 실패한다
+    # (비어있지 않음 검증 — 리뷰 게이트 2의 non-vacuity 요구).
+    no_brace = [
+        {"kind": "system", "content": "sys", "ts": "t"},
+        {"kind": "user", "content": "do it", "ts": "t"},
+        {"kind": "assistant",
+         "content": "Sure, I will read the file now and check its contents.",
+         "ts": "t"},
+    ]
+    assert parse_fail_first(no_brace) == 1, "중괄호 없는 첫 assistant는 1(증명된 실패)"
+
+    # T4 리뷰 수선(Finding 3-2): action은 tool을 가진 객체이지만 최상위
+    # thought가 없는 경우 — 기존 콤보 fixture(action이 문자열)와는 별개
+    # 경로(마지막 `if "thought" not in obj` 분기)를 단독으로 핀한다.
+    missing_thought = [
+        {"kind": "assistant",
+         "content": '{"action": {"tool": "read_file", "args": {"path": "a.rs"}}}',
+         "ts": "t"},
+    ]
+    assert parse_fail_first(missing_thought) == 1, "thought 없는 첫 assistant는 1"
+
+    # T4 리뷰 수선(Finding 3-3): 첫 assistant가 깨졌고 두 번째는 정상이어도
+    # 오직 첫 메시지만 본다 — 루프가 첫 assistant에서 바로 return하는지 핀.
+    second_ok = broken + [
+        {"kind": "assistant",
+         "content": '{"thought": "retry", "action": {"tool": "read_file", "args": {"path": "a.rs"}}}',
+         "ts": "t"},
+    ]
+    assert parse_fail_first(second_ok) == 1, "첫 assistant만 보므로 두 번째가 정상이어도 1"
 
     print("selftest ok")
 
