@@ -36,7 +36,10 @@ GPU 시간(측정 배치)을 쓰는 모든 실험에 적용된다.
    ```
    Expected: `200`
 5. **재현 가능성 기록**: 배치마다 eval 스탬프 ↔ `git rev-parse HEAD` 쌍,
-   lms 확인 출력, 사용한 config 값을 report.md에 기재. report.json은 암을
+   서버 기동 로그의 `n_ctx_slot`과 `curl /v1/models`의 `data[0].id` 확인
+   출력(항목 4 ③ 스모크와 동일 근거 — llama.cpp에는 `lms` 같은 확인 CLI가
+   없으므로, 이 두 출력이 "어떤 모델·컨텍스트로 돌았는가"를 증언하는
+   대체 증거다), 사용한 config 값을 report.md에 기재. report.json은 암을
    자증하지 못한다(loco_version이 전 브랜치 동일).
 6. **중단 규칙 준수**: 사전등록에 적힌 그대로. Ctrl+C 부분 리포트는 폐기하고
    해당 배치 재수행.
