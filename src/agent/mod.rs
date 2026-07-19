@@ -277,6 +277,13 @@ impl<C: LlmClient> Agent<C> {
             session.push(ChatMessage::assistant(text));
             on_event(AgentEvent::Thought(&turn.thought));
 
+            // 최종 리뷰 Minor 3(의도된 동작, 문서화만): finish 분기가 아래 M12 §3-2
+            // args.tool 정규화 블록보다 먼저이므로, action.tool == "finish"이면서
+            // args.tool == "write_file"(또는 다른 등록 도구)인 턴은 정규화를 절대 타지
+            // 않는다 — args.tool은 그대로 무시된 채 finish로 처리된다. 스펙 §3-2는
+            // args.tool == "finish" 케이스만 다루므로 이 순서는 스펙 범위 밖이며,
+            // "정규화 없음"이 안전한 방향(뮤테이션 도구로 오인해 finish를 억누르지
+            // 않음)이라 의도적으로 그대로 둔다 — "고치지" 말 것
             if turn.action.tool == "finish" {
                 match turn.action.args.get("summary").and_then(|v| v.as_str()) {
                     Some(s) => {
@@ -341,6 +348,9 @@ impl<C: LlmClient> Agent<C> {
             // M12 §3-2: args 안의 잉여 `tool` 키 정규화. 게이트·preview보다 **먼저** —
             // 규칙 2의 교체로 비뮤테이션 액션이 뮤테이션 도구가 될 수 있고,
             // 게이트는 교체 결과 도구를 기준으로 판정해야 한다
+            // (최종 리뷰 Minor 3) action.tool == "finish"인 턴은 위에서 이미
+            // return/continue로 빠져 여기 도달하지 않는다 — finish + args.tool =
+            // "write_file" 같은 조합은 절대 정규화되지 않음. 의도된 동작이니 참조
             let mut args_tool_note: Option<&'static str> = None;
             if let Some(inner) =
                 turn.action.args.get("tool").and_then(|v| v.as_str()).map(str::to_string)
@@ -1761,6 +1771,65 @@ mod tests {
         let mut session = new_session(&agent);
         run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(session_contains(&session, "do not re-verify"), "실질 통과는 기존대로 무장 (회귀 방어)");
+    }
+
+    // 최종 리뷰 Minor 1 — 에이전트 레벨 공허 런 술어(`s.ran == 0 && s.filtered_out > 0`)를
+    // `s.ran == 0`로 뮤테이션하면 죽는지 핀. "테스트가 원래 없는 크레이트"(0 ran, 0
+    // filtered out — 정당한 런)와 "필터 미스"(0 ran, N filtered out — M12가 잡으려는
+    // 공허 런)를 구분하는 것이 이 술어의 존재 이유다. 뮤테이션되면 둘 다 공허 런으로
+    // 오분류돼, 정당한 검증인데도 VERIFY_NUDGE가 불필요하게 반려한다
+    #[cfg(unix)]
+    const NO_TESTS_IN_CRATE_RUN: &str =
+        "printf 'running 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n'";
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn zero_ran_zero_filtered_out_is_a_real_verification_not_a_vacuous_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "a.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": NO_TESTS_IN_CRATE_RUN}))),
+            ok(&finish("done")), // 진짜 테스트-프리 크레이트 — 반려 없이 바로 종결돼야 한다
+            ok(&finish("done2")), // 뮤테이션 시에만 소모됨(VERIFY_NUDGE가 1회 더 반려)
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
+        assert!(
+            !session_contains(&session, "never ran a verification command"),
+            "0 ran/0 filtered out은 공허 런이 아니다 — filtered_out>0 조건 없이는 오분류된다 (Minor 1)"
+        );
+    }
+
+    // 최종 리뷰 Minor 2 — cmd_summary는 cmd_exit가 Some일 때만(= 본문 첫 줄이 실제로
+    // "exit code: "일 때만) 파싱해야 한다는 계약을 핀. 가드를 제거하면 TimedOut/Cancelled
+    // 처럼 "exit code: " 줄이 없는 본문에서도(그 이전에 찍힌 출력이 우연히 test-summary
+    // 형태면) 그걸 유효 검증 신호로 읽어 공허 런 판정에 흘러든다
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timed_out_body_is_not_scanned_for_a_stray_test_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ctx = ToolCtx::new(dir.path().to_path_buf());
+        ctx.command_timeout = std::time::Duration::from_millis(100);
+        // 요약과 닮은 텍스트를 찍고서 타임아웃 — 본문 첫 줄은 "command timed out..."이지
+        // "exit code: "가 아니다. cmd_exit는 None이어야 한다
+        let cmd = "printf 'running 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out\n'; sleep 5";
+        let script = Scripted::new(vec![
+            ok(&turn("write_file", serde_json::json!({"path": "a.txt", "content": "x"}))),
+            ok(&turn("run_command", serde_json::json!({"command": cmd}))),
+            ok(&finish("done")), // 타임아웃은 empty_verify가 아니므로 VERIFY_NUDGE를 해제한다
+            ok(&finish("done2")), // 뮤테이션 시에만 소모됨(오탐 empty_verify로 1회 더 반려)
+        ]);
+        let config = Config { max_turns: 25, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(), ctx, "test-model".into(), &config);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
+        assert!(
+            !session_contains(&session, "never ran a verification command"),
+            "타임아웃 본문에는 exit code 줄이 없다 — 우연히 섞인 요약 문구를 검증으로 읽으면 안 된다 (Minor 2)"
+        );
     }
 
     // M10 §5 — 암③ 디코딩 섭동: S/R 스트릭 2연속 시 다음 요청의 temperature 상향
