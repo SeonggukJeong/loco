@@ -83,11 +83,26 @@ END_TS="$(date +%s)"
 END_REV="$(git rev-parse HEAD)"
 DURATION=$((END_TS - START_TS))
 
-# 세션이 만든 변경 = 미커밋 워킹트리 diff + 세션 중 생긴 커밋
-DIFF="$(git diff "$START_REV" 2>/dev/null || true)"
+# 세션이 만든 변경 = 미커밋 워킹트리 diff + 세션 중 생긴 커밋 + **신규 파일**.
+# `git add -N`으로 추적되지 않은 파일을 intent-to-add로 올려야 `git diff`가 본다 —
+# 안 그러면 `write_file`로 새 파일만 만든 성공 세션이 "산출물 0줄"로 기록되고,
+# 하류 생존율 집계에서 실패 세션과 구별되지 않는다(`write_file`은 6-tool set의
+# 정식 멤버라 가설이 아니다). `.loco/`는 제외 — 우리 자신의 부산물이다.
+git add -N -- . ':(exclude).loco' >/dev/null 2>&1 || true
+if ! DIFF="$(git diff "$START_REV")"; then
+  DIFF=""
+  echo "경고: git diff 실패 — 원장의 diff가 비어 있으나 '변경 없음'을 뜻하지 않습니다." >&2
+fi
 
-# 가장 최근 loco 세션 트랜스크립트
-TRANSCRIPT="$(ls -t "$REPO"/.loco/sessions/*.jsonl 2>/dev/null | head -1 || echo "")"
+# 이번 세션의 트랜스크립트. **mtime 하한이 필수다** — `ls -t | head -1`로 두면
+# loco가 크래시해 트랜스크립트를 못 남겼을 때 **직전 세션 것이 이번 세션에
+# 귀속**되고, 집계기가 그 마커를 세어 유령 범주를 만든다(침묵보다 나쁜, 적극적
+# 오데이터). 이름 대조가 아니라 mtime인 이유: loco 스탬프가 이 스크립트보다
+# 1초 늦게 찍히는 경우가 실제로 있다(파일럿 20건 중 3건).
+TRANSCRIPT="$(find "$REPO/.loco/sessions" -name '*.jsonl' -newermt "@$START_TS" 2>/dev/null | sort | tail -1 || echo "")"
+if [ -z "$TRANSCRIPT" ]; then
+  echo "경고: 이번 세션의 트랜스크립트를 찾지 못했습니다 — 기계 판정 없이 기록됩니다." >&2
+fi
 
 # --- 세션 후 빌드/테스트 확인 (T9 현장 수선 2) -------------------------------
 # 배경(실측): 세션 20260719T150304Z(fd, F4)는 그럴듯해 보이는 diff만 보고
@@ -242,8 +257,19 @@ echo "--------------------------------"
 echo ""
 
 # --- 세션 후 판정 -------------------------------------------------------------
+# ★ EOF 내성이 필수다. `set -e` 하에서 `read`는 EOF에 non-zero를 반환하므로
+# 그냥 `read -r V`로 두면 스크립트가 **아무 메시지 없이** 죽고 세션이 통째로
+# 유실된다(실측 재현: 원장 0줄·에러 0줄·종료상태도 파이프에 먹힘). 이 경로는
+# 스크립트 자신이 유도한다 — 위 안내가 "세션 종료는 Ctrl+D"라고 사용자를
+# 길들여 놓기 때문에 여기서 Ctrl+D가 한 번 더 오기 쉽다.
+# 원칙: 입력이 끊겨도 **죽지 말고 아는 만큼 기록한다.** 세션 시간(GPU+사람)은
+# 되돌릴 수 없고, 판정은 나중에 원장을 고쳐 채울 수 있다.
 printf '판정 (1=성공 2=수정해서 씀 3=버림): '
-read -r V
+if ! read -r V; then
+  V=""
+  echo ""
+  echo "입력이 EOF로 끊겼습니다 — 판정을 '미기재'로 두고 나머지는 그대로 기록합니다." >&2
+fi
 case "$V" in
   1) VERDICT="성공" ;;
   2) VERDICT="수정해서 씀" ;;
@@ -251,7 +277,10 @@ case "$V" in
   *) VERDICT="미기재" ;;
 esac
 printf '사유 한 줄: '
-read -r REASON
+if ! read -r REASON; then
+  REASON=""
+  echo "" >&2
+fi
 
 # 값은 반드시 환경변수로 넘긴다 — 셸 변수를 파이썬 소스에 보간하면 안 된다.
 # 이유(실측 확인): 파이썬 삼중따옴표는 백슬래시 이스케이프를 해석하므로

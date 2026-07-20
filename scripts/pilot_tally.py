@@ -619,6 +619,19 @@ def main():
             reason = r.get("reason") or "(사유 미기재)"
             print(f"  {r['session_id']}  [{r.get('task_type', '?')}] {r.get('verdict')} — {reason}")
 
+    # 트랜스크립트를 못 읽은 행은 기계 판정 전 범주에 침묵한다 — 그리고 verdict가
+    # '성공'이면 '실패 없음'으로 잡혀 **실패에서 성공 쪽으로 넘어간다.** 트랜스크립트는
+    # 스펙상 best-effort 부산물이라(CLAUDE.md) 없는 것이 정상 상태이므로, 없다는
+    # 사실을 출력에 내보내지 않으면 다음 파일럿이 조용히 낙관 편향된다.
+    no_tx = [r for r in rows
+             if not (r.get("transcript") and os.path.exists(r["transcript"]))]
+    if no_tx:
+        print(f"\n## ※ 트랜스크립트를 읽지 못한 행 {len(no_tx)}/{len(rows)}")
+        print("이 행들은 위 범주별 건수에서 **전부 침묵**한다(마커를 셀 수 없다). 따라서")
+        print("기계 판정 수치는 하한이고, verdict='성공'인 행은 '실패 없음'으로 잡힌다:")
+        for r in no_tx:
+            print(f"  - {r.get('session_id')} [{r.get('task_type', '?')}] {r.get('verdict')}")
+
     unknown_types = {}  # task_type 값 -> [session_id, ...]
     for r in rows:
         tt = r.get("task_type")
@@ -639,11 +652,24 @@ def main():
         print(f"  {v:<16} {n}")
 
     print("\n## 난이도 × 판정 (분모 — 세션 전 수집)")
-    for d in ("상", "중", "하"):
+    known_diff = ("상", "중", "하")
+    shown = 0
+    for d in known_diff:
         sub = [r for r in rows if r.get("difficulty") == d]
         if sub:
             ok = sum(1 for r in sub if r.get("verdict") == "성공")
+            shown += len(sub)
             print(f"  난이도 {d}: {len(sub)}세션, 성공 {ok}")
+    # difficulty는 pilot.sh의 무제약 자유 텍스트다 — 어휘 밖 값('상 '·'high'·'')이
+    # 들어오면 위 표에서 조용히 사라지고, 절 제목이 '분모'라고 선언한 바로 그
+    # 자리에서 분모가 줄어든다. task_type에는 같은 진단이 이미 있다(아래) —
+    # 한 축에만 막아 두면 다른 축에서 같은 실수가 난다.
+    unknown_d = [r for r in rows if r.get("difficulty") not in known_diff]
+    if unknown_d:
+        print(f"\n  ※ 어휘 밖 난이도 {len(unknown_d)}건이 위 표에서 빠졌다 "
+              f"(합계 {shown}/{len(rows)}세션) — 분모가 줄었으니 비율로 읽지 말 것:")
+        for r in unknown_d:
+            print(f"    - {r.get('session_id')} difficulty={r.get('difficulty')!r}")
 
     print("\n## 줄 생존율 (보조 대리 지표 — 왜곡 5종 알려짐, 스펙 §4-3. 주 산출물 아님)")
     print("레포별로 나눈다 — 레포 규모가 20배 이상 차이 나 pooled 수치 하나면 큰 레포가")
@@ -698,10 +724,18 @@ def main():
 
     print()
     if overall_lines:
+        # 분모 공개가 필수다 — 유의미한 추가 줄이 0인 세션은 위에서 조용히
+        # 건너뛰는데, 그 세션들이 계통적으로 '뮤테이션 0회 실패' 쪽이다.
+        # 그것을 안 밝히면 이 비율이 파일럿 전체의 채택률로 오인된다.
+        skipped = len(rows) - overall_judged
         print(
             f"  전체 가중 생존율: {overall_alive / overall_lines:.1%} "
-            f"({overall_judged}세션, {overall_lines}줄, {len(by_repo)}개 레포)"
+            f"({overall_judged}/{len(rows)}세션, {overall_lines}줄, {len(by_repo)}개 레포)"
         )
+        if skipped:
+            print(f"  ※ 추가 줄이 0이라 분모에서 빠진 세션 {skipped}건 — 대부분 뮤테이션 0회")
+            print("    실패다. 즉 이 비율은 '코드를 낸 세션 안에서의' 생존율이지")
+            print("    파일럿 전체의 채택률이 아니다.")
     else:
         # 레포별 메시지(위)와 문구가 같으면 레포가 하나일 때 같은 말이 두 번 찍혀
         # 중복 출력처럼 보인다 — 이 줄은 전체 합계임을 스스로 밝힌다.

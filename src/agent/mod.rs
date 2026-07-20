@@ -91,6 +91,11 @@ pub struct Agent<C: LlmClient> {
     context_tokens: usize,
     /// json_schema 폴백 상태 — 400을 만나면 끈다 (스펙 §4). Task 10에서 사용
     use_json_schema: bool,
+    /// 이 런에서 json_schema 폴백이 **실제로 발동했는가** (M13 스펙 §3-6-1).
+    /// `!use_json_schema`로 파생하지 않는다 — 그러면 "처음부터 json_schema를
+    /// 끄고 시작하는 설정"이 생기는 순간 전 런이 폴백 발동으로 기록돼
+    /// 앵커 게이트가 배치 전체를 오차단한다(fail-closed 오작동).
+    schema_fallback: bool,
     /// system role 폴백 상태 — 400을 만나면 첫 user에 병합 (스펙 §3).
     inline_system: bool,
     /// 평가 하네스가 반복마다 다른 시드를 주입한다 (스펙 §8)
@@ -118,6 +123,7 @@ impl<C: LlmClient> Agent<C> {
             max_turns: config.max_turns,
             context_tokens: config.context_tokens,
             use_json_schema: true,
+            schema_fallback: false,
             inline_system: false,
             seed: None,
             temperature_override: None,
@@ -142,7 +148,7 @@ impl<C: LlmClient> Agent<C> {
     /// 판별할 수 있게 한다 (M13 스펙 §3-6-1). Agent는 런마다 새로 만들어지므로
     /// (src/eval/mod.rs) 이 값은 런 지역이다.
     pub fn schema_fallback_fired(&self) -> bool {
-        !self.use_json_schema
+        self.schema_fallback
     }
 
     /// 스펙 §6: (context − max_output) × 0.9
@@ -601,6 +607,7 @@ impl<C: LlmClient> Agent<C> {
                 }
                 Err(LlmError::Api { status: 400, .. }) if self.use_json_schema => {
                     self.use_json_schema = false;
+                    self.schema_fallback = true;
                     on_event(AgentEvent::Notice(
                         "(서버가 요청을 거부 — response_format 없이 재시도)".to_string(),
                     ));

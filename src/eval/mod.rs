@@ -498,6 +498,56 @@ protected = ["data"]
         assert_eq!(json["total_pass_rate"], 1.0);
     }
 
+    /// M13 스펙 §3-6-1: json_schema 폴백이 발동한 런은 report.json에 그렇게 기록돼야
+    /// 한다 — "조용한 전면 실패"(스키마 강제 없이 돈 배치가 앵커로 확정되는 것)를
+    /// 배치 후 기계적으로 판별하는 게이트다.
+    ///
+    /// 이 테스트가 고정하는 것은 **eval 배선**이다: `Agent`의 게터가 아니라
+    /// `run_once` → `judge` → `RunRecord` → report.json 경로. 게터 자체는
+    /// `agent::tests`가 본다. 배선만 끊겨도 전 런이 `false`로 기록되고 그것은
+    /// "폴백 미발동 = 깨끗함"으로 읽혀 **게이트가 공허하게 통과**한다(fail-open).
+    #[tokio::test]
+    async fn schema_fallback_reaches_the_report() {
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "demo",
+            "prompt = \"x\"\ncheck = \"true\"\nprotected = [\"data\"]\n",
+            &[("data/keep.txt", "K\n")],
+        );
+        // 첫 요청에 **컨텍스트 초과가 아닌** 400 → json_schema 폴백 발동, 이후 정상 턴.
+        let script = Scripted::new(vec![
+            Err(LlmError::Api { status: 400, body: "unsupported response_format".into() }),
+            ok(&finish("done")),
+        ]);
+        let o = opts(tasks.path().to_path_buf());
+        let run = run_eval(&script, &Config::default(), "test-model", &o, proj.path()).await.unwrap();
+
+        assert!(run.report.tasks[0].runs[0].schema_fallback, "폴백 발동이 RunRecord에 기록돼야 한다");
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&run.report_path).unwrap()).unwrap();
+        assert_eq!(json["tasks"][0]["runs"][0]["schema_fallback"], true, "report.json까지 도달해야 한다");
+    }
+
+    /// 위 테스트의 짝 — 폴백이 없으면 `false`여야 한다. 둘이 함께 있어야
+    /// "항상 true"라는 반대 방향의 배선 오류도 잡힌다.
+    #[tokio::test]
+    async fn no_schema_fallback_is_recorded_false() {
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "demo",
+            "prompt = \"x\"\ncheck = \"true\"\nprotected = [\"data\"]\n",
+            &[("data/keep.txt", "K\n")],
+        );
+        let script = Scripted::new(vec![ok(&finish("done"))]);
+        let o = opts(tasks.path().to_path_buf());
+        let run = run_eval(&script, &Config::default(), "test-model", &o, proj.path()).await.unwrap();
+        assert!(!run.report.tasks[0].runs[0].schema_fallback, "폴백 미발동은 false");
+    }
+
     #[tokio::test]
     async fn failed_check_and_per_repeat_seeds() {
         let tasks = tempfile::tempdir().unwrap();
