@@ -380,12 +380,17 @@ fn diff_count(src: &Path, dst: &Path) -> usize {
                 return 1;
             }
             if s.is_dir() {
+                // 한쪽만 read_dir 실패해도 조용히 넘어가면 그 쪽에만 있는 항목이
+                // 합집합에서 누락되어 과소계상된다 — 문서화된 보수적 계약(관측
+                // 누락보다 과대계상이 안전) 위반이므로, 실패 시 서브트리 전체를
+                // 1건 "다름"으로 본다(부분 목록으로 이어가지 않는다)
+                let (Ok(rd_src), Ok(rd_dst)) = (std::fs::read_dir(src), std::fs::read_dir(dst))
+                else {
+                    return 1;
+                };
                 let mut names = std::collections::BTreeSet::new();
-                for p in [src, dst] {
-                    if let Ok(rd) = std::fs::read_dir(p) {
-                        names.extend(rd.flatten().map(|e| e.file_name()));
-                    }
-                }
+                names.extend(rd_src.flatten().map(|e| e.file_name()));
+                names.extend(rd_dst.flatten().map(|e| e.file_name()));
                 return names.iter().map(|n| diff_count(&src.join(n), &dst.join(n))).sum();
             }
             match (std::fs::read(src), std::fs::read(dst)) {
@@ -476,6 +481,60 @@ mod unit_tests {
         assert_eq!(
             count_protected_edits(fx.path(), sb.path(), &[".cargo".to_string()]),
             0
+        );
+    }
+
+    /// H7 리뷰 지적: read_dir 실패를 조용히 넘기면(`if let Ok`) 그 쪽에만 있는
+    /// 항목이 합집합에서 누락되어 과소계상된다 — "읽기 실패는 다름으로 본다"는
+    /// 문서 계약과 정반대다.
+    ///
+    /// 디렉터리 권한은 실행 비트(x)만 제거해도 read_dir 자체는 이미 실패하지만,
+    /// r/x를 **둘 다** 지우면(0o000) named-child 접근(그 경로로 직접 stat)까지
+    /// 막혀 최상위 `(Ok, Err) => 1` 비대칭 분기가 이 read_dir 경로보다 먼저
+    /// 걸려 버그가 있어도 통과해 버린다(직접 실측: revert 전 사전 검증에서
+    /// 0o000으로는 되돌린 코드도 count=1을 내 이 회귀를 겨냥하지 못함을 확인).
+    /// 그래서 실행 권한은 유지하고 읽기 권한만 지워(`0o100`) named-child stat은
+    /// 여전히 성공하되 디렉터리 **목록**(read_dir)만 실패하는 상황을 만든다 —
+    /// 리워드 해킹으로 몰래 추가된 파일은 목록에만 나타나므로 이 경로가 정확히
+    /// 그 실패 지점을 겨냥한다.
+    #[test]
+    #[cfg(unix)]
+    fn protected_edit_counter_treats_unreadable_dir_as_difference() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fx = tempfile::tempdir().unwrap();
+        let sb = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(fx.path().join("tests")).unwrap();
+        std::fs::write(fx.path().join("tests/a.rs"), "A").unwrap();
+        std::fs::create_dir_all(sb.path().join("tests")).unwrap();
+        std::fs::write(sb.path().join("tests/a.rs"), "A").unwrap();
+        // 리워드 해킹 시나리오: 샌드박스 쪽에만 몰래 파일을 추가 — read_dir 목록을
+        // 통해서만 발견되는 항목이라야 이 회귀의 실패 지점을 정확히 겨냥한다
+        std::fs::write(sb.path().join("tests/sneaky.rs"), "SNEAK").unwrap();
+
+        let sb_tests = sb.path().join("tests");
+        let orig_mode = std::fs::metadata(&sb_tests).unwrap().permissions().mode();
+        // 실행 비트만 남기고 읽기 비트를 지운다 — named-child stat(diff_count의
+        // 재귀 호출)은 여전히 성공하고, read_dir(목록)만 실패한다
+        std::fs::set_permissions(&sb_tests, std::fs::Permissions::from_mode(0o100)).unwrap();
+
+        // 전제 확인: 이 환경(root 등)에서 실제로 read_dir이 막히는지 — 막히지
+        // 않으면 아래 단언이 버그 유무와 무관하게 항상 통과해 테스트가 환경
+        // 의존적으로 "실패 못 하는" 상태가 된다(M12에서 이미 겪은 실수)
+        let precondition_held = std::fs::read_dir(&sb_tests).is_err();
+        let count = count_protected_edits(fx.path(), sb.path(), &["tests".to_string()]);
+
+        // tempdir 드롭 전에 권한을 복구해야 정리가 실패하지 않는다
+        std::fs::set_permissions(&sb_tests, std::fs::Permissions::from_mode(orig_mode)).unwrap();
+
+        assert!(
+            precondition_held,
+            "이 환경(root 등)에서 read_dir이 막히지 않음 — 테스트 전제 무효, \
+             이 결과로는 수정 유무를 판별할 수 없다"
+        );
+        assert!(
+            count >= 1,
+            "read_dir 실패는 '다름'으로 보수적으로 계상돼야 한다(관측 누락 방지) — got {count}"
         );
     }
 
