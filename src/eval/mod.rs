@@ -223,7 +223,7 @@ async fn run_once<C: LlmClient>(
     // 눈치채지 못한다** — 1R 실측: T5의 오버라이드를 `Agent::new` 뒤로 옮기면
     // 에이전트는 8192로 도는데 report.json은 32768을 보고하고 **73개 테스트가 전건
     // 초록불**이었다. 그러면 이 필드는 없느니만 못하다(§9-A4가 이것을 자증으로 인용한다)
-    let eff = EffectiveRun { context_tokens: agent.context_tokens(), max_turns: cfg.max_turns };
+    let eff = EffectiveRun { context_tokens: agent.context_tokens(), max_turns: agent.max_turns() };
     let outcome = match bounded {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => {
@@ -757,7 +757,7 @@ protected = ["data"]
 
         let r = &run.report.tasks[0].runs[0];
         assert_eq!(r.effective_context_tokens, 32768);
-        assert_eq!(r.effective_max_turns, 7);
+        assert_eq!(r.effective_max_turns, 7, "effective_max_turns도 agent에서 자증해야 한다 (H9)");
         // 전역 스냅샷은 여전히 코드 기본값 — 둘이 다르다는 것이 H9의 존재 이유다
         assert_eq!(run.report.effective_config.context_tokens, 8192);
         let json: serde_json::Value =

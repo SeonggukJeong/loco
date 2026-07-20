@@ -218,6 +218,12 @@ impl<C: LlmClient> Agent<C> {
         self.context_tokens
     }
 
+    /// 이 에이전트가 생성 시점에 스냅샷한 턴 상한 (M15 H9). context_tokens()와 같은 이유로
+    /// eval의 RunRecord는 cfg가 아니라 여기서 읽어야 순서 오류를 탐지한다
+    pub fn max_turns(&self) -> usize {
+        self.max_turns
+    }
+
     fn schema_tool_names(&self) -> Vec<&'static str> {
         let mut names = self.registry.names();
         names.push("finish");
