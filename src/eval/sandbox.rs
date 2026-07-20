@@ -58,6 +58,10 @@ impl Sandbox {
                 }
                 let bytes = std::fs::read(&src)?;
                 std::fs::write(&dst, bytes)?;
+                // M15 H17 — **세 번째 read+write 사이트**. tasks-real의 protected는
+                // 단일 파일(`tests/<x>.rs`)이라 배치의 모든 런이 여기를 탄다
+                let meta = std::fs::symlink_metadata(&src)?;
+                restore_mode(&meta, &dst)?;
             }
         }
         Ok(())
@@ -82,9 +86,35 @@ fn copy_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
             std::fs::create_dir_all(&to)?;
             copy_tree(&from, &to)?;
         } else {
-            std::fs::copy(&from, &to)?;
+            // read+write — fs::copy는 macOS에서 clonefile로 원본 mtime을 보존해
+            // 스테일 빌드 캐시 판정 벡터가 된다. M6가 overlay_tree에서만 막았고
+            // copy_tree에는 남아 있던 잔여 결함 (M15 H6)
+            let bytes = std::fs::read(&from)
+                .with_context(|| format!("픽스처 읽기 실패: {}", from.display()))?;
+            std::fs::write(&to, bytes)
+                .with_context(|| format!("픽스처 복사 실패: {}", to.display()))?;
+            restore_mode(&meta, &to)
+                .with_context(|| format!("퍼미션 복원 실패: {}", to.display()))?;
         }
     }
+    Ok(())
+}
+
+/// read+write 복사가 잃는 원본 퍼미션을 복원한다 (M15 H17).
+/// `| 0o200`으로 소유자 쓰기 비트를 강제하는 것은 읽기 전용 픽스처 파일이
+/// `sync_protected`의 덮어쓰기(remove 후 write)나 에이전트 편집을 막지 않게 하기
+/// 위함 — 원본 트리의 읽기 전용은 판정 자산 보호 수단이 아니고(그 역할은
+/// protected 동기화가 한다) 하네스를 죽이는 실패 모드만 만든다
+#[cfg(unix)]
+fn restore_mode(meta: &std::fs::Metadata, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = meta.permissions().mode() | 0o200;
+    std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode))
+}
+
+/// Windows에는 유닉스 mode가 없다 — read+write가 잃는 것도 없다
+#[cfg(not(unix))]
+fn restore_mode(_meta: &std::fs::Metadata, _to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
@@ -107,6 +137,10 @@ pub(crate) fn overlay_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
             let bytes = std::fs::read(&from)?;
             std::fs::write(&to, bytes)
                 .with_context(|| format!("오버레이 쓰기 실패: {}", to.display()))?;
+            // M15 H17: copy_tree와 같은 이유 — read+write는 퍼미션을 잃는다.
+            // 이 함수는 sync_protected를 통해 **모든 eval 런에서 check 직전**에 돈다
+            restore_mode(&meta, &to)
+                .with_context(|| format!("퍼미션 복원 실패: {}", to.display()))?;
         }
     }
     Ok(())
@@ -254,6 +288,102 @@ mod tests {
         let restored = std::fs::metadata(sb.root.join("tests/t.rs")).unwrap().modified().unwrap();
         assert!(restored > old + std::time::Duration::from_secs(1800), "protected 복원도 mtime 갱신 (M6 §4)");
         assert_eq!(std::fs::read_to_string(sb.root.join("tests/t.rs")).unwrap(), "ORIGINAL");
+        sb.cleanup();
+    }
+
+    #[test]
+    fn copy_tree_refreshes_mtime() {
+        // M6는 overlay_tree에서만 fs::copy를 막았다. copy_tree에는 같은 벡터가
+        // 남아 있었다 — macOS의 fs::copy는 clonefile로 원본 mtime을 보존하므로
+        // 픽스처가 과거 mtime을 가지면 샌드박스의 소스가 빌드 산출물보다
+        // 과거가 되고 cargo가 재빌드를 건너뛴다 (M15 H6)
+        let src = fixture_with(&[("a.rs", "new")]);
+        let old = age_file(&src.path().join("a.rs"));
+        let sb = Sandbox::create(src.path()).unwrap();
+        let copied = std::fs::metadata(sb.root.join("a.rs")).unwrap().modified().unwrap();
+        assert!(
+            copied > old + std::time::Duration::from_secs(1800),
+            "샌드박스 복사도 mtime을 갱신해야 함 (M15 H6)"
+        );
+        assert_eq!(std::fs::read_to_string(sb.root.join("a.rs")).unwrap(), "new");
+        sb.cleanup();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_preserves_the_executable_bit() {
+        // read+write는 퍼미션을 잃는다(3R 실측 755→644). 실레포 픽스처는
+        // ci/*.sh 같은 실행 파일을 갖고, mode 회귀를 잡을 기존 테스트가
+        // 하나도 없었다 (M15 H17)
+        use std::os::unix::fs::PermissionsExt;
+        let fx = fixture_with(&[("run.sh", "#!/bin/sh\nexit 0\n"), ("plain.txt", "x")]);
+        std::fs::set_permissions(
+            fx.path().join("run.sh"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        // 읽기 전용 픽스처 파일도 샌드박스에서는 덮어쓸 수 있어야 한다
+        std::fs::set_permissions(
+            fx.path().join("plain.txt"),
+            std::fs::Permissions::from_mode(0o444),
+        )
+        .unwrap();
+
+        let sb = Sandbox::create(fx.path()).unwrap();
+
+        let exec = std::fs::metadata(sb.root.join("run.sh")).unwrap().permissions().mode();
+        assert_eq!(exec & 0o777, 0o755, "실행 비트 보존 (M15 H17)");
+        let plain = std::fs::metadata(sb.root.join("plain.txt")).unwrap().permissions().mode();
+        assert_eq!(plain & 0o200, 0o200, "소유자 쓰기 비트 강제 — sync_protected 덮어쓰기 경로");
+        sb.cleanup();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_protected_preserves_the_executable_bit() {
+        // M15 H17 후반부 — overlay_tree는 M6 때부터 read+write라 **이미** 실행
+        // 비트를 잃고 있었다. copy_tree만 고치면 절반만 닫힌다(플랜 1R 실현 I1).
+        // 이 경로는 sync_protected를 통해 **모든 eval 런에서 check 직전**에 돈다
+        use std::os::unix::fs::PermissionsExt;
+        let fx = fixture_with(&[("ci/run.sh", "#!/bin/sh\nexit 0\n")]);
+        std::fs::set_permissions(
+            fx.path().join("ci/run.sh"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        let sb = Sandbox::create(fx.path()).unwrap();
+        // 에이전트가 protected를 건드렸다고 가정 → 동기화가 overlay_tree를 탄다
+        std::fs::write(sb.root.join("ci/run.sh"), "#!/bin/sh\nexit 1\n").unwrap();
+        sb.sync_protected(fx.path(), &["ci".to_string()]).unwrap();
+
+        let m = std::fs::metadata(sb.root.join("ci/run.sh")).unwrap().permissions().mode();
+        assert_eq!(m & 0o777, 0o755, "protected 복원도 실행 비트를 보존해야 한다 (M15 H17)");
+        sb.cleanup();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_protected_single_file_preserves_the_executable_bit() {
+        // M15 H17 **세 번째 사이트** (2R 실현 I4·측정 A-3).
+        // ⚠ 위 테스트는 protected가 **디렉터리**라 overlay_tree로 라우팅된다.
+        // 그런데 tasks-real의 protected는 `tests/<x>.rs` — **단일 파일**이라
+        // sync_protected의 :55-61 분기를 탄다. 즉 **배치의 모든 런이 타는 경로가
+        // 이쪽인데 개정 2의 테스트는 그 경로를 시험하지 않았다.**
+        // 실측(2R): 복원 없이는 create=755 → sync=644
+        use std::os::unix::fs::PermissionsExt;
+        let fx = fixture_with(&[("run.sh", "#!/bin/sh\nexit 0\n")]);
+        std::fs::set_permissions(
+            fx.path().join("run.sh"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        let sb = Sandbox::create(fx.path()).unwrap();
+        std::fs::write(sb.root.join("run.sh"), "#!/bin/sh\nexit 1\n").unwrap();
+        // protected를 **단일 파일**로 준다 — tasks-real과 같은 형태
+        sb.sync_protected(fx.path(), &["run.sh".to_string()]).unwrap();
+
+        let m = std::fs::metadata(sb.root.join("run.sh")).unwrap().permissions().mode();
+        assert_eq!(m & 0o777, 0o755, "단일 파일 protected 복원도 실행 비트 보존 (M15 H17)");
         sb.cleanup();
     }
 }
