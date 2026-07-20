@@ -2,6 +2,7 @@
 //! 인프로세스로 Agent::run을 호출한다 — 가짜 LlmClient로 서버 없이 테스트 가능.
 
 pub mod integrity;
+pub mod procure;
 pub mod report;
 pub mod sandbox;
 pub mod task;
@@ -111,7 +112,11 @@ pub async fn run_eval<C: LlmClient>(
                     }
                 }
             }
-            task_reports.push(TaskReport::from_runs(t.name.clone(), runs));
+            // M15 H11: task_dir = fixture의 부모. H8이 `<task_dir>/fixture`를
+            // 실체화하므로 이 관계가 두 트리 모두에서 참이다(H3가 불요한 이유)
+            let task_dir = t.fixture.parent().expect("fixture는 과제 디렉터리 바로 아래");
+            let procure = procure::load(task_dir)?;
+            task_reports.push(TaskReport::from_runs(t.name.clone(), runs, procure));
         }
         Ok(())
     }
@@ -870,6 +875,53 @@ protected = ["data"]
         )
         .unwrap();
         assert!(jsonl.contains("timed out after 1s"), "과제별 상한 미배선: {jsonl}");
+    }
+
+    /// M15 H11 — 오라클 목록이 배치 산출물에 **동결**된다. exp_metrics.py가
+    /// 이 경로로 읽으므로(§5-4 입력 계약) 사후 변경이 구조적으로 막힌다
+    #[tokio::test]
+    async fn procure_metadata_reaches_the_report() {
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "real",
+            "prompt = \"p\"\ncheck = \"true\"\nprotected = [\"keep.txt\"]\n",
+            &[("keep.txt", "x")],
+        );
+        std::fs::write(
+            tasks.path().join("real/procure.toml"),
+            "repo = \"fd\"\nissue_url = \"https://example.invalid/1\"\n\
+             fix_sha = \"a\"\nparent_sha = \"b\"\noracle_files = [\"src/walk.rs\"]\n",
+        )
+        .unwrap();
+        let script = Scripted::new(vec![ok(&finish("done"))]);
+        let o = opts(tasks.path().to_path_buf());
+        let run = run_eval(&script, &Config::default(), "m", &o, proj.path()).await.unwrap();
+
+        let p = run.report.tasks[0].procure.as_ref().expect("procure.toml이 리포트에 실려야 한다");
+        assert_eq!(p.repo, "fd");
+        assert_eq!(p.oracle_files, vec!["src/walk.rs".to_string()]);
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&run.report_path).unwrap()).unwrap();
+        assert_eq!(json["tasks"][0]["procure"]["oracle_files"][0], "src/walk.rs");
+    }
+
+    /// 짝 — procure.toml이 없는 과제(기존 두 트리)는 null이고 배치가 안 죽는다
+    #[tokio::test]
+    async fn tasks_without_procure_toml_report_null() {
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "plain",
+            "prompt = \"p\"\ncheck = \"true\"\nprotected = [\"keep.txt\"]\n",
+            &[("keep.txt", "x")],
+        );
+        let script = Scripted::new(vec![ok(&finish("done"))]);
+        let o = opts(tasks.path().to_path_buf());
+        let run = run_eval(&script, &Config::default(), "m", &o, proj.path()).await.unwrap();
+        assert!(run.report.tasks[0].procure.is_none());
     }
 
     /// M15 H9 — 과제별 운용점이 report.json까지 도달하는가 (**정상 경로**).

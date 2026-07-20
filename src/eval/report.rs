@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 
+use crate::eval::procure::ProcureSpec;
+
 /// 실행 1회의 결말. Timeout은 하네스 타임아웃(run_bounded)이며,
 /// 어떤 결말이든 check는 실행된다 (설계 결정 — MaxTurns라도 작업이 됐으면 통과)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -69,11 +71,15 @@ pub struct TaskReport {
     pub schema_fallback_count: usize,
     pub avg_turns: f64,
     pub avg_duration_secs: f64,
+    /// `<task_dir>/procure.toml`의 조달·오라클 좌표 (M15 H11). 실레포 트랙이
+    /// 아닌 과제는 `None`. **배치 산출물에 동결**되므로 오라클 목록의 사후
+    /// 변경이 막힌다 — §5-4가 요구하는 입력 계약
+    pub procure: Option<ProcureSpec>,
     pub runs: Vec<RunRecord>,
 }
 
 impl TaskReport {
-    pub fn from_runs(name: String, runs: Vec<RunRecord>) -> TaskReport {
+    pub fn from_runs(name: String, runs: Vec<RunRecord>, procure: Option<ProcureSpec>) -> TaskReport {
         let n = runs.len().max(1) as f64;
         TaskReport {
             pass_rate: runs.iter().filter(|r| r.passed).count() as f64 / n,
@@ -90,6 +96,7 @@ impl TaskReport {
             avg_turns: runs.iter().map(|r| r.turns as f64).sum::<f64>() / n,
             avg_duration_secs: runs.iter().map(|r| r.duration_secs).sum::<f64>() / n,
             name,
+            procure,
             runs,
         }
     }
@@ -205,8 +212,8 @@ mod tests {
     #[test]
     fn top_level_avg_duration_is_run_weighted() {
         // 런 가중 — 과제별 평균의 평균이 아님 (M7 §4): (10+20+60)/3 = 30, 평균의 평균이면 37.5
-        let a = TaskReport::from_runs("a".into(), vec![run(true, 1, 10.0), run(true, 1, 20.0)]);
-        let b = TaskReport::from_runs("b".into(), vec![run(false, 1, 60.0)]);
+        let a = TaskReport::from_runs("a".into(), vec![run(true, 1, 10.0), run(true, 1, 20.0)], None);
+        let b = TaskReport::from_runs("b".into(), vec![run(false, 1, 60.0)], None);
         assert_eq!(Report::avg_duration_of(&[a, b]), 30.0);
         assert_eq!(Report::avg_duration_of(&[]), 0.0, "빈 목록은 0 (0나눗셈 금지)");
     }
@@ -228,6 +235,7 @@ mod tests {
                 run_with(false, RunOutcome::Finished, false),  // 거짓 성공 finish
                 run_with(false, RunOutcome::Timeout, false),   // 그냥 실패
             ],
+            None,
         );
         assert_eq!(t.passed_count, 2);
         assert_eq!(t.passed_strict_count, 1, "Finished이면서 passed만");
@@ -244,7 +252,7 @@ mod tests {
             run_with(true, RunOutcome::Finished, false),
             run_with(false, RunOutcome::RepetitionStop, true),
         ];
-        let t = TaskReport::from_runs("t".into(), runs);
+        let t = TaskReport::from_runs("t".into(), runs, None);
         assert_eq!(t.schema_fallback_count, 2);
     }
 
@@ -277,6 +285,7 @@ mod tests {
         let tasks = vec![TaskReport::from_runs(
             "demo".into(),
             vec![run_with(true, RunOutcome::MaxTurns, false), run_with(false, RunOutcome::Finished, false)],
+            None,
         )];
         let mut r = sample_report();
         r.total_pass_rate = Report::total_of(&tasks);
@@ -291,7 +300,7 @@ mod tests {
 
     #[test]
     fn from_runs_computes_averages() {
-        let t = TaskReport::from_runs("t".into(), vec![run(true, 4, 10.0), run(false, 6, 20.0)]);
+        let t = TaskReport::from_runs("t".into(), vec![run(true, 4, 10.0), run(false, 6, 20.0)], None);
         assert_eq!(t.pass_rate, 0.5);
         assert_eq!(t.avg_turns, 5.0);
         assert_eq!(t.avg_duration_secs, 15.0);
@@ -299,15 +308,15 @@ mod tests {
 
     #[test]
     fn empty_runs_do_not_divide_by_zero() {
-        let t = TaskReport::from_runs("t".into(), vec![]);
+        let t = TaskReport::from_runs("t".into(), vec![], None);
         assert_eq!(t.pass_rate, 0.0);
         assert_eq!(Report::total_of(&[t]), 0.0);
     }
 
     #[test]
     fn total_is_runs_weighted() {
-        let a = TaskReport::from_runs("a".into(), vec![run(true, 1, 1.0)]); // 1/1
-        let b = TaskReport::from_runs("b".into(), vec![run(false, 1, 1.0), run(false, 1, 1.0), run(false, 1, 1.0)]); // 0/3
+        let a = TaskReport::from_runs("a".into(), vec![run(true, 1, 1.0)], None); // 1/1
+        let b = TaskReport::from_runs("b".into(), vec![run(false, 1, 1.0), run(false, 1, 1.0), run(false, 1, 1.0)], None); // 0/3
         assert_eq!(Report::total_of(&[a, b]), 0.25, "실행 가중 — 과제 평균의 평균(0.5)이 아님");
     }
 
@@ -318,7 +327,7 @@ mod tests {
     }
 
     fn sample_report() -> Report {
-        let tasks = vec![TaskReport::from_runs("add-function".into(), vec![run(true, 5, 38.5)])];
+        let tasks = vec![TaskReport::from_runs("add-function".into(), vec![run(true, 5, 38.5)], None)];
         Report {
             model: "gemma-4b".into(),
             base_seed: 0,
