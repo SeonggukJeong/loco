@@ -467,12 +467,16 @@ impl<C: LlmClient> Agent<C> {
                     };
                     let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
                     self.update_perturb(&tracker, on_event);
-                    // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다.
-                    // M14 B-4: 이 `!stop` 가드는 finish_nudge 억제 절반이지만, 거부
-                    // 경로의 이벤트는 MutationAttempt/Other 둘뿐이고 write_file 거부는
-                    // MutationAttempt → disarm()을 불러 armed가 참이 될 수 없다. 그래서
-                    // 이 가드를 지워도 어떤 시나리오에서도 FINISH_NUDGE는 나오지 않는다
-                    // (실측 확인, 태스크 7 5-b) —
+                    // 반복정지 우선 (§4-2) — 정지 턴에는 넛지를 평가하지 않는다.
+                    // M14 B-4: 이 `!stop` 가드는 finish_nudge 억제 절반이다. 거부 경로의
+                    // 이벤트는 MutationAttempt/Other 둘뿐인데, MutationAttempt(write_file/
+                    // edit_file)는 disarm()을 불러 armed가 참이 될 수 없다. Other(denied
+                    // run_command)는 idle을 진전시키지 않는데, idle은 VerifyOk/ReadOnly
+                    // 이벤트에만 진전하고 거부 경로는 둘 다 방출하지 않는다. 또한 stop은
+                    // 해당 턴에서 run()을 즉시 종료하므로, armed 임계치를 넘으려면 승인
+                    // 경로에서 이미 넘어야 한다(그 쪽도 !stop 가드 있음). 그래서 이 가드를
+                    // 지워도 어떤 시나리오에서도 FINISH_NUDGE는 나오지 않는다(실측 확인,
+                    // 태스크 7 5-b) —
                     // `a_rejected_action_on_a_repetition_stop_turn_emits_no_finish_nudge`는
                     // 핀이 아니라 관측점: 훗날 거부 경로의 이벤트 매핑이 바뀌어 armed가
                     // 참이 될 수 있게 되면 그 테스트가 빨간불이 된다. 이 사실을 이유로
@@ -1702,14 +1706,14 @@ mod tests {
         // 거부 경로의 **finish_nudge 억제** `!stop` 가드를 지목한다.
         // ⚠ 이것은 핀이 아니라 **관측점**이다 — Step 5-a의 예외.
         //
-        // 거부 경로의 이벤트는 둘뿐이다(`MutationAttempt`/`Other`). `write_file` 거부는
-        // `MutationAttempt`를 내고, 그것이 `disarm()`을 불러 `armed`가 참이 될 수
-        // 없으므로 이 경로에서는 어떤 시나리오로도 FINISH_NUDGE가 나올 수 없다 —
-        // 이 가드를 지워도(플랜 리뷰가 실측) 결과는 바뀌지 않는다. 그래서 이 테스트는
-        // 뮤테이션 검사로 "핀"임을 증명할 수 없고, 대신 오늘의 이벤트 매핑 아래에서는
-        // 이 가드가 도달 불가임을 기록하는 관측점 역할을 한다(스펙 §7 기준 4). 훗날
-        // 거부 경로의 이벤트 매핑이 바뀌어 armed가 참이 될 수 있게 되면 이 테스트가
-        // 빨간불이 되어 그 변경을 잡아낸다.
+        // 도달불가 논증: (:470 주석 참고) 거부 경로의 이벤트는 둘뿐(MutationAttempt/Other)
+        // 인데, idle 진전은 VerifyOk/ReadOnly에만 연결되고 거부 경로는 둘 다 방출하지 않는다.
+        // MutationAttempt(write_file 거부)는 또한 disarm()을 불러 armed가 참이 될 수 없다.
+        // 따라서 이 경로에서는 어떤 시나리오로도 FINISH_NUDGE가 나올 수 없다. 이 가드를
+        // 지워도(플랜 리뷰가 실측) 결과는 바뀌지 않으므로, 이 테스트는 뮤테이션 검사로
+        // "핀"임을 증명할 수 없지만, 오늘의 이벤트 매핑 아래에서 이 가드의 도달불가를
+        // 기록하는 관측점 역할을 한다(스펙 §7 기준 4). 훗날 거부 경로의 이벤트 매핑이
+        // 바뀌어 armed가 참이 될 수 있게 되면 이 테스트가 빨간불이 되어 그 변경을 잡아낸다.
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(
             (0..5)
