@@ -278,8 +278,18 @@ impl<C: LlmClient> Agent<C> {
                 // 만드는 것이 이 blob이고, 초과가 쌍 삭제를 부르면 사용자 과제가
                 // 함께 사라진다(M13 세션 Z1). 트랜스크립트에는 남긴다 —
                 // M13의 디코딩 퇴화 분석이 전부 이 blob을 읽어 만들어졌다
+                // §4-2-2: 최종 상태는 "히스토리에 push 안 함 + 트랜스크립트에만".
+                // B-1은 그 트랜스크립트 레코드의 **내용**을 "(empty)"에서 추론 꼬리로
+                // 바꾼다 — content가 비어도 모델은 예산을 추론에 다 쓴 것이지
+                // 아무것도 안 낸 것이 아니다
                 let t = resp.text();
-                session.record_extra("assistant", if t.is_empty() { "(empty)" } else { t });
+                let blob = if !t.is_empty() {
+                    t
+                } else {
+                    let r = resp.reasoning();
+                    if r.is_empty() { "(empty)" } else { r }
+                };
+                session.record_extra("assistant", blob);
                 // push가 아니라 push_recovery_notice: ① assistant를 건너뛰었으므로
                 // 꼬리가 user다 — 병합해야 role 교대가 유지되는데 교정 담당
                 // merge_adjacent_same_role는 pack()의 쌍 삭제 루프 안에서만 돌고
@@ -738,9 +748,25 @@ mod tests {
                 message: ResponseMessage {
                     role: "assistant".into(),
                     content: Some(text.into()),
+                    reasoning_content: None,
                 },
                 finish_reason: Some(reason.into()),
             }],
+            usage: None,
+        })
+    }
+
+    fn ok_with_reasoning(content: &str, reasoning: &str, reason: &str) -> Result<ChatResponse, LlmError> {
+        Ok(ChatResponse {
+            choices: vec![Choice {
+                message: ResponseMessage {
+                    role: "assistant".into(),
+                    content: Some(content.to_string()),
+                    reasoning_content: Some(reasoning.to_string()),
+                },
+                finish_reason: Some(reason.to_string()),
+            }],
+            usage: None,
         })
     }
 
@@ -1217,6 +1243,32 @@ mod tests {
         assert!(jsonl.contains(&"X".repeat(1500)), "절단 blob이 트랜스크립트에서 사라졌다");
 
         assert!(matches!(out, AgentOutcome::Finished(_)));
+    }
+
+    #[tokio::test]
+    async fn a_length_turn_with_only_reasoning_records_the_reasoning_tail_not_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+
+        // content 공백 + reasoning_content 있음 + finish_reason length — 파일럿 형태
+        let script = Scripted::new(vec![
+            ok_with_reasoning("", "I was thinking about src/lib.rs", "length"),
+            ok(&finish("done")),
+        ]);
+        let config = Config::default();
+        let mut agent = Agent::new(
+            &script,
+            Registry::guided(),
+            ToolCtx::new(dir.path().to_path_buf()),
+            "m".into(),
+            &config,
+        );
+        let mut session = Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let _ = run_quiet(&mut agent, &mut session, "TASK").await.unwrap();
+
+        let jsonl = std::fs::read_to_string(&tpath).unwrap();
+        assert!(jsonl.contains("I was thinking about src/lib.rs"), "추론 꼬리가 안 남았다");
+        assert!(!jsonl.contains("\"(empty)\""), "(empty) 리터럴이 남았다:\n{jsonl}");
     }
 
     #[tokio::test]

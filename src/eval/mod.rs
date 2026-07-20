@@ -426,9 +426,14 @@ mod tests {
     fn ok(text: &str) -> Result<ChatResponse, LlmError> {
         Ok(ChatResponse {
             choices: vec![Choice {
-                message: ResponseMessage { role: "assistant".into(), content: Some(text.into()) },
+                message: ResponseMessage {
+                    role: "assistant".into(),
+                    content: Some(text.into()),
+                    reasoning_content: None,
+                },
                 finish_reason: Some("stop".into()),
             }],
+            usage: None,
         })
     }
 
