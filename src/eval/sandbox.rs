@@ -421,4 +421,51 @@ mod tests {
         assert_eq!(m & 0o777, 0o755, "단일 파일 protected 복원도 실행 비트 보존 (M15 H17)");
         sb.cleanup();
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_protected_single_symlink_restores_target_mode_not_link_mode() {
+        // M15 H5 후속·H17 회귀 테스트. Task 3가 copy_tree의 심링크 bail을 스킵+경고로
+        // 바꾸면서(H5) protected 단일 파일이 심링크인 경우가 처음으로 도달 가능해졌다:
+        // copy_tree가 그 심링크를 건너뛰므로 sync_protected가 처음부터 채워야 한다.
+        // sync_protected의 단일 파일 분기(:59)는 fs::read(&src)로 링크를 따라가
+        // 대상 내용을 읽는데, 메타데이터(:66)가 symlink_metadata였다면 링크 자체의
+        // mode를 복원해 버려 조용한 퍼미션 확대가 된다. metadata(&src)로 대상을
+        // 따라가야 이 줄이 실제로 올바르다.
+        use std::os::unix::fs::PermissionsExt;
+        let fx = fixture_with(&[("real.txt", "TARGET")]);
+        let target_mode: u32 = 0o750; // 대상 파일의 "구별되는" mode
+        std::fs::set_permissions(fx.path().join("real.txt"), std::fs::Permissions::from_mode(target_mode))
+            .unwrap();
+        std::os::unix::fs::symlink(fx.path().join("real.txt"), fx.path().join("link.txt")).unwrap();
+
+        // 심링크 자체의 mode는 OS/umask가 정한다(예: 이 macOS 환경은 0o777이 아니라
+        // umask 반영값인 0o755) — 대상 mode와 우연히 같으면 이 테스트가 판별력을
+        // 잃으므로, 실제 환경에서 서로 다름을 사전조건으로 확인해 둔다
+        let link_own_mode =
+            std::fs::symlink_metadata(fx.path().join("link.txt")).unwrap().permissions().mode() & 0o777;
+        assert_ne!(
+            link_own_mode, target_mode,
+            "테스트 전제 실패: 이 환경의 심링크 자체 mode가 우연히 대상 mode와 같음 — target_mode를 바꿔야 판별력이 생김"
+        );
+
+        // Sandbox::create는 copy_tree를 거치므로(H5) link.txt는 스킵된 채로 생성된다 —
+        // sync_protected가 그 자리를 처음부터 채우는, 배치가 실제로 타는 경로
+        let sb = Sandbox::create(fx.path()).unwrap();
+        assert!(
+            sb.root.join("link.txt").symlink_metadata().is_err(),
+            "생성 시점엔 copy_tree가 심링크를 스킵해야 함 (H5)"
+        );
+
+        sb.sync_protected(fx.path(), &["link.txt".to_string()]).unwrap();
+
+        let restored = sb.root.join("link.txt");
+        assert_eq!(std::fs::read_to_string(&restored).unwrap(), "TARGET", "대상 내용이 복원돼야 함");
+        let mode = std::fs::metadata(&restored).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, target_mode,
+            "심링크 protected 복원은 대상의 실제 mode를 써야 한다 — 링크 자체의 mode가 아니라 (M15 H5·H17)"
+        );
+        sb.cleanup();
+    }
 }
