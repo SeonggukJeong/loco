@@ -210,6 +210,14 @@ impl<C: LlmClient> Agent<C> {
         floored_input_budget(self.context_tokens, self.max_output_tokens as usize)
     }
 
+    /// 이 에이전트가 **생성 시점에 스냅샷한** 컨텍스트 운용점 (M15 H9).
+    /// eval의 `RunRecord`가 실효값을 자증할 때 `Config`가 아니라 여기서 읽어야 한다 —
+    /// `Config` 쪽을 다시 읽으면 두 값이 같은 출처가 되어 오버라이드 순서 오류를
+    /// 탐지하지 못한다(플랜 1R Critical 2)
+    pub fn context_tokens(&self) -> usize {
+        self.context_tokens
+    }
+
     fn schema_tool_names(&self) -> Vec<&'static str> {
         let mut names = self.registry.names();
         names.push("finish");

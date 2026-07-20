@@ -40,6 +40,15 @@ pub struct RunRecord {
     /// json_schema 폴백이 이 런에서 발동했는가 — true면 그 런은 스키마 강제 없이
     /// 돈 것이라 측정값으로 신뢰할 수 없다 (M13 스펙 §3-6-1 기계 검사)
     pub schema_fallback: bool,
+    /// 이 런에 **실제로** 적용된 컨텍스트 운용점 (M15 H9). `EffectiveConfig`는
+    /// 배치당 1회 전역 `config`에서 만들어져 과제별 오버라이드(H1)를 증언하지
+    /// 못한다 — 비교가능성 각주 3의 이 주장이 **스펙 초판("경로에서만 지정한다")과
+    /// 개정 2("effective_config로 자증한다")에서 두 번 거짓이었다**(스펙 §8 각주 3.
+    /// ⚠ M13·M14 산출물의 진술이 아니라 **이 스펙 자신의** 옛 서술이다 — 2R 측정 m2)
+    pub effective_context_tokens: usize,
+    /// 이 런에 실제로 적용된 턴 상한 — 과제별 `max_turns` 오버라이드는
+    /// M15 이전부터 있었으나 리포트에 도달한 적이 없다 (M15 H9)
+    pub effective_max_turns: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -174,6 +183,8 @@ mod tests {
         RunRecord {
             repeat: 0, seed: 0, passed, outcome: RunOutcome::Finished, turns,
             duration_secs: secs, schema_fallback: false,
+            effective_context_tokens: 8192,
+            effective_max_turns: 25,
         }
     }
 
@@ -181,6 +192,8 @@ mod tests {
         RunRecord {
             repeat: 0, seed: 0, passed, outcome, turns: 1,
             duration_secs: 1.0, schema_fallback,
+            effective_context_tokens: 8192,
+            effective_max_turns: 25,
         }
     }
 

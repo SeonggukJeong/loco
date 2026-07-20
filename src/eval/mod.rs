@@ -214,6 +214,16 @@ async fn run_once<C: LlmClient>(
     // 타임아웃 경로는 리터럴 false로 바꿔도 전 스위트 초록불이었다).
     // 실패 방향이 fail-open("폴백 미발동 = 깨끗함")이라 지점 자체를 없앤다.
     let schema_fallback = agent.schema_fallback_fired();
+    // M15 H9: schema_fallback과 **같은 규율** — 분기 이전에 한 번만 읽고 두 judge
+    // 호출에 넘긴다. 각 분기에서 따로 만들면 한쪽만 끊겨도 테스트가 안 죽는다.
+    //
+    // ⚠ **출처가 `cfg`가 아니라 `agent`인 것이 계약이다.** `Agent::new`가
+    // `config.context_tokens`를 **생성 시점에 스냅샷**하므로(`agent/mod.rs:176`),
+    // 여기서 `cfg`를 다시 읽으면 두 값이 같은 출처가 되어 **순서가 어긋나도 리포트가
+    // 눈치채지 못한다** — 1R 실측: T5의 오버라이드를 `Agent::new` 뒤로 옮기면
+    // 에이전트는 8192로 도는데 report.json은 32768을 보고하고 **73개 테스트가 전건
+    // 초록불**이었다. 그러면 이 필드는 없느니만 못하다(§9-A4가 이것을 자증으로 인용한다)
+    let eff = EffectiveRun { context_tokens: agent.context_tokens(), max_turns: cfg.max_turns };
     let outcome = match bounded {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => {
@@ -228,7 +238,7 @@ async fn run_once<C: LlmClient>(
         Err(Stopped::TimedOut) => {
             let rec = judge(
                 &sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat, interrupt, cargo_snapshot,
-                schema_fallback,
+                schema_fallback, eff,
             )
             .await;
             sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
@@ -245,11 +255,19 @@ async fn run_once<C: LlmClient>(
     };
     let rec = judge(
         &sb, t, opts, kind, turns, elapsed, seed, repeat, interrupt, cargo_snapshot,
-        schema_fallback,
+        schema_fallback, eff,
     )
     .await;
     sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
     rec
+}
+
+/// judge에 넘기는 이 런의 실효 조건 (M15 H9). 인자 2개를 따로 늘리면
+/// `#[allow(clippy::too_many_arguments)]`가 더 두꺼워지므로 묶는다
+#[derive(Debug, Clone, Copy)]
+struct EffectiveRun {
+    context_tokens: usize,
+    max_turns: usize,
 }
 
 /// protected 동기화(check보다 먼저 — 스펙 §8) 후 check 종료코드로 판정.
@@ -268,6 +286,7 @@ async fn judge(
     interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
     cargo_snapshot: &integrity::CargoConfigSnapshot,
     schema_fallback: bool,
+    eff: EffectiveRun,
 ) -> anyhow::Result<Option<RunRecord>> {
     sb.sync_protected(&t.fixture, &with_implicit_protected(&t.spec.protected))?;
     cargo_tripwire(&sb.root)?;
@@ -290,6 +309,8 @@ async fn judge(
         repeat, seed, passed, outcome, turns,
         duration_secs: elapsed.as_secs_f64(),
         schema_fallback,
+        effective_context_tokens: eff.context_tokens,
+        effective_max_turns: eff.max_turns,
     }))
 }
 
@@ -715,5 +736,54 @@ protected = ["data"]
         )
         .unwrap();
         assert!(jsonl.contains("timed out after 1s"), "과제별 상한 미배선: {jsonl}");
+    }
+
+    /// M15 H9 — 과제별 운용점이 report.json까지 도달하는가 (**정상 경로**).
+    /// EffectiveConfig는 배치당 1회 전역 config에서 만들어져 이것을 증언하지
+    /// 못한다 — 비교가능성 각주 3이 M13·M14에서 두 번 거짓이었던 지점이다
+    #[tokio::test]
+    async fn per_task_context_tokens_reach_the_report_on_the_normal_path() {
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "big",
+            "prompt = \"p\"\ncheck = \"true\"\ncontext_tokens = 32768\nmax_turns = 7\nprotected = [\"keep.txt\"]\n",
+            &[("keep.txt", "x")],
+        );
+        let script = Scripted::new(vec![ok(&finish("done"))]);
+        let o = opts(tasks.path().to_path_buf());
+        let run = run_eval(&script, &Config::default(), "m", &o, proj.path()).await.unwrap();
+
+        let r = &run.report.tasks[0].runs[0];
+        assert_eq!(r.effective_context_tokens, 32768);
+        assert_eq!(r.effective_max_turns, 7);
+        // 전역 스냅샷은 여전히 코드 기본값 — 둘이 다르다는 것이 H9의 존재 이유다
+        assert_eq!(run.report.effective_config.context_tokens, 8192);
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&run.report_path).unwrap()).unwrap();
+        assert_eq!(json["tasks"][0]["runs"][0]["effective_context_tokens"], 32768);
+    }
+
+    /// 짝 테스트 — **타임아웃 경로**의 judge 호출 지점(mod.rs:221)도 같은 값을
+    /// 실어야 한다. 이 테스트가 없으면 그 경로를 리터럴 8192로 바꿔도 전 스위트가
+    /// 초록불이다(mod.rs:203-207이 경고하는 실제 전례)
+    #[tokio::test]
+    async fn per_task_context_tokens_reach_the_report_on_the_timeout_path() {
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "slow",
+            "prompt = \"p\"\ncheck = \"true\"\ncontext_tokens = 32768\ntimeout_secs = 1\nprotected = [\"keep.txt\"]\n",
+            &[("keep.txt", "x")],
+        );
+        let mut o = opts(tasks.path().to_path_buf());
+        o.timeout_scale = 0.05; // 50ms
+        let run = run_eval(&Sleepy, &Config::default(), "m", &o, proj.path()).await.unwrap();
+
+        let r = &run.report.tasks[0].runs[0];
+        assert_eq!(r.outcome, RunOutcome::Timeout);
+        assert_eq!(r.effective_context_tokens, 32768, "타임아웃 경로도 실효값을 실어야 한다 (H9)");
     }
 }
