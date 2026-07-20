@@ -80,6 +80,10 @@ Do not call finish with empty args again.";
 /// 가설의 개입값, 0단계 확정). 스트릭이 끊기면 즉시 원복, 래치 없음
 const SR_PERTURB_TEMPERATURE: f32 = 0.7;
 
+/// length 턴 회복 문구 (M9~M13에서 문자열 동일 — 상수로 승격해 중복 제거가 참조한다)
+pub(crate) const LENGTH_RECOVERY: &str = "Your previous response was cut off by the output token limit. \
+                                          Respond again with exactly one, much shorter JSON turn.";
+
 /// §4-2(c) 하한 — max_output_tokens가 context_tokens를 넘겨도 예산이 0이 되지
 /// 않게 한다. 0이면 pack()이 시스템 프롬프트와 마지막 메시지만 남긴다
 const MIN_INPUT_BUDGET: usize = 512;
@@ -270,12 +274,18 @@ impl<C: LlmClient> Agent<C> {
             // 같은 지점에서 다시 잘리므로 "더 짧게"를 지시. 턴을 소모해 max_turns가
             // length 반복의 상한이 되게 한다 (스펙 §3 사각지대)
             if resp.finish_reason() == Some("length") {
+                // §4-2(b): 절단 blob을 **히스토리에 push하지 않는다**. 예산 초과를
+                // 만드는 것이 이 blob이고, 초과가 쌍 삭제를 부르면 사용자 과제가
+                // 함께 사라진다(M13 세션 Z1). 트랜스크립트에는 남긴다 —
+                // M13의 디코딩 퇴화 분석이 전부 이 blob을 읽어 만들어졌다
                 let t = resp.text();
-                session.push(ChatMessage::assistant(if t.is_empty() { "(empty)" } else { t }));
-                session.push(ChatMessage::user(
-                    "Your previous response was cut off by the output token limit. \
-                     Respond again with exactly one, much shorter JSON turn.",
-                ));
+                session.record_extra("assistant", if t.is_empty() { "(empty)" } else { t });
+                // push가 아니라 push_recovery_notice: ① assistant를 건너뛰었으므로
+                // 꼬리가 user다 — 병합해야 role 교대가 유지되는데 교정 담당
+                // merge_adjacent_same_role는 pack()의 쌍 삭제 루프 안에서만 돌고
+                // (b)의 목적이 바로 pack 미발동이라 영영 교정되지 않는다
+                // ② 연속 주입 중복은 pack()이 회수할 수 없는 자리에 쌓인다
+                session.push_recovery_notice(LENGTH_RECOVERY);
                 on_event(AgentEvent::Notice("(응답이 잘림 — 더 짧게 다시 요청)".to_string()));
                 let _ = status.on_turn(&status_note::TurnCtx {
                     turn: turns + 1,
@@ -1143,6 +1153,70 @@ mod tests {
         let mut session = new_session(&agent);
         let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::MaxTurns), "max_turns가 length 반복의 상한 (스펙 §3)");
+    }
+
+    #[tokio::test]
+    async fn length_turns_keep_the_task_message_and_leave_the_blob_only_in_the_transcript() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+
+        // ⚠ blob 크기가 이 테스트의 구별력을 정한다. estimate_tokens = len/4 이므로
+        // 400자는 100토큰이고 5회 = 500토큰이라 예산 1843을 못 넘겨 **쌍 삭제가
+        // 발동하지 않는다** — 수선을 되돌려도 단언 ①이 통과한다(플랜 리뷰 실측:
+        // 400 구별불가 / 1500부터 구별). 1500자 이상을 쓸 것
+        let mut v = Vec::new();
+        for _ in 0..5 {
+            // LlmError는 Clone을 파생하지 않는다 — vec![x; 5]가 아니라 루프로 push
+            v.push(ok_with_reason(&"X".repeat(1500), "length"));
+        }
+        v.push(ok(&finish("done")));
+        let script = Scripted::new(v);
+
+        let config = Config {
+            context_tokens: 4096,
+            max_output_tokens: 2048, // 예산 1843
+            ..Default::default()
+        };
+        let mut agent = Agent::new(
+            &script,
+            Registry::guided(),
+            ToolCtx::new(dir.path().to_path_buf()),
+            "m".into(),
+            &config,
+        );
+        let mut session = Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        // run()이 요청을 스스로 push한다 — 과제를 미리 push하지 말 것
+        let out = run_quiet(&mut agent, &mut session, "TASK: 한국어 과제 원문").await.unwrap();
+
+        // T1이 input_budget 공식을 고치는 태스크다. 하한이 예산을 끌어올리면 이 blob이
+        // 조용히 구별력을 잃는다 — 요란하게 깨지도록 예산을 직접 단언한다
+        // (임계 ~775자, 1500은 약 1.9배 여유 — 플랜 리뷰 실측)
+        // `input_budget()`은 비공개지만 `mod tests`가 `agent`의 자식 모듈이라 보인다 —
+        // **이 테스트는 반드시 `agent/mod.rs`의 `mod tests` 안에 있어야 한다**
+        assert_eq!(
+            agent.input_budget(),
+            1843,
+            "T1이 예산 공식을 바꿨다면 blob 크기를 재측정할 것(임계 ~775자)"
+        );
+
+        // ① 과제 생존
+        let hist = session.messages().iter().map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n");
+        assert!(hist.contains("TASK: 한국어 과제 원문"), "과제가 삭제됐다:\n{hist}");
+
+        // ④ **연속** length가 5회여도 회복 문구는 1벌
+        assert_eq!(hist.matches(LENGTH_RECOVERY).count(), 1, "회복 문구 중복:\n{hist}");
+
+        // ③ role 교대 무손상
+        for w in session.messages().windows(2) {
+            assert_ne!(w[0].role, w[1].role, "role 연속: {:?}", session.messages());
+        }
+
+        // ② 절단 blob은 트랜스크립트에 남는다 (실 파일이어야 한다 —
+        //    Transcript::disabled()로는 이 단언이 공허하게 통과한다)
+        let jsonl = std::fs::read_to_string(&tpath).unwrap();
+        assert!(jsonl.contains(&"X".repeat(1500)), "절단 blob이 트랜스크립트에서 사라졌다");
+
+        assert!(matches!(out, AgentOutcome::Finished(_)));
     }
 
     #[tokio::test]
