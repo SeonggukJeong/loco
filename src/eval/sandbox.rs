@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 
 /// 프로세스 내 샌드박스 일련번호 — pid와 조합해 고유 이름을 만든다
 static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -60,7 +60,10 @@ impl Sandbox {
                 std::fs::write(&dst, bytes)?;
                 // M15 H17 — **세 번째 read+write 사이트**. tasks-real의 protected는
                 // 단일 파일(`tests/<x>.rs`)이라 배치의 모든 런이 여기를 탄다
-                let meta = std::fs::symlink_metadata(&src)?;
+                // M15 H5 후속: 링크를 따라가야 한다 — 위 fs::read가 이미 링크를
+                // 따라가므로(대상 내용을 읽음) 메타데이터도 같은 대상 기준이어야
+                // 링크 자체의 mode(예: 0o777)가 새 나가지 않는다
+                let meta = std::fs::metadata(&src)?;
                 restore_mode(&meta, &dst)?;
             }
         }
@@ -80,7 +83,12 @@ fn copy_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
         let to = dst.join(entry.file_name());
         let meta = std::fs::symlink_metadata(&from)?;
         if meta.is_symlink() {
-            bail!("fixture에 심링크가 있음 (지원 안 함): {}", from.display());
+            // M15 H5: 스킵 + 경고. 대상 레포의 심링크는 전부 문서·패키징용이고
+            // (ripgrep HomebrewFormula, just www/man/{en,zh} — 후자 둘은 dangling)
+            // 탈출 위험은 confine(path.rs:43-51)이 canonicalize 후 루트 검사로 이미
+            // 닫는다. 스킵 항목은 조달 로그(scripts/procure_real.sh)가 함께 남긴다
+            eprintln!("(심링크 건너뜀: {})", from.display());
+            continue;
         }
         if meta.is_dir() {
             std::fs::create_dir_all(&to)?;
@@ -128,7 +136,10 @@ pub(crate) fn overlay_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
         let to = dst.join(entry.file_name());
         let meta = std::fs::symlink_metadata(&from)?;
         if meta.is_symlink() {
-            bail!("오버레이 원본에 심링크가 있음 (지원 안 함): {}", from.display());
+            // copy_tree와 같은 정책 (M15 H5). 소비자 둘 — solution/ 오버레이,
+            // sync_protected 디렉터리 분기 — 이 전부가 여기를 탄다
+            eprintln!("(심링크 건너뜀: {})", from.display());
+            continue;
         }
         if meta.is_dir() {
             std::fs::create_dir_all(&to)?;
@@ -189,10 +200,34 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn symlink_in_fixture_is_an_error() {
+    fn symlinks_are_skipped_not_an_error() {
+        // M15 H5: 정책 = 스킵 + 경고. ripgrep의 HomebrewFormula(정상 심링크)와
+        // just의 www/man/{en,zh}(dangling) 둘 다 이 경로를 탄다. 대상은 전부
+        // 문서·패키징용이라 판정에 영향이 없고, 탈출 위험은 confine이 이미 닫는다
         let fx = fixture_with(&[("real.txt", "x")]);
         std::os::unix::fs::symlink(fx.path().join("real.txt"), fx.path().join("link.txt")).unwrap();
-        assert!(Sandbox::create(fx.path()).unwrap_err().to_string().contains("심링크"));
+        // dangling — 대상이 없어도 bail이 아니라 스킵이어야 한다
+        std::os::unix::fs::symlink(fx.path().join("nope.txt"), fx.path().join("dangling")).unwrap();
+
+        let sb = Sandbox::create(fx.path()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(sb.root.join("real.txt")).unwrap(), "x", "실파일은 복사");
+        assert!(sb.root.join("link.txt").symlink_metadata().is_err(), "심링크는 스킵");
+        assert!(sb.root.join("dangling").symlink_metadata().is_err(), "dangling도 스킵");
+        sb.cleanup();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn overlay_tree_skips_symlinks() {
+        // 소비자 둘(solution/ 오버레이·sync_protected 디렉터리 분기)이 이 함수를 탄다
+        // — copy_tree만 고치면 solution/ 오버레이가 여기서 죽는다
+        let src = fixture_with(&[("a.rs", "new")]);
+        std::os::unix::fs::symlink(src.path().join("a.rs"), src.path().join("alias.rs")).unwrap();
+        let dst = fixture_with(&[("a.rs", "stale")]);
+        overlay_tree(src.path(), dst.path()).unwrap();
+        assert_eq!(std::fs::read_to_string(dst.path().join("a.rs")).unwrap(), "new");
+        assert!(dst.path().join("alias.rs").symlink_metadata().is_err(), "심링크는 스킵");
     }
 
     #[cfg(unix)]
