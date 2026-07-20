@@ -84,13 +84,20 @@ const SR_PERTURB_TEMPERATURE: f32 = 0.7;
 /// 않게 한다. 0이면 pack()이 시스템 프롬프트와 마지막 메시지만 남긴다
 const MIN_INPUT_BUDGET: usize = 512;
 
+/// 입력 예산 = (context − max_output) × 0.9, 하한 MIN_INPUT_BUDGET 적용.
+/// input_budget()과 cramped_budget_warning()이 **같은 값**을 봐야 한다 —
+/// 공식을 두 벌로 두면 경고가 하한 적용 전 값을 출력한다
+fn floored_input_budget(context_tokens: usize, max_output_tokens: usize) -> usize {
+    (context_tokens.saturating_sub(max_output_tokens) * 9 / 10).max(MIN_INPUT_BUDGET)
+}
+
 /// 출력 예산이 컨텍스트의 절반 이상을 먹으면 입력 예산이 좁아진다는 경고.
 /// 사용자 대면이므로 한국어. None이면 경고 없음
 fn cramped_budget_warning(context_tokens: usize, max_output_tokens: usize) -> Option<String> {
     if max_output_tokens * 2 < context_tokens {
         return None;
     }
-    let budget = context_tokens.saturating_sub(max_output_tokens) * 9 / 10;
+    let budget = floored_input_budget(context_tokens, max_output_tokens);
     Some(format!(
         "경고: max_output_tokens={max_output_tokens}가 context_tokens={context_tokens}의 절반 이상입니다 \
          — 입력 예산이 {budget} 토큰으로 좁아져 오래된 대화가 일찍 잘립니다. \
@@ -179,8 +186,7 @@ impl<C: LlmClient> Agent<C> {
     /// max_output_tokens >= context_tokens인 병리적 config에서도 예산이 0으로
     /// 붕괴해 pack()이 히스토리를 지워버리는 것을 막는다
     fn input_budget(&self) -> usize {
-        (self.context_tokens.saturating_sub(self.max_output_tokens as usize) * 9 / 10)
-            .max(MIN_INPUT_BUDGET)
+        floored_input_budget(self.context_tokens, self.max_output_tokens as usize)
     }
 
     fn schema_tool_names(&self) -> Vec<&'static str> {
@@ -2346,5 +2352,21 @@ mod tests {
         // 파일럿 형태: 4096/8192 → 예산 3686. 하한에는 안 걸리지만 좁다
         assert!(cramped_budget_warning(8192, 4096).is_some(), "파일럿 형태는 경고 대상");
         assert!(cramped_budget_warning(8192, 2048).is_none(), "기본값은 경고 없음");
+    }
+
+    #[test]
+    fn cramped_budget_warning_reports_floored_value_not_pre_floor() {
+        // M14 B-2c: 하한이 발동하는 병리적 config(context=4096, output=8192)에서도
+        // 경고는 실제 예산(512)을 보고해야 한다. 하한 적용 전 값(0)을 출력하면
+        // 사용자가 도구가 부서졌다고 착각한다
+        let warning = cramped_budget_warning(4096, 8192).expect("경고가 발동해야 함");
+        assert!(
+            warning.contains("512 토큰"),
+            "경고는 floored_input_budget()의 결과(512)를 보고: {warning}"
+        );
+        assert!(
+            !warning.contains("0 토큰"),
+            "경고에 하한 미적용 값(0)이 나오면 안 된다: {warning}"
+        );
     }
 }
