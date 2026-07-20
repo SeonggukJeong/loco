@@ -165,8 +165,14 @@ impl StatusNote {
             quals.push("via pipe");
         }
         // 조건은 last_test_summary.is_none()이며 "규칙 5에 도달했다"가 아니다 —
-        // 규칙 5는 요약이 있는 채로도 도달한다(교차검증 실패, 파이프 폴백)
-        if self.last_test_summary.is_none() {
+        // 규칙 5는 요약이 있는 채로도 도달한다(교차검증 실패, 파이프 폴백).
+        // M14 A-2 리뷰 수정: last_cmd_exit.is_some()도 함께 요구한다 — 명령을
+        // 한 번도 실행하지 않은 상태(둘 다 None)에서도 last_test_summary.is_none()은
+        // 참이므로, 조건을 이대로 두면 "명령이 실행됐고, exit 코드가 없었고, 그
+        // 출력에 요약이 없었다"는 세 가지를 아무 일도 일어나지 않은 상태에 대해
+        // 주장하게 된다 — 이 마일스톤의 논지(하네스가 모르는 것을 단언하지 않는다)에
+        // 정면으로 위배된다. 한정자는 명령이 실제로 실행되어 결과가 있을 때만 붙는다
+        if self.last_cmd_exit.is_some() && self.last_test_summary.is_none() {
             quals.push("no test summary in output");
         }
         let suffix = if quals.is_empty() { String::new() } else { format!(" ({})", quals.join(", ")) };
@@ -248,6 +254,17 @@ mod tests {
     }
 
     #[test]
+    fn no_summary_qualifier_never_appears_when_no_command_has_ever_run() {
+        // M14 A-2 리뷰 수정을 직접 핀: record_command_result를 한 번도 호출하지
+        // 않은 상태(last_cmd_exit도 None)에서는 "no test summary" 한정자가
+        // 붙어서는 안 된다 — last_cmd_exit.is_some() 결합 조건을 되돌리면
+        // (last_test_summary.is_none()만으로 판정하면) 이 단언이 깨진다
+        let mut s = StatusNote::new();
+        let note = s.on_turn(&ctx(3, false, true, false)).expect("케이던스 3 발동");
+        assert!(!note.contains("no test summary"), "명령을 실행한 적이 없는데 한정자가 렌더됨: {note}");
+    }
+
+    #[test]
     fn mutation_turn_fires_immediately_and_cadence_stops_after_mutation() {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "src/a.rs"}));
@@ -264,13 +281,14 @@ mod tests {
     #[test]
     fn zero_mutation_render_is_single_line() {
         // 수선 B 이후에도 여전히 한 줄이다 — 검증 줄이 파이프로 끼어들 뿐.
-        // M14 A-2: 명령을 한 번도 실행하지 않은 상태도 last_test_summary.is_none()이므로
-        // "no test summary in output" 한정자가 붙는다(참 — 실제로 요약이 없다)
+        // M14 A-2 리뷰 수정: 명령을 한 번도 실행하지 않은 상태는 last_cmd_exit도
+        // None이므로 "no test summary in output" 한정자가 붙지 않는다 —
+        // 실행되지 않은 명령의 출력에 대해 아무것도 주장하지 않는다
         let mut s = StatusNote::new();
         let note = s.on_turn(&ctx(5, false, true, false)).unwrap();
         assert_eq!(
             note,
-            "[status] files edited: none yet | verification: last command gave no exit code (no test summary in output) | turns: 5 of 25 used"
+            "[status] files edited: none yet | verification: last command gave no exit code | turns: 5 of 25 used"
         );
         assert_eq!(note.lines().count(), 1, "여전히 한 줄: {note}");
     }
@@ -357,12 +375,21 @@ mod tests {
     }
 
     #[test]
-    fn non_cargo_command_keeps_the_legacy_line() {
+    fn non_cargo_command_renders_exit_with_no_summary_qualifier() {
+        // M14 A-2 리뷰 수정: 이름·단언 둘 다 갱신 — 논카고 명령은 실제로
+        // 실행됐으므로(exit 0) last_cmd_exit.is_some()이 참이라 한정자가
+        // 여전히 붙는다("legacy line"이 아니다). 느슨한 contains는 이 회귀를
+        // 못 잡으므로 검증 줄 전문을 assert_eq로 고정한다
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
         s.record_command_result(Some("0".to_string()), None, false);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
-        assert!(note.contains("verification: last command exited 0"), "{note}");
+        let verification = note.lines().find(|l| l.contains("verification:")).unwrap();
+        assert_eq!(
+            verification.trim(),
+            "verification: last command exited 0 (no test summary in output)",
+            "{note}"
+        );
     }
 
     #[test]
@@ -530,11 +557,16 @@ mod tests {
                             // 핀)상 s가 Some이어도 e가 None이면 실제 last_test_summary는
                             // None이 된다. 그 조합은 실배선에서 발생하지 않지만(cmd_summary는
                             // cmd_exit가 Some일 때만 파싱) 이 행렬은 규칙이 아니라 입력
-                            // 차원을 전수 열거하므로 등장한다 — 단언은 "s가 None"이 아니라
-                            // "결과적으로 요약이 없다"(s.is_none() || e.is_none())를 검사해야
-                            // 진짜 계약을 반영한다
+                            // 차원을 전수 열거하므로 등장한다.
+                            // M14 A-2 리뷰 수정: 한정자는 이제 last_cmd_exit.is_some()도
+                            // 요구하므로 도달 가능 집합이 좁아진다 — "요약이 없다"만으로는
+                            // 부족하고 "명령이 실제로 실행됐다"(e.is_some())까지 함께 참이어야
+                            // 한다. 계약을 반영해 단언을 강화한다: 요약이 실제로 없고
+                            // (s.is_none() || e.is_none() — 위 조합 규칙과 동일) *그리고*
+                            // 명령이 실행됐을 때만(e.is_some()) 문구가 등장할 수 있다
                             if note.contains("no test summary") {
                                 assert!(s.is_none() || e.is_none(), "요약이 있는데 없다고 렌더: {note}");
+                                assert!(e.is_some(), "명령이 실행되지 않았는데 한정자가 렌더됨: {note}");
                             }
                         }
                     }

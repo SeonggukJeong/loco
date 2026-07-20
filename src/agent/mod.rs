@@ -2395,11 +2395,12 @@ mod tests {
         // remove_status_note가 최신만 유지 — 턴 3(케이던스)의 노트가 턴 5에서
         // 교체돼 히스토리에는 여전히 1개만 남는다 (M13 조밀화로 늘지 않음)
         assert_eq!(with_status.len(), 1, "턴 5에서 정확히 1회");
-        // M14 A-2: run_command를 한 번도 안 썼으므로 last_test_summary.is_none() —
-        // "no test summary in output" 한정자가 붙는다(참)
+        // M14 A-2 리뷰 수정: run_command를 한 번도 안 썼으므로 last_cmd_exit도
+        // None — "no test summary in output" 한정자는 명령이 실제로 실행된
+        // 경우에만 붙으므로 여기서는 렌더되지 않는다
         assert!(
             with_status[0].content.contains(
-                "[status] files edited: none yet | verification: last command gave no exit code (no test summary in output) | turns: 5 of 25 used"
+                "[status] files edited: none yet | verification: last command gave no exit code | turns: 5 of 25 used"
             ),
             "{}",
             with_status[0].content
