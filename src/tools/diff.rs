@@ -20,10 +20,11 @@ pub fn render_diff_for_model(old: &str, new: &str) -> String {
     for hunk in diff.unified_diff().context_radius(1).iter_hunks() {
         hunks += 1;
         // 헝크 헤더를 보존한다. 없으면 멀리 떨어진 두 편집이 **연속으로 보이고**,
-        // 이 프로젝트는 모델이 결과 본문을 다음 `search`에 복사하는 습성을
-        // 문서화해 뒀다(`edit_file.rs:328` 주석) — 경계를 걸친 search는 0-match가
-        // 되어 S/R 루프(M9·M10·M12가 장치를 세 겹 쌓은 그 실패)의 새 입구가 된다.
-        // `@@` 줄은 본문이 아니라 헤더라 "줄번호는 헤더에만" 규율과 정합한다
+        // 모델이 도구 결과 본문을 다음 `search` 인자에 그대로 복사하는 습성이
+        // 있다는 점은 이 프로젝트가 반복적으로 확인해 온 사실이다 — 경계를 걸친
+        // search는 0-match가 되어 S/R 루프(M9·M10·M12가 장치를 세 겹 쌓은 그 실패)의
+        // 새 입구가 된다. `@@` 줄은 본문이 아니라 헤더라 "줄번호는 헤더에만" 규율과
+        // 정합한다
         lines.push((false, hunk.header().to_string()));
         for change in hunk.iter_changes() {
             let v = change.value();
@@ -177,5 +178,49 @@ mod tests {
     fn an_added_line_starting_with_pluses_is_still_counted() {
         let d = render_diff_for_model("keep\n", "keep\n++x\n");
         assert!(d.starts_with("-0 lines, +1 lines"), "추가가 안 세어졌다:\n{d}");
+        assert!(d.contains("++x"), "추가된 줄이 본문에서 사라졌다:\n{d}");
+    }
+
+    /// A-3 리뷰 블로커 핀: 삭제된 테스트
+    /// `success_reports_post_edit_context_with_line_numbers_in_header_only`가 지키던
+    /// 두 성질 중 "줄번호는 헤더에만" — CLAUDE.md·M5 스펙 §6.1·본 파일 상단 주석이
+    /// 근거로 삼는 그 규칙 — 을 새 렌더러에 다시 고정한다. `@@` 헝크 헤더와 절단
+    /// 표식을 뺀 모든 본문 줄은 `-`/`+`/공백 중 정확히 하나로 시작해야 한다;
+    /// 숫자 접두(줄번호)가 붙으면 모델이 그 문자열을 다음 `search`에 그대로
+    /// 복사해 0-match S/R 루프의 새 입구가 된다.
+    fn assert_body_lines_have_no_stray_prefix(d: &str) {
+        for line in d.lines().skip(1) {
+            // 1행은 요약 헤더(`-N lines, +M lines[...]`)라 본문이 아니다
+            if line.starts_with("@@") || line == "[diff truncated]" {
+                continue;
+            }
+            let ok = line.starts_with('-') || line.starts_with('+') || line.starts_with(' ');
+            assert!(ok, "본문 줄이 -/+/공백 외 접두를 가진다 (줄번호 유출 의심): {line:?}\n전체 출력:\n{d}");
+        }
+    }
+
+    #[test]
+    fn model_diff_body_lines_never_carry_a_line_number_prefix_non_truncated() {
+        let d = render_diff_for_model(
+            "pub const A: u8 = 1;\npub const B: u8 = 2;\npub const C: u8 = 3;\n",
+            "pub const A: u8 = 1;\n",
+        );
+        assert!(
+            d.lines().count() <= MODEL_DIFF_MAX_LINES + 1,
+            "이 테스트는 비절단 경로를 검증해야 한다:\n{d}"
+        );
+        assert_body_lines_have_no_stray_prefix(&d);
+    }
+
+    #[test]
+    fn model_diff_body_lines_never_carry_a_line_number_prefix_truncated() {
+        let old: String = (0..120).map(|i| format!("line {i}\n")).collect();
+        let new: String = (0..120)
+            .filter(|i| !(10..26).contains(i) && !(80..96).contains(i))
+            .map(|i| format!("line {i}\n"))
+            .collect();
+        let d = render_diff_for_model(&old, &new);
+        assert!(d.ends_with("[diff truncated]"), "이 테스트는 절단 경로를 검증해야 한다:\n{d}");
+        assert_body_lines_have_no_stray_prefix(&d);
     }
 }

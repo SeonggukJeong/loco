@@ -139,7 +139,26 @@ mod tests {
         let out2 = WriteFile
             .run(&serde_json::json!({"path": "fresh.txt", "content": "hello\n"}), &ctx(&dir))
             .unwrap();
-        assert!(!out2.contains("-0 lines"), "신규 파일은 diff 헤더 없이 요약 줄만 유지한다: {out2}");
+        assert_eq!(
+            out2, "Wrote fresh.txt (1 lines)",
+            "신규 파일은 diff 없이 요약 줄만 유지한다 (Task 10이 exp_metrics.py에 그대로 반영할 포맷)"
+        );
+    }
+
+    #[test]
+    fn run_result_for_non_utf8_overwrite_is_the_plain_summary_with_no_diff() {
+        // existing_text()는 신규 파일과 비UTF-8 기존 파일 모두 None을 준다 —
+        // 신규는 위 테스트가 덮고, 여기는 스펙 §3-5-2가 "의도적"이라 명시한
+        // 비UTF-8 분기를 덮는다 (M14 A-3 리뷰: run()에 이 분기 커버리지가 없었음)
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("bin.dat"), [0xff, 0xfe, 0x00, 0xff]).unwrap();
+        let out = WriteFile
+            .run(&serde_json::json!({"path": "bin.dat", "content": "hello\n"}), &ctx(&dir))
+            .unwrap();
+        assert_eq!(
+            out, "Wrote bin.dat (1 lines)",
+            "비UTF-8 덮어쓰기도 diff 없이 요약 줄만 유지한다: {out}"
+        );
     }
 
     #[test]
