@@ -117,6 +117,7 @@
 | `scripts/exp_metrics.py` | 토큰 회계 컬럼·항해/수선 지표·풀링·세션 모드 | T14, T15, T16 |
 | `scripts/procure_real.sh` | **신설** — `git archive` 조달 | T17 |
 | `scripts/leak_audit.py` | **신설** — §3-4-3 지목 판정 추출기 | T18 |
+| `scripts/link_issues.py` | **신설** — 이슈↔커밋 연결 (NUL 레코드 파서) | T20 |
 | `tasks-real/` | **신설** — 실레포 과제 트리 | T21 |
 | `CLAUDE.md`·`docs/experiments/PROTOCOL.md` | `--verify` 성질 변화, 4①·4③·항목 5 | T19 |
 
@@ -3950,32 +3951,81 @@ done
 
 ⚠⚠ **`%b`는 다중행이다.** `Fixes #N`이 본문 줄에 있으면 그 줄에 SHA가 없고, `cut -f1`이 본문 줄을 통째로 SHA로 넘긴다 — 그러면 `git show <그 문자열>`이 `fatal: ambiguous argument`로 죽고 Step 3b가 **조용히 탈락**시킨다(5R Critical 1 실측: ripgrep 269행 중 쓰레기 212). **그 결과가 go/no-go를 뒤집는다** — 후보 11건·편중 91%(둘 다 게이트 실패)로 나오는데 정정하면 37건·57%(둘 다 통과)다.
 
-**레코드를 NUL로 구분하고 레코드 단위로 처리한다:**
+**레코드를 NUL로 구분하고, 파싱은 별도 스크립트 파일로 한다:**
+
+⚠ **stdin으로 넘기지 말 것.** `git log … | python3 - out <<'EOF'` 형태는 파이프가 heredoc을 이겨 **python이 git 출력을 프로그램으로 읽는다**(컨트롤러 실측: `SyntaxError: source code cannot contain null bytes`). 레코드를 **파일로** 떨구고 스크립트도 **파일로** 둔다.
+
+`scripts/link_issues.py` (신규):
+
+```python
+#!/usr/bin/env python3
+"""git log 레코드(NUL 구분)에서 이슈↔커밋 연결을 뽑는다 (M15 T20 Step 3a).
+
+usage: link_issues.py <records-file> <out.tsv>
+
+⚠ **NUL 구분이 계약이다.** `%b`는 다중행이라 줄 단위로 읽으면 `Fixes #N`이 든 본문
+줄에 SHA가 없고, `cut -f1`이 그 줄을 통째로 SHA로 넘긴다 — 5R 실측으로 ripgrep
+269행 중 212행이 쓰레기였고 후보 수가 37→11로, 편중이 57%→91%로 뒤집혔다.
+⚠ **stdin을 쓰지 않는다.** heredoc과 파이프를 함께 쓰면 파이프가 이겨서 python이
+git 출력을 프로그램으로 읽는다(컨트롤러 실측: `SyntaxError: source code cannot
+contain null bytes`). 레코드는 반드시 **파일로** 넘긴다.
+"""
+import re, sys
+
+pat = re.compile(r"\b(clos(?:e|es|ed)|fix(?:|es|ed)|resolv(?:e|es|ed)) +#(\d+)", re.I)
+recs = open(sys.argv[1], "rb").read().split(b"\x00")
+n = 0
+with open(sys.argv[2], "w") as out:
+    for rec in recs:
+        if not rec.strip():
+            continue
+        parts = rec.decode("utf-8", "replace").lstrip("\n").split("\x1f")
+        if len(parts) < 3:
+            continue
+        sha, subj, body = parts[0].strip(), parts[1], parts[2]
+        if len(sha) != 40 or not re.fullmatch(r"[0-9a-f]{40}", sha):
+            continue            # SHA가 아닌 레코드는 버린다 (조용한 오염 차단)
+        issues = sorted({m.group(2) for m in pat.finditer(subj + "\n" + body)}, key=int)
+        if issues:
+            out.write(f"{sha}\t{','.join(issues)}\t{subj}\n")
+            n += 1
+print(n)
+```
 
 ```bash
 for R in zoxide fd ripgrep just; do
   git -C ~/loco-real-repos/$R.git log --all --format='%H%x1f%s%x1f%b%x00' \
-    | python3 - "$SURVEY/$R-fixcommits.tsv" <<'EOF'
-import re, sys
-out = open(sys.argv[1], "w")
-pat = re.compile(r"(fix|close|resolve)[sd]? +#(\d+)", re.I)
-n = 0
-for rec in sys.stdin.buffer.read().split(b"\x00"):
-    if not rec.strip():
-        continue
-    parts = rec.decode("utf-8", "replace").lstrip("\n").split("\x1f")
-    if len(parts) < 3:
-        continue
-    sha, subj, body = parts[0].strip(), parts[1], parts[2]
-    if len(sha) != 40:
-        continue                      # SHA가 아닌 레코드는 버린다(조용한 오염 방지)
-    issues = sorted({m.group(2) for m in pat.finditer(subj + "\n" + body)})
-    if issues:
-        out.write(f"{sha}\t{','.join(issues)}\t{subj}\n"); n += 1
-print(f"{sys.argv[1]}: {n}", file=sys.stderr)
-EOF
+    > "$SURVEY/$R-records.bin"
+  n=$(python3 scripts/link_issues.py "$SURVEY/$R-records.bin" "$SURVEY/$R-fixcommits.tsv")
+  echo "$R 이슈 언급 커밋: $n"
 done
 ```
+
+⚠⚠ **정규식이 계약이다.** 개정 6까지 쓰던 `(fix|close|resolve)[sd]?`는 **`Fixes`·`Fixed`를 못 문다**(`fix`+`es`를 만들 수 없다) — GitHub 키워드 중 가장 흔한 두 형태다. 컨트롤러 실측 대조:
+
+| 문자열 | 개정 6 | 정정 |
+|---|---|---|
+| `Fixes #1` | **누락** | 매치 |
+| `Fixed #2` | **누락** | 매치 |
+| `Fix #3` · `Closes` · `Closed` · `Close` · `Resolves` · `Resolved` · `Resolve` | 매치 | 매치 |
+| `prefixes #10` | 누락 | 누락 (`\b`가 막는다) |
+
+⚠ **따라서 5R 리뷰가 낸 후보 수(합계 37건)는 이 깨진 정규식으로 센 하한이다** — T20의 공식 실사는 정정된 스크립트로 다시 세고, 그 값이 §6-4-1의 기록이다.
+
+**검증**(스크립트를 넣은 뒤 반드시 돌릴 것 — 다중행 body가 핵심이다):
+
+```bash
+cd $(mktemp -d) && git init -q . && git config user.email t@t && git config user.name t
+echo a > a.txt && git add -A && git commit -q -m "first line
+
+Some explanation here.
+Fixes #42 and also relates to #99"
+echo c > c.txt && git add -A && git commit -q -m "subject Closes #7"
+git log --all --format='%H%x1f%s%x1f%b%x00' > /tmp/m15-recs.bin
+python3 <loco>/scripts/link_issues.py /tmp/m15-recs.bin /tmp/m15-out.tsv
+cat /tmp/m15-out.tsv
+```
+Expected: **2행**, 각 1열이 40자 SHA, 다중행 body 커밋이 `42`로 잡히고 **`99`는 안 잡힌다**(`relates to`는 닫기 키워드가 아니다).
 
 ⚠ **이제 이슈 번호 목록이 2열에 있다** — 규약 1(여러 이슈 동반 수정)은 `%s %b`를 다시 grep하지 말고 **이 열의 개수**로 판정한다(5R Minor 4: 옛 방식은 PR 참조 `#1234`까지 이슈로 세어 오탈락시켰다).
 
@@ -4836,7 +4886,7 @@ git checkout main && git merge --no-ff m15/real-repo-track
 
 **4. 개정 6이 새로 만들 수 있는 것 (6R이 볼 곳)**
 
-- **Step 3a의 파이썬 heredoc이 `git log` 파이프 안에서 stdin을 두 번 쓴다** — `python3 - "$OUT" <<'EOF'`는 heredoc이 stdin이므로 `sys.stdin.buffer.read()`가 **git 출력이 아니라 스크립트를 읽을 수 있다.** 미검증
+- ~~Step 3a의 파이썬 heredoc이 stdin을 두 번 쓴다~~ — **컨트롤러가 실측 확인 후 개정 6에서 해소**: 파이프가 heredoc을 이겨 python이 git 출력을 프로그램으로 읽었다(`SyntaxError: source code cannot contain null bytes`). `scripts/link_issues.py` 파일로 분리하고 레코드를 파일로 넘긴다. **그 검증 과정에서 정규식이 `Fixes`·`Fixed`를 못 문다는 것도 함께 발견해 고쳤다** — 5R의 후보 수는 그 하한이다
 - **Step 3a-2의 `gh api --jq`가 이슈당 1요청 × 1,931**인데 실제 소요 시간·429 처리를 안 쟀다
 - **Step 2b의 `rm -rf "$CT"`가 `$CT`의 부모(`mktemp -d`)를 남긴다** — 누수
 - **누설 감사 가드의 `grep -v '<protected 경로>'`**가 경로에 정규식 메타문자가 있으면 오동작
