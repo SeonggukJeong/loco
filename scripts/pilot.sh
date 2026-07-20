@@ -18,6 +18,34 @@ PILOT_BUILD_TIMEOUT_SECS="${PILOT_BUILD_TIMEOUT_SECS:-300}"
 PILOT_TEST_TIMEOUT_SECS="${PILOT_TEST_TIMEOUT_SECS:-600}"
 REPO="$(pwd)"
 
+# --- 중단 안전망 ---------------------------------------------------------------
+# 세션이 시작된 뒤 원장 기록 전에 죽으면(Ctrl+C, 예기치 못한 오류) GPU 시간과
+# 사람 시간이 통째로 날아간다. 유실 자체를 막을 수는 없지만 **사용자가 유실을
+# 인지하고 수동 복구할 수 있게** 캡처된 값을 남긴다 — 조용한 유실이 최악이다.
+# 임시 파일 정리도 여기서 한다(조기 종료 시 TMPDIR 누수 방지).
+# INT/TERM은 exit만 하고 실제 처리는 EXIT 하나로 모은다(핸들러 중복 실행 방지).
+SESSION_ID=""; START_REV=""; END_REV=""; DURATION=""
+BUILD_OUT=""; TEST_OUT=""; LEDGER_WRITTEN=0
+cleanup() {
+  st=$?
+  if [ -n "$BUILD_OUT" ]; then rm -f "$BUILD_OUT" "$BUILD_OUT.timedout"; fi
+  if [ -n "$TEST_OUT" ]; then rm -f "$TEST_OUT" "$TEST_OUT.timedout"; fi
+  if [ -n "$SESSION_ID" ] && [ "$LEDGER_WRITTEN" -eq 0 ]; then
+    echo "" >&2
+    echo "⚠ 세션이 원장에 기록되지 않은 채 종료됩니다 (종료 상태 $st)." >&2
+    echo "  수동 기록용 캡처값:" >&2
+    echo "    session_id   = $SESSION_ID" >&2
+    echo "    start_rev    = $START_REV" >&2
+    echo "    end_rev      = ${END_REV:-미캡처}" >&2
+    echo "    duration_secs= ${DURATION:-미캡처}" >&2
+    echo "  산출물은 아직 워킹트리에 있습니다: git diff $START_REV" >&2
+  fi
+  exit "$st"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 command -v git >/dev/null || { echo "git이 필요합니다"; exit 1; }
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "git 레포 안에서 실행하세요"; exit 1; }
 
@@ -331,7 +359,7 @@ with open(sys.argv[1], "a") as f:
 print(f"원장에 기록: {row['session_id']} ({row['verdict']})")
 PYEOF
 then
-  :
+  LEDGER_WRITTEN=1
 else
   py_status=$?
   # 위 파이썬 트레이스백을 지우지 않는다(원인 확인용) — 그 위에 사용자용 한국어
