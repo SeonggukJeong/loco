@@ -2469,8 +2469,10 @@ git commit -m "feat(metrics): 토큰 회계 컬럼 + notice 처리 — 축 C 집
 ```python
     # M15 H10·§5-4 — **툴별로 분리**해 모은다. 합치면 §1-1 축의 근거인
     # M8 실패 분석의 "미열람(grep만)" 구분이 사라진다.
-    # 파일 경로를 주는 것은 read_file뿐이므로(grep은 pattern+디렉터리,
-    # list_files는 디렉터리) 항해 지표는 read_set만으로 정의하고
+    # 항해 지표를 read_set만으로 정의하는 것은 **축의 정의에서 나오는 설계
+    # 결정**이다(스펙 개정 10) — "grep이 경로를 못 준다"가 아니다. grep은
+    # path로 파일 하나를 지목할 수 있고(grep.rs의 base.is_file() 분기),
+    # 그런 런을 항해 성공에서 빼는 것이 "미열람(grep만)" 구분의 목적이다.
     # grep/list_files는 호출 계수로만 남긴다
     read_set, edit_set = set(), set()
     grep_calls, list_calls = 0, 0
