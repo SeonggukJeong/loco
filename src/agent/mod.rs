@@ -80,6 +80,24 @@ Do not call finish with empty args again.";
 /// 가설의 개입값, 0단계 확정). 스트릭이 끊기면 즉시 원복, 래치 없음
 const SR_PERTURB_TEMPERATURE: f32 = 0.7;
 
+/// §4-2(c) 하한 — max_output_tokens가 context_tokens를 넘겨도 예산이 0이 되지
+/// 않게 한다. 0이면 pack()이 시스템 프롬프트와 마지막 메시지만 남긴다
+const MIN_INPUT_BUDGET: usize = 512;
+
+/// 출력 예산이 컨텍스트의 절반 이상을 먹으면 입력 예산이 좁아진다는 경고.
+/// 사용자 대면이므로 한국어. None이면 경고 없음
+fn cramped_budget_warning(context_tokens: usize, max_output_tokens: usize) -> Option<String> {
+    if max_output_tokens * 2 < context_tokens {
+        return None;
+    }
+    let budget = context_tokens.saturating_sub(max_output_tokens) * 9 / 10;
+    Some(format!(
+        "경고: max_output_tokens={max_output_tokens}가 context_tokens={context_tokens}의 절반 이상입니다 \
+         — 입력 예산이 {budget} 토큰으로 좁아져 오래된 대화가 일찍 잘립니다. \
+         context_tokens를 올리거나 max_output_tokens를 낮추는 것을 검토하세요."
+    ))
+}
+
 pub struct Agent<C: LlmClient> {
     client: C,
     registry: std::sync::Arc<Registry>,
@@ -113,6 +131,12 @@ impl<C: LlmClient> Agent<C> {
         model: String,
         config: &Config,
     ) -> Self {
+        // M14 §4-2c — run()엔 on_event 채널이 있지만 REPL은 run()을 요청마다
+        // 다시 호출하므로 거기 두면 경고가 반복된다. Agent::new는 런당 1회만
+        // 생성되므로 여기서 eprintln!으로 1회 낸다 (on_event 채널 부재)
+        if let Some(w) = cramped_budget_warning(config.context_tokens, config.max_output_tokens) {
+            eprintln!("{w}");
+        }
         Self {
             client,
             registry: std::sync::Arc::new(registry),
@@ -151,9 +175,12 @@ impl<C: LlmClient> Agent<C> {
         self.schema_fallback
     }
 
-    /// 스펙 §6: (context − max_output) × 0.9
+    /// 스펙 §6: (context − max_output) × 0.9, 하한 MIN_INPUT_BUDGET (M14 §4-2c) —
+    /// max_output_tokens >= context_tokens인 병리적 config에서도 예산이 0으로
+    /// 붕괴해 pack()이 히스토리를 지워버리는 것을 막는다
     fn input_budget(&self) -> usize {
-        self.context_tokens.saturating_sub(self.max_output_tokens as usize) * 9 / 10
+        (self.context_tokens.saturating_sub(self.max_output_tokens as usize) * 9 / 10)
+            .max(MIN_INPUT_BUDGET)
     }
 
     fn schema_tool_names(&self) -> Vec<&'static str> {
@@ -2291,5 +2318,33 @@ mod tests {
         let c = &with_status[0].content;
         assert!(c.contains("turns: 16 of 25"), "이월분이 턴 16에 주입: {c}");
         assert!(c.contains("verification: none since your last edit"), "{c}");
+    }
+
+    #[test]
+    fn input_budget_has_a_floor_so_pathological_config_cannot_erase_history() {
+        // max_output >= context면 saturating_sub가 0을 주고 예산이 0이 된다 —
+        // pack()이 시스템 프롬프트와 마지막 메시지만 남기고 전부 지운다
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![]);
+        let config = Config { context_tokens: 4096, max_output_tokens: 8192, ..Default::default() };
+        let agent = Agent::new(
+            &script,
+            Registry::guided(),
+            ToolCtx::new(dir.path().to_path_buf()),
+            "test-model".into(),
+            &config,
+        );
+        assert!(
+            agent.input_budget() >= MIN_INPUT_BUDGET,
+            "예산이 {}로 붕괴했다 — 하한 {MIN_INPUT_BUDGET}이 없다",
+            agent.input_budget()
+        );
+    }
+
+    #[test]
+    fn cramped_output_budget_is_reported_to_the_user() {
+        // 파일럿 형태: 4096/8192 → 예산 3686. 하한에는 안 걸리지만 좁다
+        assert!(cramped_budget_warning(8192, 4096).is_some(), "파일럿 형태는 경고 대상");
+        assert!(cramped_budget_warning(8192, 2048).is_none(), "기본값은 경고 없음");
     }
 }
