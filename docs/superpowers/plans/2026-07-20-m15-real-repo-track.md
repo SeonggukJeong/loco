@@ -16,7 +16,10 @@
 - **개정 2** `0f914ff` — 1R 전건 반영. 2R에서 **Critical 3 · Important 8 · Minor 13**, 2축 모두 `Ready: No`.
   ⚠ **2R의 축 A(1R 수정 검증)는 0건이었다** — 개정 2의 수정 6종이 2×2까지 채워 전건 확인됐다.
   **지적은 전부 축 B, 즉 "개정 2가 새로 만든 것"이다**
-- **개정 3** — 2R 전건 반영. 아래 "라운드가 남긴 것"이 그 요약이다
+- **개정 3** `6f4ec0b` — 2R 전건 반영. 3R에서 **Critical 2 · Important 5 · Minor 9**, 2축 모두 `Ready: No`.
+  ⚠ **3R의 축 A도 0건이었다** — T17의 `tree/`+`meta/` 분리, T14 단독 완결, H17 셋째 사이트가
+  실행으로 전건 확인됐다(basename 충돌 회귀 검사까지). **지적은 또 전부 "개정 3이 새로 만든 것"**
+- **개정 4** — 3R 전건 반영. 아래 "라운드가 남긴 것"이 그 요약이다
 
 ## 라운드가 남긴 것 — 이 플랜이 실패한 두 형태
 
@@ -219,7 +222,7 @@ git rev-parse HEAD   # 이 해시를 T22·T23이 인용한다. 기록해 둘 것
 
 mode 복원은 신규 동작이라 **기존 소비자 0건**이고, 5R 실측으로 두 tasks 트리 367파일(픽스처 한정 329)이 **전부 644**라 644→644로 무변화다.
 
-- [ ] **Step 1: 실패하는 테스트 두 개를 쓴다**
+- [ ] **Step 1: 실패하는 테스트 네 개를 쓴다**
 
 `src/eval/sandbox.rs`의 `mod tests` 안, `overlay_tree_refreshes_mtime` 아래에 추가:
 
@@ -326,7 +329,7 @@ mode 복원은 신규 동작이라 **기존 소비자 0건**이고, 5R 실측으
 ```bash
 cargo test --lib eval::sandbox 2>&1 | tail -20
 ```
-Expected: 신규 테스트 **3개**(2R 실현 m6: 개정 2가 "두 테스트"라 적었으나 셋이었다) 모두 FAIL. ⚠ **실패 사유를 정확히 알아 둘 것**(1R 실현 m1): 전자는 `fs::copy`의 mtime 보존 때문이고, **후자는 `0o755`가 아니라 `plain.txt`의 `0o200` 단언에서 난다**(`left: 0, right: 128`) — `fs::copy`는 퍼미션을 **보존**하므로 실행 비트는 아직 안 깨져 있다. 실행 비트 회귀는 **T2가 도입하는 read+write 자신**이 만드는 것이라 테스트는 여전히 유효하다.
+Expected: 신규 테스트 **4개**(초판 2 → 개정 2가 셋 → 개정 3이 단일 파일 테스트를 더해 넷. ⚠ 2R·3R이 **연속으로 이 숫자를 지적했다** — 개정 3은 "셋"으로 고치면서 자기가 추가한 네 번째를 다시 안 셌다) 모두 FAIL. ⚠ **실패 사유를 정확히 알아 둘 것**(1R 실현 m1): 전자는 `fs::copy`의 mtime 보존 때문이고, **후자는 `0o755`가 아니라 `plain.txt`의 `0o200` 단언에서 난다**(`left: 0, right: 128`) — `fs::copy`는 퍼미션을 **보존**하므로 실행 비트는 아직 안 깨져 있다. 실행 비트 회귀는 **T2가 도입하는 read+write 자신**이 만드는 것이라 테스트는 여전히 유효하다.
 
 - [ ] **Step 3: `copy_tree`를 고친다**
 
@@ -2311,21 +2314,21 @@ git commit -m "feat(agent): 툴별 분리 접촉 파일 기록 — 항해/수선
     #    접근한다(`scripts/exp_metrics.py:742-748`). 그 형태를 따를 것 —
     #    `row["max_prompt"]`는 리스트 첨자라 TypeError다(2R 실현 m1)
     assert row[col["max_prompt"]] == "2600", row
-    assert row["max_est"] == "2000", row
-    assert row["est_ratio_max"] == "1.3000", row
-    assert row["budget_ratio_max"] == "0.1008", row   # 2600/25804
-    assert row["pack_turns"] == "1", row
-    assert row["pack_elided"] == "2", row
-    assert row["overflow_shrink"] == "1", row
-    assert row["overflow_giveup"] == "1", row
-    assert row["inline_sys_turns"] == "1", row
+    assert row[col["max_est"]] == "2000", row
+    assert row[col["est_ratio_max"]] == "1.3000", row
+    assert row[col["budget_ratio_max"]] == "0.1008", row   # 2600/25804
+    assert row[col["pack_turns"]] == "1", row
+    assert row[col["pack_elided"]] == "2", row
+    assert row[col["overflow_shrink"]] == "1", row
+    assert row[col["overflow_giveup"]] == "1", row
+    assert row[col["inline_sys_turns"]] == "1", row
     # ⚠ H7 — 축 C 일곱 항목의 ⑦. **셀프테스트 없이 두면 안 된다**(1R 측정 I2):
     #    report_index의 `r.get("protected_edits", 0)`이 필드 부재 시 조용히 0을 주고,
     #    이 컬럼은 §5-2 ⑦이 "리워드 해킹의 **유일한** 기계 관측 발자국"으로 지정한
     #    것이라 0이 "해킹 없음"으로 읽힌다 — 정확히 fail-open이다.
     #    기존 셀프테스트가 이미 tempfile로 합성 report.json을 만들어 process()를
     #    태우므로(:731-746) 그 report.json의 run에 protected_edits를 넣고 단언한다
-    assert row["protected_edits"] == "2", row
+    assert row[col["protected_edits"]] == "2", row
 ```
 
 - [ ] **Step 2: 실패를 확인한다**
@@ -2492,7 +2495,19 @@ def report_index(stamp_dir):
 
 ⚠ **`idx.get(name, …)`의 기본값을 4-튜플로 함께 고칠 것** — 지금은 `("?", None)`이다.
 
+**행 조립도 함께 고친다** — ⚠ 개정 3은 이 Step의 제목이 *"`COLS`와 **행 조립**에 컬럼을 더한다"*인데 본문이 `COLS`·`report_index`·포맷 규칙만 보이고 **11칸을 붙이는 곳을 끝내 안 보였다**(3R 실현 I2). 2R 측정 m3의 같은 지적을 T15에만 반영하고 T14를 빠뜨린 것이다:
+
+```python
+        row += [str(tok["max_prompt"]), str(tok["max_est"]),
+                f"{tok['est_ratio_max']:.4f}", f"{tok['budget_ratio_max']:.4f}",
+                str(tok["pack_turns"]), str(tok["pack_elided"]), str(tok["pack_dropped"]),
+                str(tok["overflow_shrink"]), str(tok["overflow_giveup"]),
+                str(tok["inline_sys_turns"]), str(protected_edits)]
+```
+
 비율 컬럼은 소수 4자리 고정 포맷으로 찍는다(`f"{est_ratio_max:.4f}"`) — 셀프테스트가 문자열로 비교하므로 포맷이 계약이다.
+
+⚠ **헤더/행 폭 불일치는 조용히 통과한다** — `COLS`만 늘리고 행을 안 늘리면 표가 어긋나는데 `--selftest`가 새 컬럼을 안 건드리면 아무도 못 본다. 그 표가 M15 배치의 1차 산출물이다. **C1의 10개 단언이 이 폭 계약의 유일한 검증 수단이므로** 둘은 함께 있어야 한다.
 
 - [ ] **Step 5: 요약 라인에 배치 수준 값을 더한다**
 
@@ -2549,7 +2564,7 @@ git commit -m "feat(metrics): 토큰 회계 컬럼 + notice 처리 — 축 C 집
 | ③ | §5-4 제약 3의 **층화 비합산을 공약으로 승격** — 통과 층과 실패 층을 절대 합산하지 않는다 | 합산 코드를 아예 두지 않는다 |
 | ④ | 부트스트랩 재추출 단위 = **과제**. ⚠ ①의 제외와 상호작용 — **"제외 후 남은 집합에서 재추출한다"** | `bootstrap_ci()` |
 | ⑤ | §5-3 절편/기울기 추정 = 턴 단위 최소자승 회귀, `inline_system`으로 층화 | `estimator_fit()` |
-| ⑥ | §5-5 `prompt_tokens` 의미 확정 결과와 원자료 | T16 세션 모드가 낸다 |
+| ⑥ | §5-5 `prompt_tokens` 의미 확정 결과와 원자료 | 확정 결과 = T16 `--session` 출력. **원자료 = T22가 레포로 복사하는 `docs/experiments/…/smoke/*.jsonl`** — `--session` 출력은 집계 결과이지 원자료가 아니다 |
 
 - [ ] **Step 1: `touch` 이벤트 누산을 더한다**
 
@@ -2905,16 +2920,37 @@ if __name__ == "__main__":
     assert tk["grep_calls"] == 1 and tk["list_calls"] == 1, tk
     assert "src/b.rs" not in tk["read_set"], "수선을 항해로 세면 §1-1 축이 무너진다"
 
-    # ── §6-4-19 공약 (pool()의 stdout을 캡처해 검사) ──────────────────
+    # ── §6-4-19 공약 ────────────────────────────────────────────────
+    # 캡처 방식은 기존 셀프테스트의 패턴을 그대로 쓴다(`contextlib.redirect_stdout`):
+    #   buf = io.StringIO()
+    #   with contextlib.redirect_stdout(buf): pool([stamp_a, stamp_b])
+    #   out = buf.getvalue()
+    #   table_out  = out (같은 캡처 — pool()이 process()의 표도 함께 찍는다)
+    #   col        = {name: i for i, name in enumerate(header_line.split("\t"))}
+    #   no_oracle_row = 오라클 없는 과제의 행 (split("\t"))
+    #   pool_output_second_call = 같은 인자로 한 번 더 돌린 결과
     # ① 층 크기 0인 과제는 **제외**되고 제외 수가 보고된다. 3/3 통과 과제는
     #    실패 층이 비어 nav_hit[fail]에서 빠진다 — 0으로 넣으면 "항해 실패"로 오독된다
     #    ⚠ 값이 **비자명**해야 변조 (a)를 잡는다. 합성 데이터에 맞춰 실제 수를 넣을 것
     assert "nav_hit[fail] tasks=1 excluded=1" in out, out
-    # ② 오라클 없는 과제의 nav_hit은 "-" — 0이 아니라 "해당 없음"이다
-    assert "\t-\t" in table_out, table_out
+    # ② 오라클 없는 과제의 nav_hit은 "-" — 0이 아니라 "해당 없음"이다.
+    #    ⚠ **컬럼을 지목해서 볼 것.** 개정 3은 `"\t-\t" in table_out`으로 썼는데
+    #    기존 실배치 출력의 36/36행이 이미 그 패턴을 갖는다(`stop_cause`·
+    #    `zero_mut_end`·`sr_files`의 `-`) — nav_hit이 "0"으로 찍혀도 통과하는
+    #    **공허한 단언**이었다(3R 실현 I1 실측)
+    assert no_oracle_row[col["nav_hit"]] == "-", no_oracle_row
+    assert no_oracle_row[col["fix_hit"]] == "-", no_oracle_row
     # ③ **비합산** — 합산 라벨이 출력에 아예 없다 (§5-4 제약 3·§6-4-19③ 공약)
     assert "nav_hit[all]" not in out and "nav_hit[pooled]" not in out, out
-    # ④ 같은 seed에서 부트스트랩이 재현된다
+    # ④ **제외 후 남은 집합에서 재추출**한다 (§6-4-19④). ⚠ 이 단언은 반드시
+    #    **ci95의 실값**을 봐야 한다 — 개정 3은 여기에 시드 재현성
+    #    (`out == 두 번째 호출`)을 걸었는데, 변조 (b)는 부트스트랩 **입력**만
+    #    바꾸고 재현성은 그대로라 **네 단언이 전부 변조를 통과했다**(3R 실현 C2 실측:
+    #    정상 `ci95=[0.5000,0.5000]` vs 변조 `ci95=[0.0000,0.5000]`인데
+    #    `tasks=`·`excluded=`·`mean=`은 불변).
+    #    ⚠ 값은 합성 데이터에 맞춰 실제로 넣을 것 — 아래는 형태 예시다
+    assert "nav_hit[fail] tasks=1 excluded=1 mean=0.5000 ci95=[0.5000,0.5000]" in out, out
+    # ④' 시드 재현성은 **별개 성질**이라 따로 건다 (④를 대체하지 않는다)
     assert out == pool_output_second_call, "seed 고정이 안 먹었다"
     # ⑤ estimator_fit이 inline_system **층별**로 나온다
     assert "estimator inline_system=False" in out and "estimator inline_system=True" in out, out
@@ -3087,7 +3123,7 @@ git commit -m "feat(metrics): --session 모드 — 스모크 1세션에서 r_obs
 
 **Interfaces:**
 - Consumes: T8의 `procure.toml` 형식
-- Produces: `<task_dir>/fixture/` 실체화 + `<cache>/<repo>/<sha>/manifest.tsv` — T21이 실행하고 §9-A2가 재조달로 검증한다
+- Produces: `<task_dir>/fixture/` 실체화 + **`<cache>/<repo>/<sha>/meta/manifest.tsv`**(+ 같은 디렉터리의 `symlinks.txt`) — T21이 실행하고 §9-A2가 재조달로 검증한다. ⚠ 캐시는 `<sha>/tree/`(순수 추출)와 `<sha>/meta/`(하네스 산출) **둘로 나뉜다**
 
 **Consumers:** ① T21(실행) ② §9-A2(캐시를 비운 재조달 + 매니페스트 일치) ③ T19의 CLAUDE.md 커맨드 절. **Rust 소비자 0건** — H4가 요구한 대로 `run_eval`/`run_verify`는 이 스크립트를 부르지 않는다.
 
@@ -3140,7 +3176,25 @@ fill_cache() {
   repo="$1"; sha="$2"
   git_dir="$LOCO_REAL_REPOS/$repo.git"
   dest="$LOCO_TASKS_REAL_CACHE/$repo/$sha"
-  [ -f "$dest/meta/.complete" ] && { echo "  캐시 히트: $repo/$sha"; return 0; }
+  # ⚠ **히트 시 매니페스트를 대조한다** — 스펙 §3-5 조달 계약이
+  # *"매니페스트를 남기고 **히트 시 대조**"*를 명시하는데, 개정 3까지는 `.complete`만
+  # 보고 즉시 반환해 **대조 경로가 아예 없었다**(3R 실현 I3). §9-A2는 **캐시를 비운**
+  # 재조달의 매니페스트끼리만 비교하므로 이 구멍을 안 덮는다 — 레포 밖에 오래 사는
+  # 캐시가 배치 사이에 손상·변조돼도 아무도 못 본다.
+  # ⚠ 이것은 **자기정합 검사이지 업스트림 검증이 아니다**(§10-5)
+  if [ -f "$dest/meta/.complete" ]; then
+    now=$(cd "$dest/tree" && find . -type f | sed 's|^\./||' | LC_ALL=C sort \
+      | while IFS= read -r f; do
+          printf '%s\t%s\t%s\n' "$f" "$(wc -c < "$f" | tr -d ' ')" "$(sha256 "$f")"
+        done)
+    if [ "$now" != "$(cat "$dest/meta/manifest.tsv")" ]; then
+      echo "캐시 매니페스트 불일치 — 손상 또는 변조: $dest" >&2
+      echo "  (의도적 재조달이면 그 디렉터리를 지우고 다시 실행하세요)" >&2
+      exit 1
+    fi
+    echo "  캐시 히트(매니페스트 일치): $repo/$sha"
+    return 0
+  fi
 
   [ -d "$git_dir" ] || { echo "pristine 클론이 없습니다: $git_dir" >&2; exit 1; }
 
@@ -3346,14 +3400,25 @@ cat "$SCRATCH/cache/demo"/*/meta/manifest.tsv   # 2행
 **basename 충돌 회귀 검사** — 개정 2의 `tar --exclude`가 조용히 지웠던 형태:
 
 ```bash
-cd "$SCRATCH/src" && mkdir -p docs && echo x > docs/manifest.tsv && echo y > manifest.tsv \
-  && git add -A && git commit -qm meta-name-collision
-# bare를 갱신하고 procure.toml의 parent_sha를 이 커밋으로 바꾼 뒤 재조달
+cd "$SCRATCH/src"
+mkdir -p docs && echo x > docs/manifest.tsv && echo y > manifest.tsv && echo z > docs/symlinks.txt
+git add -A && git commit -qm meta-name-collision
+echo w > tip.txt && git add -A && git commit -qm tip     # parent가 위 커밋이 되게 한다
+git push -q "$SCRATCH/repos/demo.git" HEAD:master 2>/dev/null \
+  || git -C "$SCRATCH/repos/demo.git" fetch -q "$SCRATCH/src" HEAD:refs/heads/master
+NEW_PARENT=$(git rev-parse HEAD^) ; NEW_FIX=$(git rev-parse HEAD)
+sed -i '' -e "s/^parent_sha = .*/parent_sha = \"$NEW_PARENT\"/" \
+          -e "s/^fix_sha = .*/fix_sha = \"$NEW_FIX\"/" "$SCRATCH/task/procure.toml"
+cd /Users/sgj/develop/loco
+LOCO_REAL_REPOS="$SCRATCH/repos" LOCO_TASKS_REAL_CACHE="$SCRATCH/cache" \
+  /bin/sh scripts/procure_real.sh "$SCRATCH/task"; echo "EXIT=$?"
+ls "$SCRATCH/task/fixture" "$SCRATCH/task/fixture/docs"
 ```
-Expected: 픽스처에 `docs/manifest.tsv`와 `manifest.tsv`가 **둘 다 살아 있어야 한다**. 하나라도 없으면 Critical 3이 재발한 것이다.
+Expected: `EXIT=0`, 그리고 픽스처에 **`manifest.tsv`·`docs/manifest.tsv`·`docs/symlinks.txt` 셋 다 살아 있어야 한다.** 하나라도 없으면 2R Critical 3(tar `--exclude`의 basename 매칭)이 재발한 것이다.
 
-⚠ **`EXIT=1`에 `export-ignore 의심`이 뜨면 C4가 재발한 것이다** — `.tree-paths`↔`.extracted` 비교에서 심링크를 빼고 있는지 확인할 것.
-⚠ 파일 수가 `3파일`로 나오면 `.extracted`/`.files`가 자기 자신을 세고 있는 것이다.
+⚠ `sed -i ''`는 BSD sed(macOS) 형태다. GNU sed면 `sed -i` (인자 없음).
+
+⚠ **`EXIT=1`에 `export-ignore 의심`이 뜨면 1R C4가 재발한 것이다** — `meta/tree-paths`↔`meta/extracted` 비교에 **심링크가 포함**돼 있는지 확인할 것(`find . \( -type f -o -type l \)`).
 
 가드가 실제로 발동하는지도 함께 본다:
 
@@ -3708,7 +3773,7 @@ CLAUDE.md 첫 문단의 마일스톤 사슬 끝에 M15 항목을 잇고, `## Com
 `exp_metrics.py` 항목에 이어 붙일 것 (영문):
 
 ```markdown
-M15 adds one marker and 16 columns. The marker is `model_diff_trunc` (`"[diff truncated]"`, copied verbatim from `tools/diff.rs` — same manual-mirror caveat as `args_tool_key`/`length_retry`); it is the **numerator** of the A-3 truncation rate, whose denominator is the pre-existing `model_diff` (which matches both the truncated and untruncated header, so it counts attachments, not truncations). The columns are eleven token-accounting ones from T14 (`max_prompt`, `max_est`, `est_ratio_max`, `budget_ratio_max`, `pack_turns`, `pack_elided`, `pack_dropped`, `overflow_shrink`, `overflow_giveup`, `inline_sys_turns`, `protected_edits`) and five navigation ones from T15 (`nav_hit`, `fix_hit`, `reads`, `greps`, `lists`). **`est_ratio_max` is the max over turns of `prompt_tokens / estimate_tokens`, never the mean** — overflow is decided by the max turn, and §4-1-1's branch decision reads this number directly. `nav_hit`/`fix_hit` are `"-"` (not `0`) when the task has no oracle: `0` would read as "navigation failed" when the truth is "not applicable", the same distinction §6-4-19① makes when it excludes empty strata from the mean rather than scoring them zero.
+M15 adds one marker and 16 columns. The marker is `model_diff_trunc` (`"[diff truncated]"`, copied verbatim from `tools/diff.rs` — same manual-mirror caveat as `args_tool_key`/`length_retry`); it is the **numerator** of the A-3 truncation rate, whose denominator is the pre-existing `model_diff` (which matches both the truncated and untruncated header, so it counts attachments, not truncations). The columns are ten token-accounting ones from T14 (`max_prompt`, `max_est`, `est_ratio_max`, `budget_ratio_max`, `pack_turns`, `pack_elided`, `pack_dropped`, `overflow_shrink`, `overflow_giveup`, `inline_sys_turns`) plus `protected_edits`, which is **not** token accounting — it is the H7 reward-hacking footprint and, unlike every other column here, it comes from `report.json` rather than the transcript and five navigation ones from T15 (`nav_hit`, `fix_hit`, `reads`, `greps`, `lists`). **`est_ratio_max` is the max over turns of `prompt_tokens / estimate_tokens`, never the mean** — overflow is decided by the max turn, and §4-1-1's branch decision reads this number directly. `nav_hit`/`fix_hit` are `"-"` (not `0`) when the task has no oracle: `0` would read as "navigation failed" when the truth is "not applicable", the same distinction §6-4-19① makes when it excludes empty strata from the mean rather than scoring them zero.
 ```
 
 - [ ] **Step 5: 확인**
@@ -4251,8 +4316,8 @@ python3 scripts/exp_metrics.py --pool .loco/eval/<stamp1> .loco/eval/<stamp2> ..
 
 | 장치 | 분모 |
 |---|---|
-| 파이프 장치 | 파이프 포함 `run_command` 호출 수 (M14 방식 전수 추출) |
-| FINISH_NUDGE | 무장 조건 충족 런 수 |
+| 파이프 장치 | 파이프 포함 `run_command` 호출 수 — ⚠ `pool()`은 `pipe_note` **프록시**를 쓴다(CLAUDE.md가 known under-count로 명시: 파이프 명령이 타임아웃·취소로 끝나면 안 붙는다). 정확 분모가 필요하면 M14 방식 전수 추출을 별도로 할 것 |
+| FINISH_NUDGE | 무장 조건 충족 런 수 — ⚠ **`pool()`이 찍는 `armed_runs~`는 근사치다**(정확한 값은 `finish_nudge.rs` 상태기계 재현이 필요하다). 리포트에 정확 분모로 인용하지 말 것 |
 | A-3 | 성공한 `edit_file`/`write_file` 수 → **절단률** |
 
 ⚠ **0회도 답이다** — 다만 **기회 분모와 함께 볼 때만** 답이다. A-3의 **효과는 이 설계로 측정할 수 없다**(§1-2 답 1) — 새로 얻는 것은 절단률뿐이다.
@@ -4311,13 +4376,13 @@ LOCO_BIN=<loco> PILOT_LEDGER=<레포 밖 경로> scripts/pilot.sh
 |---|---|---|---|
 | A1a | 동결된 전 과제가 `eval --verify` 통과 | 예 | |
 | A1b | 최소 표본(16) **및** 편중 상한(60%) 둘 다 만족 | **아니오** | 미달이면 §6-4-2 처분 (iii): 실패로 보고하고 M16 대조군으로 인용하지 않되 병합은 막지 않는다 |
-| A2 | **캐시를 비운 재조달** 후 `--verify` 통과 + 매니페스트 일치 | 예 | |
+| A2 | **캐시를 비운 재조달** 후 `--verify` 통과 + **`manifest.tsv`와 `symlinks.txt` 둘 다** 일치 | 예 | ⚠ 매니페스트는 일반 파일만 담으므로 심링크 집합 변화를 혼자서는 못 본다(2R 측정 m4). 스펙 §9-A2 원문은 매니페스트만 말하므로 **적용 범위 확장을 리포트에 명시**한다 |
 | A3 | 스테일 뮤테이션·실행 비트 테스트 통과 + `<task_dir>/fixture`에 `target/` 없음 | 예 | |
 | A4 | 배치 완주 + H9 실효값 런별 기록 + **개정된 4③의 통과 로그 첨부** | 예 | |
 | A5 | 결과가 §6-4-6 실격 대역 **밖** | **아니오** | 대역 안이면 "베이스라인 확보 실패"로 보고 |
 | A6 | 축 C 일곱 항목이 `--selftest` 포함 동작 + **추정기 오차가 §5-3·§6-4-19대로 보고**(오차가 크든 작든 결과다) | 예 | |
 | A7 | 기존 게이트 전건: `cargo test`, `clippy --all-targets -- -D warnings`, 세 트리 `--verify` | 예 | |
-| B1 | M14 파이프 마커 발동 여부가 **기회 분모와 함께** (0회도 답) | — | |
+| B1 | M14 파이프 마커 발동 여부가 **기회 분모와 함께** (0회도 답). ⚠ **분모의 정확도를 함께 적는다** — `pool()`의 파이프 분모는 `pipe_note` 프록시이고 FINISH_NUDGE 분모(`armed_runs~`)는 근사치다. 근사를 정확 분모로 인용하면 이 인도물이 거짓이 된다 | — | |
 | B2 | 유인 3건이 원장에 기록되고 루브릭이 못 본 것이 명시됨 | — | |
 | B3 | **측정 리포트가 병합 전 독립 리뷰를 1회 이상** | — | Step 4 |
 
@@ -4365,41 +4430,45 @@ git checkout main && git merge --no-ff m15/real-repo-track
 
 ---
 
-## Self-Review 결과 (개정 3)
+## Self-Review 결과 (개정 4)
 
-**1. 2R 지적 반영 대조 — Critical 3 · Important 8 · Minor 13 전건:**
+**1. 3R 지적 반영 — Critical 2 · Important 5 · Minor 9 전건:**
 
 | 축 | 지적 | 반영 |
 |---|---|---|
-| 실현 C1 / 측정 C1 | T14가 `tok`에서 T15의 이름 넷 참조 → 단독 `NameError` | T14 Step 3에 선언 이동, T15는 채우기만 |
-| 실현 C2 / 측정 I1 | `.files`가 자기를 셈 (2파일→3파일) | **T17 구조 변경** — `<sha>/tree/` + `<sha>/meta/` 분리로 이름 필터 자체를 없앰 |
-| 실현 C3 | `tar --exclude`가 basename 매칭 → 동명 파일 소실 | 같은 구조 변경 — **제외할 것이 없어졌다**. 컨트롤러가 tar 동작 직접 실측 |
-| 실현 I7 | export-ignore 오탐(루트 `manifest.tsv`) | 〃 (셋이 한 뿌리였다) |
-| 실현 I4 / 측정 A-3 | H17 세 번째 사이트 = `tasks-real`이 타는 경로 | T2에 `sync_protected` 파일 분기 + 단일 파일 테스트 |
-| 실현 I5 / 측정 m7 | T15 Step 4에 `assert` 0줄 | 실제 단언 11건 (축 C ⑥ 포함) |
-| 실현 I6 | `continue` 3개가 미고정 | T15 Step 4b |
-| 측정 I8 | 축 C ⑥ `--selftest` 단언 0건 → A6이 반증 불가 | T15 Step 4의 `touch_ev` 블록 |
-| 측정 A-4 | T22가 §6-4-19⑥ 원자료를 삭제 | `rm -rf` 전 세션 JSONL을 레포로 복사 |
-| 측정 A-5 | `grep` 근거 미정정 2곳 | T13 테스트 주석·단언 메시지 |
-| 측정 A-6 | T6이 `agent/mod.rs`를 고치는데 Files·`git add`·구조표에 없음 | 세 곳 갱신 |
-| 측정 A-8 / I6 | CLAUDE.md가 신규 마커·컬럼 0건 열거 | T19 Step 4b (마커 1 + 컬럼 16 전수) |
-| 측정 I7 | `armed_runs`의 죽은 논리곱 + 근사 표시 없음 | 항 제거 + `APPROX` 라벨 |
-| 측정 m2 | M13/M14 오귀속 (실제는 스펙 초판·개정 2) | T6 주석 |
-| 측정 m3 | `COLS`만 늘리고 행 조립 미제시 | T15 Step 2 |
-| 측정 m4 | 매니페스트가 심링크 집합을 못 봄 | §9-A2 대조에 `symlinks.txt` 추가 |
-| 실현 m1 | `row["max_prompt"]`는 리스트 첨자 | `row[col[...]]` |
-| 실현 m6 / 측정 m6 | `process()`가 여섯 번째 언팩 지점 | T14 Step 3b에 명시 |
-| 실현 m6(T2) | "두 테스트"가 실제로는 셋 | Step 2·4 개수 정정 |
+| 양축 C1 | `assert row["X"]` 9건이 리스트에 문자열 첨자 | **정규식 전수 치환 9/9** (`row[col["X"]]`) |
+| 실현 C2 | 변조 (b)를 어떤 단언도 못 잡는다 | 단언 ④를 **ci95 실값**으로 교체 + 시드 재현성을 ④'로 분리 |
+| 실현 I1 | `"\t-\t"` 단언이 공허(기존 출력 36/36행이 이미 매치) | 컬럼 지목(`no_oracle_row[col["nav_hit"]]`) |
+| 실현 I2 | T14의 11칸 행 조립 미제시 | Step 4에 `row +=` 블록 |
+| 실현 I3 | 캐시 히트 시 매니페스트 대조 없음(스펙 계약 미이행) | `fill_cache`에 히트 시 재계산·대조 |
+| 소비자 I1 | T2 테스트 개수 서술 3곳 중 2곳 미갱신 | Step 1·2를 **4개**로 |
+| 소비자 I2 / 실현 M1 | T17 `Produces`가 분리 전 경로 | `meta/manifest.tsv` + `symlinks.txt` |
+| 소비자 I3 | `armed_runs~`의 APPROX가 인용처 2곳에 미전파 | T24 표 2행 + §9-B1 |
+| 실현 M3 | basename 검사가 산문뿐 | 실행 가능한 명령 블록 |
+| 실현 M4 | `out`/`table_out`/`col` 정의 부재 | 캡처 패턴 명시 |
+| 소비자 m1 | Step 5 말미가 옛 도트파일 이름 | 새 어휘로 교체(중복 1줄 삭제) |
+| 소비자 m2 | §6-4-19 매핑표 ⑥ | 원자료 = `smoke/*.jsonl` |
+| 소비자 m3 | §9 A2행에 `symlinks.txt` 없음 | T25 표 + 적용범위 확장 명시 |
+| 소비자 m4 | `protected_edits`를 token-accounting으로 라벨 | 분리 서술 |
 
-**2. 2R이 "확인했고 문제없던 것"으로 통과시킨 것** — 개정 3이 깨지 않았는지 확인이 필요한 항목: Consumers 25/25 · §6-4 19/19 · 항목 8 13/13 · §9 11/11 · §8 각주 6/6 · H 19/19 · `run_metrics` 인덱스 접근 15곳(최대 `[11]` < 12) · `COLS` 위치 의존 소비자 0건 · T14 셀프테스트 산술 6/6 · `disqualification()` = §6-4-6.
+**2. Critical 추이와 형태**
 
-⚠ **개정 3이 `tok`을 12번 인덱스에 두는 것은 여전히 안전하다**(기존 최대 인덱스 `[11]`). T15 Step 4의 `run_metrics(touch_ev)[12]`가 그 계약을 쓴다.
+| 라운드 | Critical | 축 A(직전 수정 검증) |
+|---|---|---|
+| 1R | 6 | — |
+| 2R | 3 | **0** |
+| 3R | 2 | **0** |
 
-**3. 개정 3이 새로 만들 수 있는 것 (3R이 볼 곳)**
+**세 라운드 연속 축 A가 0이다** — 각 개정의 수정 자체는 실행으로 전건 확인됐다. 그런데 Critical은 매번 **그 수정이 새로 만든 것**이었고, 3R의 둘은 특히 자기지시적이다:
 
-정직하게 적는다 — 2R의 교훈이 "고치는 자리에서 새로 만든다"이므로:
+- C1: *"`row[col[...]]`을 써라"*는 경고를 **바로 그 옆 줄에 적어 놓고** 아홉 줄을 안 고쳤다
+- C2: *"단언이 0줄"*이라는 지적에 단언 11건을 추가하면서 **변조-단언 짝을 잘못 맺어** 또 하나의 "실패할 수 없는 검증"을 만들었다
 
-- **T17의 `tree/`+`meta/` 분리는 구조 변경이다.** 소비자를 전수로 셌다고 믿지만(캐시 히트 마커·픽스처 실체화 `src`·A2 재조달 대조·Step 5 검증 명령), **`git worktree`처럼 경로를 가정하는 다른 자리가 남았을 수 있다**
-- ~~T2의 세 번째 사이트가 `meta` 변수명을 재사용한다~~ — **확인 완료**: `sandbox.rs:55-61` 분기에 동명 변수가 없다(`bytes`뿐). 충돌 없음
-- **T15 Step 4의 단언 문자열**(`"nav_hit[fail] tasks=1 excluded=1"`)은 합성 데이터에 맞춰 실제 값을 넣어야 한다. 형태만 제시했다
-- ~~`--session`의 언팩 원소 수~~ — **확인 완료**: T16(`:3040`)과 `process()`(`:2438`) 둘 다 `…, sr_corr_total, tok)` 13원소 형태로 일치
+개정 3이 스스로 추가한 규율(*"전수를 grep으로 세고 개수를 커밋 메시지에 적는다"*)을 **그 규율을 쓴 커밋에서 지키지 않았다.** 개정 4는 C1을 정규식 전수 치환으로 처리하고 개수(9→0)를 커밋 메시지에 적는다.
+
+**3. 개정 4가 새로 만들 수 있는 것 (4R이 볼 곳)**
+
+- **캐시 히트 대조가 조달 시간을 늘린다** — 히트마다 전 파일 SHA-256을 다시 돈다. 4레포 최대 트리에서 비용이 얼마인지 미측정
+- **`sed -i ''`가 BSD 한정**이다. Step 5는 이 머신(macOS) 전용이라 적었으나 다른 환경에서 조용히 실패할 수 있다
+- **단언 ④의 문자열이 여전히 합성 데이터 의존**이다. *"실제 값을 넣을 것"*이라 적었지만 값을 못 맞추면 어떻게 되는지는 안 적혀 있다
+- **`no_oracle_row`를 뽑는 방법**을 캡처 패턴 주석에 한 줄로만 적었다
