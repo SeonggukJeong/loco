@@ -38,6 +38,7 @@ pub struct StatusNote {
     mutated_paths: Vec<String>,
     last_cmd_exit: Option<String>,
     last_test_summary: Option<TestSummary>,
+    last_cmd_piped: bool,
     pending: bool,
 }
 
@@ -53,6 +54,7 @@ impl StatusNote {
             mutated_paths: Vec::new(),
             last_cmd_exit: None,
             last_test_summary: None,
+            last_cmd_piped: false,
             pending: false,
         }
     }
@@ -69,8 +71,12 @@ impl StatusNote {
 
     /// run_command Ok의 결과를 저장한다. 파싱은 배선 지점이 1회 수행해 넘긴다 (§2-3).
     /// exit이 None(타임아웃·취소·무-exit 본문)이면 summary도 함께 None으로 **덮는다** —
-    /// 잘린 부분 출력의 통과 섹션이 "all passed"로 접지되는 거짓 초록을 봉쇄
-    pub fn record_command_result(&mut self, exit: Option<String>, summary: Option<TestSummary>) {
+    /// 잘린 부분 출력의 통과 섹션이 "all passed"로 접지되는 거짓 초록을 봉쇄.
+    /// piped는 배선 지점이 `has_unquoted_pipe`로 1회 판정해 넘긴다(§3-3) — 규칙 4의
+    /// exit 0 교차검증은 파이프라인 마지막 명령(예: tail)의 exit이라 구조적으로
+    /// 항상 통과하므로 무효화한다 (M14 A-2)
+    pub fn record_command_result(&mut self, exit: Option<String>, summary: Option<TestSummary>, piped: bool) {
+        self.last_cmd_piped = piped;
         if exit.is_none() {
             self.last_cmd_exit = None;
             self.last_test_summary = None;
@@ -144,15 +150,29 @@ impl StatusNote {
             if s.ran == 0 && s.filtered_out > 0 {
                 return "verification: last cargo test ran 0 tests (filter matched nothing)".to_string();
             }
-            // 규칙 4: 전부 통과 — exit 0 교차 검증 필수
-            if s.failed == 0 && s.ran > 0 && self.last_cmd_exit.as_deref() == Some("0") {
+            // 규칙 4: 전부 통과 — exit 0 교차 검증 필수.
+            // §3-4-2: 파이프면 그 교차검증이 tail의 exit 0 때문에 구조적으로
+            // 무조건 통과하므로 무효다. M12의 "교차검증 실패 시 규칙 5 폴백"을
+            // 그대로 확장한다 — 새 정책이 아니다
+            if s.failed == 0 && s.ran > 0 && self.last_cmd_exit.as_deref() == Some("0") && !self.last_cmd_piped {
                 return format!("verification: last cargo test: all {} passed", s.passed);
             }
         }
-        // 규칙 5: 기존 문안
+        // 규칙 5: 기존 문안 + 한정자. 여러 줄로 만들면 M11 블록 계약이 깨진다 —
+        // CONT_INDENT 없는 줄은 remove_status_note()가 회수하지 못해 영구 잔존한다
+        let mut quals: Vec<&str> = Vec::new();
+        if self.last_cmd_piped {
+            quals.push("via pipe");
+        }
+        // 조건은 last_test_summary.is_none()이며 "규칙 5에 도달했다"가 아니다 —
+        // 규칙 5는 요약이 있는 채로도 도달한다(교차검증 실패, 파이프 폴백)
+        if self.last_test_summary.is_none() {
+            quals.push("no test summary in output");
+        }
+        let suffix = if quals.is_empty() { String::new() } else { format!(" ({})", quals.join(", ")) };
         match &self.last_cmd_exit {
-            Some(code) => format!("verification: last command exited {code}"),
-            None => "verification: last command gave no exit code".to_string(),
+            Some(code) => format!("verification: last command exited {code}{suffix}"),
+            None => format!("verification: last command gave no exit code{suffix}"),
         }
     }
 }
@@ -209,6 +229,7 @@ mod tests {
                 failed_names: vec!["max_of_list".to_string()],
                 filtered_out: 0,
             }),
+            false,
         );
         let note = s.on_turn(&ctx(3, false, true, false)).expect("케이던스 3 발동");
         assert!(note.contains("files edited: none yet"), "{note}");
@@ -242,12 +263,14 @@ mod tests {
 
     #[test]
     fn zero_mutation_render_is_single_line() {
-        // 수선 B 이후에도 여전히 한 줄이다 — 검증 줄이 파이프로 끼어들 뿐
+        // 수선 B 이후에도 여전히 한 줄이다 — 검증 줄이 파이프로 끼어들 뿐.
+        // M14 A-2: 명령을 한 번도 실행하지 않은 상태도 last_test_summary.is_none()이므로
+        // "no test summary in output" 한정자가 붙는다(참 — 실제로 요약이 없다)
         let mut s = StatusNote::new();
         let note = s.on_turn(&ctx(5, false, true, false)).unwrap();
         assert_eq!(
             note,
-            "[status] files edited: none yet | verification: last command gave no exit code | turns: 5 of 25 used"
+            "[status] files edited: none yet | verification: last command gave no exit code (no test summary in output) | turns: 5 of 25 used"
         );
         assert_eq!(note.lines().count(), 1, "여전히 한 줄: {note}");
     }
@@ -256,11 +279,11 @@ mod tests {
     fn verified_state_shows_last_exit_and_overwrite_pins() {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
-        s.record_command_result(Some("101".to_string()), None);
+        s.record_command_result(Some("101".to_string()), None, false);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
         assert!(note.contains("verification: last command exited 101"), "{note}");
         // 덮어쓰기 핀: exit 줄 없는 Ok(타임아웃 본문)는 None으로 덮는다 (§4)
-        s.record_command_result(None, None);
+        s.record_command_result(None, None, false);
         let note = s.on_turn(&ctx(20, false, true, false)).unwrap();
         assert!(note.contains("verification: last command gave no exit code"), "{note}");
     }
@@ -279,7 +302,7 @@ mod tests {
     fn failed_tests_render_names_not_exit_code() {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
-        s.record_command_result(Some("101".to_string()), Some(summary(1, 3, 0, &["alpha", "beta", "gamma"])));
+        s.record_command_result(Some("101".to_string()), Some(summary(1, 3, 0, &["alpha", "beta", "gamma"])), false);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
         assert!(note.contains("verification: last cargo test: 3 failed (alpha, beta and 1 more)"), "{note}");
     }
@@ -288,7 +311,7 @@ mod tests {
     fn failed_render_omits_the_paren_when_names_were_truncated_away() {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
-        s.record_command_result(Some("101".to_string()), Some(summary(0, 3, 0, &[])));
+        s.record_command_result(Some("101".to_string()), Some(summary(0, 3, 0, &[])), false);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
         let verification = note.lines().find(|l| l.contains("verification:")).unwrap();
         assert_eq!(verification.trim(), "verification: last cargo test: 3 failed", "{note}");
@@ -298,7 +321,7 @@ mod tests {
     fn zero_test_run_renders_filter_matched_nothing() {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
-        s.record_command_result(Some("0".to_string()), Some(summary(0, 0, 13, &[])));
+        s.record_command_result(Some("0".to_string()), Some(summary(0, 0, 13, &[])), false);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
         assert!(note.contains("verification: last cargo test ran 0 tests (filter matched nothing)"), "{note}");
     }
@@ -308,11 +331,11 @@ mod tests {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
         // exit 0 — 정상 승격
-        s.record_command_result(Some("0".to_string()), Some(summary(5, 0, 0, &[])));
+        s.record_command_result(Some("0".to_string()), Some(summary(5, 0, 0, &[])), false);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
         assert!(note.contains("verification: last cargo test: all 5 passed"), "{note}");
         // exit 101인데 통과 섹션만 남은 출력(중간 절단) — 승격 금지, 규칙 5로 폴백
-        s.record_command_result(Some("101".to_string()), Some(summary(5, 0, 0, &[])));
+        s.record_command_result(Some("101".to_string()), Some(summary(5, 0, 0, &[])), false);
         let note = s.on_turn(&ctx(20, false, true, false)).unwrap();
         assert!(note.contains("verification: last command exited 101"), "{note}");
         assert!(!note.contains("all 5 passed"), "{note}");
@@ -325,9 +348,9 @@ mod tests {
         // 실패 요약으로 채운다 — 규칙 2는 exit 무관 렌더이므로, last_test_summary가
         // 실제로 지워지지 않으면 아래 타임아웃 이후에도 "N failed"가 새어나온다
         // (통과 요약을 쓰면 규칙 4의 exit=="0" 교차 검증에 가려 이 테스트가 공허해진다)
-        s.record_command_result(Some("101".to_string()), Some(summary(0, 3, 0, &["alpha", "beta"])));
+        s.record_command_result(Some("101".to_string()), Some(summary(0, 3, 0, &["alpha", "beta"])), false);
         // 타임아웃 — exit 줄 없음. 배선 지점이 (None, None)을 넘긴다
-        s.record_command_result(None, None);
+        s.record_command_result(None, None, false);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
         assert!(note.contains("verification: last command gave no exit code"), "{note}");
         assert!(!note.contains("cargo test"), "스테일 실패 요약 잔존: {note}");
@@ -337,7 +360,7 @@ mod tests {
     fn non_cargo_command_keeps_the_legacy_line() {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
-        s.record_command_result(Some("0".to_string()), None);
+        s.record_command_result(Some("0".to_string()), None, false);
         let note = s.on_turn(&ctx(15, false, true, false)).unwrap();
         assert!(note.contains("verification: last command exited 0"), "{note}");
     }
@@ -346,7 +369,7 @@ mod tests {
     fn mutated_since_verify_still_wins_over_summary() {
         let mut s = StatusNote::new();
         s.record_mutation(&serde_json::json!({"path": "a.rs"}));
-        s.record_command_result(Some("0".to_string()), Some(summary(5, 0, 0, &[])));
+        s.record_command_result(Some("0".to_string()), Some(summary(5, 0, 0, &[])), false);
         let note = s.on_turn(&ctx(15, false, true, true)).unwrap(); // msv=true
         assert!(note.contains("verification: none since your last edit"), "{note}");
     }
@@ -397,5 +420,132 @@ mod tests {
         s.record_mutation(&serde_json::json!({}));
         s.record_mutation(&serde_json::json!({"path": 42}));
         assert!(s.on_turn(&ctx(5, false, true, false)).unwrap().contains("none yet"));
+    }
+
+    // --- M14 A-2: 규칙 4 파이프 폴백·규칙 5 한정자 ---
+
+    #[test]
+    fn rule_4_falls_back_to_rule_5_when_the_output_came_through_a_pipe() {
+        // #3(tail 절단): 실패 섹션이 잘려 failed=0으로 파싱되고, exit는 tail의 0이라
+        // M12의 교차검증이 구조적으로 통과한다 → "all 8 passed"라는 거짓
+        let mut n = StatusNote::new();
+        n.record_mutation(&serde_json::json!({"path":"src/lib.rs"}));
+        n.record_command_result(
+            Some("0".into()),
+            Some(TestSummary { ran: 8, passed: 8, failed: 0, filtered_out: 0, failed_names: vec![] }),
+            true,
+        );
+        let note = n.on_turn(&ctx(3, true, true, false)).unwrap();
+        assert!(!note.contains("all 8 passed"), "파이프인데 통과를 주장한다: {note}");
+        assert!(note.contains("last command exited 0"), "규칙 5로 폴백해야 한다: {note}");
+        assert!(note.contains("via pipe"), "파이프 한정자가 없다: {note}");
+    }
+
+    #[test]
+    fn rule_4_still_renders_all_passed_without_a_pipe() {
+        let mut n = StatusNote::new();
+        n.record_mutation(&serde_json::json!({"path":"src/lib.rs"}));
+        n.record_command_result(
+            Some("0".into()),
+            Some(TestSummary { ran: 8, passed: 8, failed: 0, filtered_out: 0, failed_names: vec![] }),
+            false,
+        );
+        assert!(n.on_turn(&ctx(3, true, true, false)).unwrap().contains("all 8 passed"));
+    }
+
+    #[test]
+    fn a_missing_test_summary_is_stated_on_the_same_line() {
+        let mut n = StatusNote::new();
+        n.record_mutation(&serde_json::json!({"path":"src/lib.rs"}));
+        n.record_command_result(Some("101".into()), None, false);
+        let note = n.on_turn(&ctx(3, true, true, false)).unwrap();
+        assert!(note.contains("no test summary"), "{note}");
+        // 블록 계약: 마커 줄 + 9칸 들여쓰기만
+        for line in note.lines().skip(1) {
+            assert!(line.starts_with(CONT_INDENT), "들여쓰기 없는 고아 줄: {line:?}");
+        }
+    }
+
+    #[test]
+    fn the_no_summary_phrase_never_appears_when_a_summary_exists() {
+        // 4R I2: 규칙 5는 요약이 있는 채로도 도달한다 — M12 교차검증 실패와 이번 폴백.
+        // 문구를 렌더 지점에 붙이면 거짓이 된다
+        let mut n = StatusNote::new();
+        n.record_mutation(&serde_json::json!({"path":"src/lib.rs"}));
+        n.record_command_result(
+            Some("101".into()), // allpass + exit 101 → 교차검증 실패 → 규칙 5
+            Some(TestSummary { ran: 8, passed: 8, failed: 0, filtered_out: 0, failed_names: vec![] }),
+            false,
+        );
+        let note = n.on_turn(&ctx(3, true, true, false)).unwrap();
+        assert!(!note.contains("no test summary"), "요약이 있는데 없다고 한다: {note}");
+    }
+
+    #[test]
+    fn every_rendered_status_line_keeps_the_block_contract() {
+        // §11 Q6: 규칙이 아니라 **입력 차원**을 열거한다. 규칙은 (summary, exit)에서
+        // 파생되므로 규칙을 하나씩 고르면 규칙 4의 exit 교차검증이 누락된다
+        let summaries: Vec<Option<TestSummary>> = vec![
+            None,
+            Some(TestSummary { ran: 8, passed: 8, failed: 0, filtered_out: 0, failed_names: vec![] }),
+            Some(TestSummary {
+                ran: 3,
+                passed: 0,
+                failed: 3,
+                filtered_out: 0,
+                failed_names: vec!["a".into(), "b".into(), "c".into()],
+            }),
+            Some(TestSummary { ran: 0, passed: 0, failed: 0, filtered_out: 15, failed_names: vec![] }),
+            Some(TestSummary { ran: 0, passed: 0, failed: 0, filtered_out: 0, failed_names: vec![] }),
+        ];
+        let exits: Vec<Option<String>> = vec![None, Some("0".into()), Some("101".into())];
+
+        let mut rendered = 0usize;
+        let mut expected = 0usize;
+        for muts in [false, true] {
+            for since in [false, true] {
+                for s in &summaries {
+                    for e in &exits {
+                        for piped in [false, true] {
+                            expected += 1;
+                            let mut n = StatusNote::new();
+                            if muts {
+                                n.record_mutation(&serde_json::json!({"path": "src/lib.rs"}));
+                            }
+                            n.record_command_result(e.clone(), s.clone(), piped);
+                            // turn 5 = 케이던스 — 무뮤테이션 분기도 반드시 렌더된다
+                            // mutation_ok를 muts에 연동해야 뮤테이션 분기가 렌더된다
+                            let Some(note) = n.on_turn(&ctx(5, muts, true, since)) else { continue };
+                            rendered += 1;
+                            assert!(note.starts_with(STATUS_MARKER), "{note:?}");
+                            for line in note.lines().skip(1) {
+                                assert!(
+                                    line.starts_with(CONT_INDENT),
+                                    "들여쓰기 없는 고아 줄: {line:?}\n전문:\n{note}"
+                                );
+                            }
+                            // 문구의 참/거짓 — 이 마일스톤에서 유일하게 의미를 검사하는 단언.
+                            // record_command_result의 기존 계약(exit==None이면 summary도
+                            // None으로 덮는다 — timeout_body_clears_both_exit_and_summary가
+                            // 핀)상 s가 Some이어도 e가 None이면 실제 last_test_summary는
+                            // None이 된다. 그 조합은 실배선에서 발생하지 않지만(cmd_summary는
+                            // cmd_exit가 Some일 때만 파싱) 이 행렬은 규칙이 아니라 입력
+                            // 차원을 전수 열거하므로 등장한다 — 단언은 "s가 None"이 아니라
+                            // "결과적으로 요약이 없다"(s.is_none() || e.is_none())를 검사해야
+                            // 진짜 계약을 반영한다
+                            if note.contains("no test summary") {
+                                assert!(s.is_none() || e.is_none(), "요약이 있는데 없다고 렌더: {note}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // 렌더 건수 == 열거한 상태 수. 하나도 건너뛰지 않았음을 고정한다 —
+        // 렌더가 안 일어나는 turn을 고르면 절반이 조용히 사라진다
+        assert_eq!(
+            rendered, expected,
+            "렌더가 {rendered}/{expected}건만 일어났다 — turn 또는 mutation_ok 선택을 확인할 것"
+        );
     }
 }

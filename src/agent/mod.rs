@@ -553,7 +553,7 @@ impl<C: LlmClient> Agent<C> {
                         mutated_since_verify = false;
                     }
                     unreleased_due_to_pipe = !released && is_piped;
-                    status.record_command_result(cmd_exit.clone(), cmd_summary.clone());
+                    status.record_command_result(cmd_exit.clone(), cmd_summary.clone(), is_piped);
                 } else if self.registry.get(&turn.action.tool).is_some_and(|t| t.is_mutating()) {
                     mutated_since_verify = true;
                     unreleased_due_to_pipe = false; // 뮤테이션이 원인을 갈아치운다
@@ -2395,9 +2395,11 @@ mod tests {
         // remove_status_note가 최신만 유지 — 턴 3(케이던스)의 노트가 턴 5에서
         // 교체돼 히스토리에는 여전히 1개만 남는다 (M13 조밀화로 늘지 않음)
         assert_eq!(with_status.len(), 1, "턴 5에서 정확히 1회");
+        // M14 A-2: run_command를 한 번도 안 썼으므로 last_test_summary.is_none() —
+        // "no test summary in output" 한정자가 붙는다(참)
         assert!(
             with_status[0].content.contains(
-                "[status] files edited: none yet | verification: last command gave no exit code | turns: 5 of 25 used"
+                "[status] files edited: none yet | verification: last command gave no exit code (no test summary in output) | turns: 5 of 25 used"
             ),
             "{}",
             with_status[0].content
