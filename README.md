@@ -383,3 +383,12 @@ command_timeout_secs = 60
       33/36(임계값 정확히 충족, 재측정 없음), 배치 후 이상 징후 3건 전수 법의학
       귀속(M12 신규 장치 귀속 0건) — 위 "프로젝트 상태"와 `docs/baselines.md`
       "M12 실험 — 회귀 게이트" 절, `docs/experiments/2026-07-18-honest-harness/report.md` 참고
+- [x] M13: llama.cpp 앵커 + 실사용 파일럿 — 서빙 스택을 llama.cpp로 전환(`scripts/serve.sh`가
+      실행 플래그를 핀으로 고정), 새 스택에서 앵커 재확립(35/36, 동등 성립 `|+2|≤4`)과
+      상태선 수선 회귀 게이트 통과(35/36), 실제 오픈소스 레포 4개에서 **20세션 실사용
+      파일럿**(`scripts/pilot.sh`·`scripts/pilot_tally.py`, 원장은 레포 밖). 성능을 올리는
+      마일스톤이 아니라 **측정 대상을 바꾸는 이행 작업**이다 — 합성 통과율이 실사용을
+      예측하지 못한다는 것이 결과이고(경로 미지정 과제 `tasks/` 29/30 vs 실레포 0/7),
+      확정 loco 버그 2건(`pack()`의 과제 메시지 삭제, `reasoning_content` 미파싱)이
+      부산물이다. 위 "프로젝트 상태"와 `docs/baselines.md` M13 절,
+      `docs/experiments/2026-07-19-llamacpp-anchor/` 참고. M14 후보는 `docs/m14-candidates.md`
