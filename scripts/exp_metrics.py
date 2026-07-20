@@ -37,11 +37,19 @@ MARKS = {
     # 노트 2종. 부분문자열은 Rust 리터럴에서 문자 그대로 복사(백틱·따옴표 포함).
     "args_tool_key": "the `tool` key inside \"args\" is not a parameter",
     "args_tool_switch": "\"args\" named a different tool, so this call was dispatched as that tool instead",
+    # M13 T10 리뷰 수정(Important 1) — agent/mod.rs가 finish_reason=="length"일
+    # 때 session.push(ChatMessage::user(...))로 남기는 고정 재시도 문구(직접
+    # 확인, src/agent/mod.rs 234-239행). 러스트 리터럴에서 문자 그대로 복사.
+    # 이 파일이 손으로 미러링하는 상수라 드리프트 감시 대상이다 — 위
+    # BADARGS_KEY_PREFIX·args_tool_key/switch와 같은 사정(크로스임포트 불가,
+    # 자동 드리프트 감지 없음): 러스트 쪽 문구가 바뀌면 이 리터럴도 사람이
+    # 함께 고쳐야 한다.
+    "length_retry": "cut off by the output token limit",
 }
 COLS = ["run", "outcome", "passed"] + list(MARKS) + [
     "sr_recovered", "sr_recovery_denom", "finish_missing_maxrun", "perturb_turns", "stop_cause",
     "first_mut_turn", "cargo_after_mut", "zero_mut_end", "status_in_args", "sr_files",
-    "verify_failed", "sr_corr_total", "perturb_turns_ext",
+    "verify_failed", "sr_corr_total", "perturb_turns_ext", "parse_fail_first",
 ]
 
 # M12 §3-1 badargs_streak()이 세는 "missing field" BadArgs 접두 — tools/mod.rs
@@ -73,6 +81,77 @@ def normalize_path(path):
         parts.append(seg)
     joined = "/".join(parts)
     return f"/{joined}" if absolute else joined
+
+
+def parse_fail_first(events):
+    """첫 assistant 메시지가 유효한 에이전트 턴으로 파싱되지 않으면 1.
+
+    M13 스펙 §3-6-1의 기계 검사 — C1형 조용한 전면 실패(json_schema 폴백이
+    영구 발동해 매 턴 파싱이 실패하는데 배치는 정상 종료)를 배치 후에
+    기계적으로 잡는다.
+
+    Rust의 protocol.rs::parse_turn을 완전 재현하지 않는다. 판별력 있는 최소
+    검사만 한다: 코드펜스를 벗기고 JSON 객체를 찾은 뒤, thought가 있고
+    action이 tool 키를 가진 객체인지 본다.
+
+    "{" 전무는 예외적으로 확정 판정(1)이다 — 판정 불가가 아니라 증명된
+    실패다(T4 리뷰 Finding 1). Rust parse_turn(직접 확인, protocol.rs
+    21-46행)의 세 사다리(그대로 파싱 → 펜스 제거 후 파싱 →
+    first_json_object 스캔) 중 마지막 관문 first_json_object는
+    `text.find('{')?`로 시작한다 — 앞 두 사다리가 전부 폴스루해도 텍스트에
+    "{"가 하나도 없으면 이 관문에서 즉시 실패해 "Your reply contained no
+    JSON object" 에러로 귀결된다. 즉 세 사다리 전부가 실패하는 게 보장되는
+    유일한 무-JSON 형태이며, 이 형태(모델이 순수 산문만 출력)가 바로 이
+    컬럼이 잡으려는 실패의 가장 흔한 모양이다. 나머지 미판정 케이스
+    ("{"는 있으나 닫는 "}"를 못 찾음/파싱 실패, assistant 자체가 없음)는
+    여전히 거짓 양성 금지 원칙에 따라 0으로 둔다.
+
+    알려진 과소검출(T4 리뷰 Finding 2 — 의도적으로 미수선): 산문 속 디코이
+    "{...}"가 실제(펜스로 감싼) JSON 턴보다 앞에 오는 메시지에서는, Rust의
+    first_json_object가 그 디코이의 첫 균형 중괄호에 커밋해 파싱에
+    실패하는 반면, 이 파이썬 검사는 펜스 분리 단계에서 디코이를 건너뛰고
+    뒤쪽의 진짜 JSON을 찾아내 0(파싱 성공)을 반환한다 — 두 판정이 갈린다.
+    제대로 고치려면 Rust의 문자열 인지 중괄호 스캐너를 그대로 재현해야
+    하는데, 이는 브리프가 의도한 "판별력 있는 최소 검사" 설계와 충돌한다.
+    비용 대비 이 형태의 실측 사례가 아직 없어 고치지 않고 이 사례만
+    기록해 둔다 — 이 검사가 1을 반환하면 그 판정은 (위 no-"{" 사유로)
+    믿을 수 있지만, 0을 반환했다고 해서 Rust가 반드시 파싱에 성공했다는
+    보장은 아니다.
+    """
+    for ev in events:
+        if ev.get("kind") != "assistant":
+            continue
+        text = ev.get("content") or ""
+        if "{" not in text:
+            return 1  # 위 독스트링 참조 — 증명된 실패, 판정 불가 아님
+        # 코드펜스 제거
+        if "```" in text:
+            parts = text.split("```")
+            for p in parts:
+                p = p.lstrip()
+                if p.startswith("json"):
+                    p = p[4:]
+                if p.lstrip().startswith("{"):
+                    text = p
+                    break
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            return 0  # "{"는 있었으나(위 통과) 닫는 "}"를 못 찾음 — 판정 불가
+        try:
+            obj = json.loads(text[start:end + 1])
+        except (ValueError, TypeError):
+            return 0  # 파싱 불가 — 판정 불가
+        if not isinstance(obj, dict):
+            return 0  # 방어적 belt-and-suspenders: 위 슬라이스는 "{"로 시작·"}"로
+            # 끝나도록 구성되므로 json.loads가 성공하면 dict 아닌 결과는 도달 불가
+        action = obj.get("action")
+        if not isinstance(action, dict) or "tool" not in action:
+            return 1  # action이 객체가 아니거나 tool이 없다 = 스키마 미강제 형태
+        if "thought" not in obj:
+            return 1
+        return 0
+    return 0  # assistant 없음 — 판정 불가
 
 
 def run_metrics(events):
@@ -221,6 +300,7 @@ def process(stamp_dir):
     stops = {"sr": 0, "finish": 0, "other": 0}
     zero_mut = {"max_turns": 0, "finished": 0, "other": 0}
     mut_runs, cargo_runs = 0, 0
+    parse_fail_total = 0
     for path in sorted(glob.glob(os.path.join(stamp_dir, "run-*.jsonl"))):
         events = [json.loads(l) for l in open(path)]
         (counts, rec, den, fin_max, perturb, last,
@@ -242,6 +322,8 @@ def process(stamp_dir):
             totals[k] += counts[k]
         total_rec += rec
         total_den += den
+        pff = parse_fail_first(events)
+        parse_fail_total += pff
         files_col = ",".join(f"{os.path.basename(p)}:{n}" for p, n in sorted(sr_files.items())) or "-"
         # M12 §6 파생 컬럼: verify_failed(규칙 2)는 verify_total(규칙 2·4 합)에서
         # verify_allpass(규칙 4)를 뺀 나머지 — 실패 개수가 가변이라 고정
@@ -258,13 +340,14 @@ def process(stamp_dir):
         row = [name, outcome, str(passed)] + [str(counts[k]) for k in MARKS]
         row += [str(rec), str(den), str(fin_max), str(perturb), cause,
                 str(first_mut), str(cargo_mut), zme, str(st_args), files_col,
-                str(verify_failed), str(sr_corr_total), str(perturb_ext)]
+                str(verify_failed), str(sr_corr_total), str(perturb_ext), str(pff)]
         print("\t".join(row))
     marks = " ".join(f"{k}={totals[k]}" for k in MARKS)
     print(f"# summary {marks} recovered={total_rec}/{total_den} "
           f"stops sr={stops['sr']} finish={stops['finish']} other={stops['other']} "
           f"zero_mut max_turns={zero_mut['max_turns']} finished={zero_mut['finished']} "
-          f"other={zero_mut['other']} cargo_after_mut={cargo_runs}/{mut_runs}")
+          f"other={zero_mut['other']} cargo_after_mut={cargo_runs}/{mut_runs} "
+          f"parse_fail_first(총): {parse_fail_total}  <- 0이 아니면 그 배치는 앵커/게이트로 쓸 수 없다")
 
 
 def selftest():
@@ -539,6 +622,18 @@ def selftest():
     assert counts_notes["args_tool_key"] == 1, counts_notes
     assert counts_notes["args_tool_switch"] == 1, counts_notes
 
+    # M13 T10 리뷰 수정(Important 1) — length_retry 마커. finish_reason=="length"
+    # 재시도 문구는 assistant가 아니라 session.push(ChatMessage::user(...))로
+    # 남는 user 이벤트다(직접 확인, src/agent/mod.rs 234-239행) — 그래서
+    # assistant를 건너뛰는 마커 카운트 루프를 통과해 실제로 세어진다.
+    events_length = [
+        ev("assistant", "(empty)"),
+        ev("user", "Your previous response was cut off by the output token limit. "
+           "Respond again with exactly one, much shorter JSON turn."),
+    ]
+    counts_length = run_metrics(events_length)[0]
+    assert counts_length["length_retry"] == 1, counts_length
+
     # M12 T9 수정(리뷰 Item 2): verify_failed·sr_corr_total은 이제 process()를
     # 실제로 호출해 출력 테이블 값으로 검증한다(로컬 재계산이 아니라 실 코드
     # 경로) — process() 내부의 두 파생식을 각각 0으로 바꾸는 뮤턴트가 살아남던
@@ -560,6 +655,57 @@ def selftest():
         col = {name: i for i, name in enumerate(header)}
         assert row[col["verify_failed"]] == "1", row       # process()의 뺄셈식이 실제로 실행됐는지
         assert row[col["sr_corr_total"]] == "1", row        # process()가 run_metrics의 실 반환값을 그대로 쓰는지
+
+    # M13 — parse_fail_first: 첫 assistant가 유효 턴이 아니면 1 (C1형 조용한 실패 포착)
+    broken = [
+        {"kind": "system", "content": "sys", "ts": "t"},
+        {"kind": "user", "content": "do it", "ts": "t"},
+        # 스키마 강제가 꺼진 응답 — action이 객체가 아니라 문자열
+        {"kind": "assistant", "content": '```json\n{"action": "read_file", "path": "a.rs"}\n```', "ts": "t"},
+    ]
+    assert parse_fail_first(broken) == 1, "깨진 첫 assistant는 1"
+    ok = [
+        {"kind": "system", "content": "sys", "ts": "t"},
+        {"kind": "user", "content": "do it", "ts": "t"},
+        {"kind": "assistant",
+         "content": '{"thought": "look", "action": {"tool": "read_file", "args": {"path": "a.rs"}}}',
+         "ts": "t"},
+    ]
+    assert parse_fail_first(ok) == 0, "정상 첫 assistant는 0"
+    # assistant가 아예 없는 런(즉시 취소 등)은 판정 불가 → 0 (거짓 양성 금지)
+    assert parse_fail_first(ok[:2]) == 0, "assistant 없으면 0"
+
+    # T4 리뷰 수선(Finding 1·3-1): "{"가 전혀 없는 assistant 메시지(순수
+    # 산문)는 증명된 실패라 1 — 수선 전 코드는 이 사례를 "JSON 못 찾음"으로
+    # 뭉뚱그려 0을 반환했으므로, 이 단언은 수선 전 코드에서는 반드시 실패한다
+    # (비어있지 않음 검증 — 리뷰 게이트 2의 non-vacuity 요구).
+    no_brace = [
+        {"kind": "system", "content": "sys", "ts": "t"},
+        {"kind": "user", "content": "do it", "ts": "t"},
+        {"kind": "assistant",
+         "content": "Sure, I will read the file now and check its contents.",
+         "ts": "t"},
+    ]
+    assert parse_fail_first(no_brace) == 1, "중괄호 없는 첫 assistant는 1(증명된 실패)"
+
+    # T4 리뷰 수선(Finding 3-2): action은 tool을 가진 객체이지만 최상위
+    # thought가 없는 경우 — 기존 콤보 fixture(action이 문자열)와는 별개
+    # 경로(마지막 `if "thought" not in obj` 분기)를 단독으로 핀한다.
+    missing_thought = [
+        {"kind": "assistant",
+         "content": '{"action": {"tool": "read_file", "args": {"path": "a.rs"}}}',
+         "ts": "t"},
+    ]
+    assert parse_fail_first(missing_thought) == 1, "thought 없는 첫 assistant는 1"
+
+    # T4 리뷰 수선(Finding 3-3): 첫 assistant가 깨졌고 두 번째는 정상이어도
+    # 오직 첫 메시지만 본다 — 루프가 첫 assistant에서 바로 return하는지 핀.
+    second_ok = broken + [
+        {"kind": "assistant",
+         "content": '{"thought": "retry", "action": {"tool": "read_file", "args": {"path": "a.rs"}}}',
+         "ts": "t"},
+    ]
+    assert parse_fail_first(second_ok) == 1, "첫 assistant만 보므로 두 번째가 정상이어도 1"
 
     print("selftest ok")
 

@@ -91,6 +91,11 @@ pub struct Agent<C: LlmClient> {
     context_tokens: usize,
     /// json_schema 폴백 상태 — 400을 만나면 끈다 (스펙 §4). Task 10에서 사용
     use_json_schema: bool,
+    /// 이 런에서 json_schema 폴백이 **실제로 발동했는가** (M13 스펙 §3-6-1).
+    /// `!use_json_schema`로 파생하지 않는다 — 그러면 "처음부터 json_schema를
+    /// 끄고 시작하는 설정"이 생기는 순간 전 런이 폴백 발동으로 기록돼
+    /// 앵커 게이트가 배치 전체를 오차단한다(fail-closed 오작동).
+    schema_fallback: bool,
     /// system role 폴백 상태 — 400을 만나면 첫 user에 병합 (스펙 §3).
     inline_system: bool,
     /// 평가 하네스가 반복마다 다른 시드를 주입한다 (스펙 §8)
@@ -118,6 +123,7 @@ impl<C: LlmClient> Agent<C> {
             max_turns: config.max_turns,
             context_tokens: config.context_tokens,
             use_json_schema: true,
+            schema_fallback: false,
             inline_system: false,
             seed: None,
             temperature_override: None,
@@ -135,6 +141,14 @@ impl<C: LlmClient> Agent<C> {
     /// 평가 하네스가 반복마다 다른 시드를 주입한다 (스펙 §8)
     pub fn set_seed(&mut self, seed: u64) {
         self.seed = Some(seed);
+    }
+
+    /// 이 런에서 json_schema 폴백(400 → response_format 제거)이 발동했는가.
+    /// eval이 report.json에 기록해 "조용한 전면 실패"를 배치 후 기계적으로
+    /// 판별할 수 있게 한다 (M13 스펙 §3-6-1). Agent는 런마다 새로 만들어지므로
+    /// (src/eval/mod.rs) 이 값은 런 지역이다.
+    pub fn schema_fallback_fired(&self) -> bool {
+        self.schema_fallback
     }
 
     /// 스펙 §6: (context − max_output) × 0.9
@@ -593,6 +607,7 @@ impl<C: LlmClient> Agent<C> {
                 }
                 Err(LlmError::Api { status: 400, .. }) if self.use_json_schema => {
                     self.use_json_schema = false;
+                    self.schema_fallback = true;
                     on_event(AgentEvent::Notice(
                         "(서버가 요청을 거부 — response_format 없이 재시도)".to_string(),
                     ));
@@ -722,6 +737,15 @@ mod tests {
         request: &str,
     ) -> Result<AgentOutcome, LlmError> {
         agent.run(session, request, &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await
+    }
+
+    #[test]
+    fn schema_fallback_fired_is_false_on_a_fresh_agent() {
+        // 폴백 게터의 초기 상태 핀 — use_json_schema가 true로 시작하므로 false여야
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![]);
+        let agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        assert!(!agent.schema_fallback_fired(), "새 에이전트는 폴백 미발동");
     }
 
     #[tokio::test]
@@ -1108,6 +1132,7 @@ mod tests {
         assert!(reqs[0].response_format.is_some());
         assert!(reqs[1].response_format.is_none(), "폴백: json_schema 끔 (스펙 §4)");
         assert!(!notices.is_empty(), "폴백 알림 이벤트");
+        assert!(agent.schema_fallback_fired(), "400 폴백 후 폴백 게터는 true (스펙 M13 §3-6-1)");
     }
 
     #[tokio::test]
@@ -1124,6 +1149,10 @@ mod tests {
         assert_eq!(third[0].role, "user");
         assert!(third[0].content.contains("You are loco"), "시스템 프롬프트가 첫 user 앞에 병합");
         assert!(third[0].content.contains("질문"), "원래 사용자 요청 보존");
+        // 사다리 2단계로 승격해도 1단계에서 켠 폴백 플래그는 유지돼야 한다 —
+        // 누군가 사다리를 리팩터링하며 상태를 초기화하면 앵커 게이트가 조용히
+        // 눈멀기 때문에 여기서 고정한다 (M13 §3-6-1).
+        assert!(agent.schema_fallback_fired(), "json_schema 폴백 발동은 system 인라인 승격 후에도 유지");
     }
 
     #[tokio::test]
@@ -2090,9 +2119,13 @@ mod tests {
             .iter()
             .filter(|m| m.content.contains("[status]"))
             .collect();
+        // remove_status_note가 최신만 유지 — 턴 3(케이던스)의 노트가 턴 5에서
+        // 교체돼 히스토리에는 여전히 1개만 남는다 (M13 조밀화로 늘지 않음)
         assert_eq!(with_status.len(), 1, "턴 5에서 정확히 1회");
         assert!(
-            with_status[0].content.contains("[status] files edited: none yet | turns: 5 of 25 used"),
+            with_status[0].content.contains(
+                "[status] files edited: none yet | verification: last command gave no exit code | turns: 5 of 25 used"
+            ),
             "{}",
             with_status[0].content
         );
@@ -2166,8 +2199,12 @@ mod tests {
 
     #[tokio::test]
     async fn repetition_stop_still_fires_with_status_note_active() {
-        // 정지 우선순위: 동일 호출 5회 정지 턴(턴 5 = 케이던스 임계)에는 상태선을
-        // 주입하지 않는다 (!stop 가드) — 히스토리에 [status] 0개인 채 정지
+        // 정지 우선순위: 동일 호출 5회 정지 턴(턴 5)에는 상태선을 주입하지 않는다
+        // (!stop 가드). M13 조밀화로 턴 3이 케이던스 지점이 되어 정지 이전에
+        // 상태선이 히스토리에 등장하므로(session_contains 전체 검사는 더 이상
+        // "주입 안 됐다"를 핀할 수 없다) — 정지 턴 자체의 tool_result만 좁혀서 본다.
+        // stop==true 경로는 push_tool_result 직후 바로 반환하므로 마지막 메시지가
+        // 곧 정지 턴의 결과다.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), "x").unwrap();
         let same = turn("read_file", serde_json::json!({"path": "a.txt"}));
@@ -2176,7 +2213,12 @@ mod tests {
         let mut session = new_session(&agent);
         let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::RepetitionStop));
-        assert!(!session_contains(&session, "[status]"), "정지 턴 주입 억제");
+        let stop_turn_result = session.messages().last().expect("정지 턴 tool_result 존재");
+        assert!(
+            !stop_turn_result.content.contains("[status]"),
+            "정지 턴 자체에는 주입되지 않음: {}",
+            stop_turn_result.content
+        );
     }
 
     #[tokio::test]

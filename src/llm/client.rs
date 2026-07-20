@@ -10,7 +10,7 @@ use crate::config::Config;
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
     #[error(
-        "서버에 연결할 수 없습니다 ({base_url}).\nLM Studio(또는 사용 중인 서버)가 켜져 있고 주소/포트가 맞는지 확인하세요.\n원인: {source}"
+        "서버에 연결할 수 없습니다 ({base_url}).\nllama-server(또는 LM Studio 등 사용 중인 서버)가 켜져 있고 주소/포트가 맞는지 확인하세요.\n원인: {source}"
     )]
     Connect {
         base_url: String,
@@ -183,7 +183,9 @@ pub async fn resolve_model(client: &OpenAiClient, config: &Config) -> anyhow::Re
     }
     let models = client.list_models().await?;
     models.into_iter().next().ok_or_else(|| {
-        anyhow::anyhow!("서버에 로드된 모델이 없습니다. LM Studio에서 모델을 로드하거나 설정 파일에 model을 지정하세요.")
+        anyhow::anyhow!(
+            "서버에 로드된 모델이 없습니다. llama-server를 모델과 함께 기동하거나(scripts/serve.sh), 설정 파일에 model을 지정하세요."
+        )
     })
 }
 
@@ -294,7 +296,7 @@ mod tests {
         let err = client.chat(&sample_request()).await.unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains(&addr.to_string()), "주소가 포함돼야 함: {msg}");
-        assert!(msg.contains("LM Studio"), "실행 가능한 안내 포함: {msg}");
+        assert!(msg.contains("llama-server"), "실행 가능한 안내 포함: {msg}");
     }
 
     #[tokio::test]

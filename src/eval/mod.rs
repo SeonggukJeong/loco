@@ -199,6 +199,12 @@ async fn run_once<C: LlmClient>(
     )
     .await;
     let elapsed = start.elapsed();
+    // 폴백 발동 여부는 여기서 **한 번만** 읽는다. 아래 judge 호출이 두 갈래
+    // (타임아웃 / 정상)인데 각각에서 게터를 부르면 한쪽만 배선이 끊겨도
+    // 테스트가 안 죽는 지점이 생긴다 — 실제로 그랬다(정상 경로만 고정돼 있고
+    // 타임아웃 경로는 리터럴 false로 바꿔도 전 스위트 초록불이었다).
+    // 실패 방향이 fail-open("폴백 미발동 = 깨끗함")이라 지점 자체를 없앤다.
+    let schema_fallback = agent.schema_fallback_fired();
     let outcome = match bounded {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => {
@@ -211,7 +217,11 @@ async fn run_once<C: LlmClient>(
             return Ok(None);
         }
         Err(Stopped::TimedOut) => {
-            let rec = judge(&sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat, interrupt, cargo_snapshot).await;
+            let rec = judge(
+                &sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat, interrupt, cargo_snapshot,
+                schema_fallback,
+            )
+            .await;
             sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
             return rec;
         }
@@ -224,7 +234,11 @@ async fn run_once<C: LlmClient>(
         // eval에선 도달하지 않음(플래그는 run_bounded만 세우고 그 경로는 위에서 반환) — 방어적 매핑
         AgentOutcome::Cancelled => RunOutcome::Timeout,
     };
-    let rec = judge(&sb, t, opts, kind, turns, elapsed, seed, repeat, interrupt, cargo_snapshot).await;
+    let rec = judge(
+        &sb, t, opts, kind, turns, elapsed, seed, repeat, interrupt, cargo_snapshot,
+        schema_fallback,
+    )
+    .await;
     sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
     rec
 }
@@ -244,6 +258,7 @@ async fn judge(
     repeat: usize,
     interrupt: &std::sync::Arc<std::sync::atomic::AtomicBool>,
     cargo_snapshot: &integrity::CargoConfigSnapshot,
+    schema_fallback: bool,
 ) -> anyhow::Result<Option<RunRecord>> {
     sb.sync_protected(&t.fixture, &with_implicit_protected(&t.spec.protected))?;
     cargo_tripwire(&sb.root)?;
@@ -262,7 +277,11 @@ async fn judge(
         return Ok(None);
     }
     let passed = matches!(exec.end, ExecEnd::Done(s) if s.success());
-    Ok(Some(RunRecord { repeat, seed, passed, outcome, turns, duration_secs: elapsed.as_secs_f64() }))
+    Ok(Some(RunRecord {
+        repeat, seed, passed, outcome, turns,
+        duration_secs: elapsed.as_secs_f64(),
+        schema_fallback,
+    }))
 }
 
 /// `<root>/.loco/eval/<stamp>/` 생성 + `.loco/.gitignore` 보장 (스펙 §7과 동일 정책)
@@ -483,6 +502,56 @@ protected = ["data"]
         assert_eq!(std::fs::read_to_string(proj.path().join(".loco/.gitignore")).unwrap().trim(), "*");
         let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&run.report_path).unwrap()).unwrap();
         assert_eq!(json["total_pass_rate"], 1.0);
+    }
+
+    /// M13 스펙 §3-6-1: json_schema 폴백이 발동한 런은 report.json에 그렇게 기록돼야
+    /// 한다 — "조용한 전면 실패"(스키마 강제 없이 돈 배치가 앵커로 확정되는 것)를
+    /// 배치 후 기계적으로 판별하는 게이트다.
+    ///
+    /// 이 테스트가 고정하는 것은 **eval 배선**이다: `Agent`의 게터가 아니라
+    /// `run_once` → `judge` → `RunRecord` → report.json 경로. 게터 자체는
+    /// `agent::tests`가 본다. 배선만 끊겨도 전 런이 `false`로 기록되고 그것은
+    /// "폴백 미발동 = 깨끗함"으로 읽혀 **게이트가 공허하게 통과**한다(fail-open).
+    #[tokio::test]
+    async fn schema_fallback_reaches_the_report() {
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "demo",
+            "prompt = \"x\"\ncheck = \"true\"\nprotected = [\"data\"]\n",
+            &[("data/keep.txt", "K\n")],
+        );
+        // 첫 요청에 **컨텍스트 초과가 아닌** 400 → json_schema 폴백 발동, 이후 정상 턴.
+        let script = Scripted::new(vec![
+            Err(LlmError::Api { status: 400, body: "unsupported response_format".into() }),
+            ok(&finish("done")),
+        ]);
+        let o = opts(tasks.path().to_path_buf());
+        let run = run_eval(&script, &Config::default(), "test-model", &o, proj.path()).await.unwrap();
+
+        assert!(run.report.tasks[0].runs[0].schema_fallback, "폴백 발동이 RunRecord에 기록돼야 한다");
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&run.report_path).unwrap()).unwrap();
+        assert_eq!(json["tasks"][0]["runs"][0]["schema_fallback"], true, "report.json까지 도달해야 한다");
+    }
+
+    /// 위 테스트의 짝 — 폴백이 없으면 `false`여야 한다. 둘이 함께 있어야
+    /// "항상 true"라는 반대 방향의 배선 오류도 잡힌다.
+    #[tokio::test]
+    async fn no_schema_fallback_is_recorded_false() {
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "demo",
+            "prompt = \"x\"\ncheck = \"true\"\nprotected = [\"data\"]\n",
+            &[("data/keep.txt", "K\n")],
+        );
+        let script = Scripted::new(vec![ok(&finish("done"))]);
+        let o = opts(tasks.path().to_path_buf());
+        let run = run_eval(&script, &Config::default(), "test-model", &o, proj.path()).await.unwrap();
+        assert!(!run.report.tasks[0].runs[0].schema_fallback, "폴백 미발동은 false");
     }
 
     #[tokio::test]
