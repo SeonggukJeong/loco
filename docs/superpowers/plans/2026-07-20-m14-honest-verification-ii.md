@@ -276,6 +276,15 @@ async fn length_turns_keep_the_task_message_and_leave_the_blob_only_in_the_trans
     // run()이 요청을 스스로 push한다 — 과제를 미리 push하지 말 것
     let out = run_quiet(&mut agent, &mut session, "TASK: 한국어 과제 원문").await.unwrap();
 
+    // T1이 input_budget 공식을 고치는 태스크다. 하한이 예산을 끌어올리면 이 blob이
+    // 조용히 구별력을 잃는다 — 요란하게 깨지도록 예산을 직접 단언한다
+    // (임계 ~775자, 1500은 약 1.9배 여유 — 플랜 리뷰 실측)
+    assert_eq!(
+        agent.input_budget(),
+        1843,
+        "T1이 예산 공식을 바꿨다면 blob 크기를 재측정할 것(임계 ~775자)"
+    );
+
     // ① 과제 생존
     let hist = session.messages().iter().map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n");
     assert!(hist.contains("TASK: 한국어 과제 원문"), "과제가 삭제됐다:\n{hist}");
@@ -304,7 +313,9 @@ async fn length_turns_keep_the_task_message_and_leave_the_blob_only_in_the_trans
 `make_guided_agent`가 위 5인자 구성을 이미 하고 있으면 그것을 쓰되
 `Config`만 위 값으로 바꿔야 한다.
 
-`ok_with_reason`은 기존 헬퍼(`:2001`에서 사용)다. `run_with_session`이 없으면 기존 테스트가 쓰는 진입점을 그대로 쓰고, 세션을 밖에서 만들 수 없으면 그 테스트 형태를 따를 것 — **단언 5개는 유지**한다.
+`ok_with_reason`은 기존 헬퍼다(`grep -n "fn ok_with_reason" src/agent/mod.rs`).
+**단언 5개(①②③④ + outcome)는 어떤 경우에도 유지한다** — 컴파일을 맞추려고
+단언을 줄이는 것이 이 테스트에서 가장 위험한 실패다.
 
 - [ ] **Step 6: 실패를 확인한다 — 그리고 뮤테이션으로 구별력을 검사한다**
 
@@ -554,8 +565,10 @@ async fn a_length_turn_with_only_reasoning_records_the_reasoning_tail_not_empty(
     }
 ```
 
-**리터럴 구성 지점은 4곳이다**(위 Files 참조). 줄번호는 T2가 `agent/mod.rs`를 이미
-고쳐 밀렸을 수 있으니 `cargo build 2>&1 | grep E0063`으로 실제 위치를 확인할 것.
+**개수가 불변량이고 줄번호는 참고값이다.** 먼저
+`cargo build 2>&1 | grep E0063`으로 실제 위치를 얻고, **개수가 4로 일치하는지**
+위 Files의 목록과 대조할 것. `eval/mod.rs:427/429`는 T3 이전에 그 파일을 건드리는
+태스크가 없어 안 밀리고, `agent/mod.rs:693/695`만 T2가 밀린다.
 전부 `reasoning_content: None`·`usage: None`을 더하면 된다.
 
 **Step 6의 통합 테스트도 T2 Step 5와 같은 실 헬퍼 형태를 쓸 것** —
@@ -1100,6 +1113,22 @@ fn a_deleted_line_starting_with_dashes_is_still_counted_and_shown() {
 }
 
 #[test]
+fn distant_edits_keep_their_hunk_boundary() {
+    // 헤더가 없으면 line 6 다음에 line 149가 와서 모델이 인접한 것으로 읽는다
+    let old: String = (0..200).map(|i| format!("line {i}\n")).collect();
+    let new: String = (0..200)
+        .map(|i| match i {
+            5 => "LINE5\n".to_string(),
+            150 => "LINE150\n".to_string(),
+            _ => format!("line {i}\n"),
+        })
+        .collect();
+    let d = render_diff_for_model(&old, &new);
+    assert_eq!(d.matches("@@").count(), 2, "헝크 경계가 사라졌다:\n{d}");
+    assert!(d.starts_with("-2 lines, +2 lines"), "{d}");
+}
+
+#[test]
 fn an_added_line_starting_with_pluses_is_still_counted() {
     let d = render_diff_for_model("keep\n", "keep\n++x\n");
     assert!(d.starts_with("-0 lines, +1 lines"), "추가가 안 세어졌다:\n{d}");
@@ -1142,6 +1171,12 @@ pub fn render_diff_for_model(old: &str, new: &str) -> String {
     // `--flag` 삭제가 `---flag`가 되어 파일 헤더로 오인된다
     let mut lines: Vec<(bool, String)> = Vec::new();
     for hunk in diff.unified_diff().context_radius(1).iter_hunks() {
+        // 헝크 헤더를 보존한다. 없으면 멀리 떨어진 두 편집이 **연속으로 보이고**,
+        // 이 프로젝트는 모델이 결과 본문을 다음 `search`에 복사하는 습성을
+        // 문서화해 뒀다(`edit_file.rs:328` 주석) — 경계를 걸친 search는 0-match가
+        // 되어 S/R 루프(M9·M10·M12가 장치를 세 겹 쌓은 그 실패)의 새 입구가 된다.
+        // `@@` 줄은 본문이 아니라 헤더라 "줄번호는 헤더에만" 규율과 정합한다
+        lines.push((false, hunk.header().to_string()));
         for change in hunk.iter_changes() {
             let v = change.value();
             let v = v.strip_suffix('\n').unwrap_or(v);
@@ -1153,6 +1188,7 @@ pub fn render_diff_for_model(old: &str, new: &str) -> String {
         }
     }
     let removed = lines.iter().filter(|(d, _)| *d).count();
+    // 헤더 줄("@@ ...")은 '+'로 시작하지 않으므로 added에 안 걸린다
     let added = lines.iter().filter(|(d, l)| !d && l.starts_with('+')).count();
     let header = format!("-{removed} lines, +{added} lines");
 
@@ -1190,7 +1226,10 @@ Expected: PASS 3개
         Ok(format!("{head}\n{}", render_diff_for_model(&_old, &outcome.new_text)))
 ```
 
-`_old` 바인딩 이름을 `old`로 바꾸고 `let (old, outcome, crlf) = self.dry_run(...)`로 고칠 것. `render_context`가 더 이상 안 쓰이면 `dead_code`로 clippy가 깨진다 — **`#[cfg(test)]`로 남기거나 제거하되, 제거하면 그 함수의 기존 테스트도 함께 지울 것.**
+`_old` 바인딩 이름을 `old`로 바꾸고 `let (old, outcome, crlf) = self.dry_run(...)`로 고칠 것. `render_context`가 더 이상 안 쓰이면 `dead_code`로 clippy가 깨진다 —
+**`#[cfg(test)]`로 남기거나 제거하되, 제거하면 그 함수의 기존 테스트
+(`success_reports_post_edit_context_with_line_numbers_in_header_only`,
+`context_clamps_at_file_boundaries`)도 함께 지울 것.**
 
 - [ ] **Step 6: `write_file`이 diff를 첨부하게 한다**
 
@@ -1327,60 +1366,107 @@ Expected: FAIL — `no field schema_fallback_count`
 Run: `cargo test --lib schema_fallback_count`
 Expected: PASS 2개
 
-- [ ] **Step 5: B-4 — 두 가드를 각각 핀하는 테스트를 쓴다**
+- [ ] **Step 5: B-4 — 두 가드를 각각 지목하는 테스트를 쓴다**
 
-`src/agent/mod.rs` tests. **줄번호가 아니라 성질로 지목한다** — 이 태스크 앞에서 T2~T5가 같은 파일을 고쳐 줄이 밀린다:
+`src/agent/mod.rs` tests. **줄번호가 아니라 성질로 지목한다** — 이 태스크 앞에서
+T2~T5가 같은 파일을 고쳐 줄이 밀린다.
+
+**실제 헬퍼를 확인했다**(플랜 리뷰 실측): `run_with_approver`와 `fn call(`은
+코드베이스에 **0건**이고, `PanicApprover`(`:1435`)는 생성자 없는 단위 구조체다.
+실제로 도는 형태는 다음이다 — `turn(tool, args)`(`:708`)로 스크립트를 만들고
+`ScriptedApprover`(`:1381`)에 `Decision::Deny { reason }`를 채운다.
+`Approver`는 **`&ScriptedApprover`에 구현**돼 있다.
 
 ```rust
 #[tokio::test]
 async fn a_rejected_mutation_on_a_repetition_stop_turn_emits_no_status_note() {
-    // 거부 경로의 status 억제 `!stop` 가드를 핀한다. 이 가드를 제거하면
-    // RepetitionStop 턴에 상태선이 붙어 M11의 불변식이 깨진다
-    let deny = json!({"path":"a.rs","content":"x"});
-    let mut script = Vec::new();
-    for _ in 0..5 {
-        script.push(ok(&call("write_file", deny.clone())));
-    }
-    let (out, notes) = run_with_approver(script, Box::new(PanicApprover::denying())).await;
+    // 거부 경로의 **status 억제** `!stop` 가드를 핀한다. 제거하면 RepetitionStop
+    // 턴에 상태선이 붙어 M11의 불변식이 깨진다
+    let dir = tempfile::tempdir().unwrap();
+    let script = Scripted::new(
+        (0..5)
+            .map(|_| ok(&turn("write_file", json!({"path": "a.rs", "content": "x"}))))
+            .collect::<Vec<_>>(),
+    );
+    let approver = ScriptedApprover {
+        decisions: Mutex::new(
+            (0..5).map(|_| Decision::Deny { reason: "no".into() }).collect::<VecDeque<_>>(),
+        ),
+        seen: Mutex::new(Vec::new()),
+    };
+    let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+    let mut session = new_session(&agent);
+    let out = agent.run(&mut session, "x", &mut &approver, &mut |_| {}).await.unwrap();
+
     assert!(matches!(out, AgentOutcome::RepetitionStop));
-    let last = notes.last().expect("tool_result가 있어야 한다");
-    assert!(!last.contains(status_note::STATUS_MARKER), "정지 턴에 상태선이 붙었다: {last}");
+    let last = session
+        .messages()
+        .iter()
+        .filter(|m| m.role == "user")
+        .next_back()
+        .expect("tool_result가 있어야 한다");
+    assert!(
+        !last.content.contains(status_note::STATUS_MARKER),
+        "정지 턴에 상태선이 붙었다: {}",
+        last.content
+    );
 }
 
 #[tokio::test]
 async fn a_rejected_action_on_a_repetition_stop_turn_emits_no_finish_nudge() {
-    // 거부 경로의 finish_nudge 억제 `!stop` 가드를 핀한다.
-    // **루프 수준 단언이어야 한다** — 아래 Step 5-b 참조
-    let deny = json!({"path":"a.rs","content":"x"});
-    let mut script = Vec::new();
-    for _ in 0..5 {
-        script.push(ok(&call("write_file", deny.clone())));
-    }
-    let (out, notes) = run_with_approver(script, Box::new(PanicApprover::denying())).await;
+    // 거부 경로의 **finish_nudge 억제** `!stop` 가드를 지목한다.
+    // ⚠ 이것은 핀이 아니라 **관측점**이다 — Step 5-a의 예외. 아래 참조
+    let dir = tempfile::tempdir().unwrap();
+    let script = Scripted::new(
+        (0..5)
+            .map(|_| ok(&turn("write_file", json!({"path": "a.rs", "content": "x"}))))
+            .collect::<Vec<_>>(),
+    );
+    let approver = ScriptedApprover {
+        decisions: Mutex::new(
+            (0..5).map(|_| Decision::Deny { reason: "no".into() }).collect::<VecDeque<_>>(),
+        ),
+        seen: Mutex::new(Vec::new()),
+    };
+    let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+    let mut session = new_session(&agent);
+    let out = agent.run(&mut session, "x", &mut &approver, &mut |_| {}).await.unwrap();
+
     assert!(matches!(out, AgentOutcome::RepetitionStop));
     assert!(
-        !notes.iter().any(|n| n.contains(finish_nudge::FINISH_NUDGE)),
-        "정지 턴에 FINISH_NUDGE가 붙었다: {notes:?}"
+        !session.messages().iter().any(|m| m.content.contains(finish_nudge::FINISH_NUDGE)),
+        "정지 턴에 FINISH_NUDGE가 붙었다"
     );
 }
 ```
 
-**Step 5-a (두 테스트 모두에 의무)**: 각 테스트를 쓴 뒤 **해당 `!stop` 가드를 임시로
-제거하고 돌려 실패하는지 확인**할 것. 실패하지 않으면 그 테스트는 핀이 아니다 —
-시나리오를 고쳐야 한다.
+- [ ] **Step 5-a: 첫 테스트에 뮤테이션 검사를 돌린다 (의무)**
 
-**Step 5-b — 단위 테스트로 쓰지 말 것.** 플랜 초판은 `FinishNudge`를 직접 구동해
-거부 경로 이벤트 2종이 `None`을 반환함을 단언하려 했다. **그 단언은 공허하다**
-(플랜 리뷰 실측): `MutationOk → VerifyOk → ReadOnly{repeat:true} × 4` 설정에서
-**4번째 턴에 FINISH_NUDGE가 이미 발동·래치**되므로 가드를 어떻게 바꾸든 통과한다.
-그리고 공허성을 없애려고 래치를 풀면 **전제가 뒤집힌다** — `Other`가 `Some`을
-반환한다(발동 조건이 이미 충족된 기계이므로).
+거부 경로의 **status 억제** `!stop` 가드를 임시로 제거하고 돌릴 것.
 
-**따라서 스펙 §4-4·§11 Q3이 말하는 "도달 불가"는 `finish_nudge` 단위의 성질이
-아니라 에이전트 루프의 성질이다** — 직전 `on_turn`이 이미 발동·래치했을 것이므로
-그 상태가 턴 시작 시점에 존재할 수 없다. 단위 테스트는 이 명제를 표현할 수 없다.
-**위의 루프 수준 단언이 산출물이고, 그 사실을 `agent/mod.rs`의 가드 옆 주석에
-적을 것**(주석만으로는 수용 기준이 안 된다 — 스펙 §7 기준 4).
+Expected: **첫 테스트가 실패한다.** 플랜 리뷰가 양방향 확인했다 —
+가드 있음 → 상태선 없음 / 가드 제거 → 상태선 있음. 실패하지 않으면 그 테스트는
+핀이 아니므로 시나리오를 고쳐야 한다.
+
+- [ ] **Step 5-b: 둘째 테스트는 Step 5-a의 예외다 — 시나리오를 고치려 하지 말 것**
+
+**둘째 테스트는 뮤테이션 검사에서 실패하지 않는다. 그것이 정상이고, 그 사실
+자체가 도달 불가의 실측 증거다.**
+
+근거: 거부 경로의 이벤트는 둘뿐이고(`MutationAttempt`/`Other`), `write_file` 거부는
+`MutationAttempt`를 내며 그것이 `disarm()`을 불러 `armed`가 참이 될 수 없다.
+플랜 리뷰가 가드 제거 전후를 실측했다 — **둘 다 `FINISH_NUDGE` 미포함으로 변화가
+없다.** 즉 **어떤 시나리오로도 이 가드를 발동시킬 수 없다.**
+
+> **⚠ 이 테스트를 "실패하게" 만들려고 `finish_nudge`의 이벤트 매핑을 건드리지 말 것.**
+> 그 방향은 **스펙 §3-3-3이 실측으로 기각했다**(`VerifyOk` 매핑에 손대면 재검증
+> 루프 감지가 죽는다). 5라운드 스펙 리뷰가 세운 결론을 구현 단계에서 되돌리는
+> 유일한 경로가 이것이다.
+
+**이 테스트의 역할은 핀이 아니라 관측점이다** — 훗날 누군가 거부 경로의 이벤트
+매핑을 바꿔 `armed`가 참이 될 수 있게 만들면 이 테스트가 빨간불이 된다.
+스펙 §7 기준 4의 *"도달 불가면 … 주석이 아니라 테스트"* 분기를 이것이 만족한다.
+같은 취지를 `agent/mod.rs`의 해당 가드 옆 주석에도 적을 것.
 
 - [ ] **Step 6: 전체 게이트**
 
