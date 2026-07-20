@@ -29,6 +29,10 @@ for _v in BUILD TEST; do
   esac
 done
 unset _v _val
+# git 자체가 없으면 아래 REPO 캡처도 어차피 실패하지만, 원인이 "git 없음"인지
+# "레포 밖"인지를 구분해 더 정확한 메시지를 준다 (예전엔 이 검사가 REPO 캡처보다
+# 한참 뒤에 따로 있어 절대 도달하지 못하는 죽은 코드였다 — 여기로 옮겨 살린다)
+command -v git >/dev/null 2>&1 || { echo "git이 필요합니다"; exit 1; }
 # git diff는 레포 전체를 보므로 REPO도 레포 루트여야 한다 — 서브디렉터리에서
 # 실행하면 어긋난다
 REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || {
@@ -82,9 +86,6 @@ trap cleanup EXIT
 # 세션 중 INT까지 잡으려면 wait 기반 구조가 필요하다 — 다음으로 미룸
 trap 'exit 130' INT
 trap 'exit 143' TERM
-
-command -v git >/dev/null || { echo "git이 필요합니다"; exit 1; }
-git rev-parse --git-dir >/dev/null 2>&1 || { echo "git 레포 안에서 실행하세요"; exit 1; }
 
 # 세션 시작(타이밍/리비전 캡처) 전에 확인 — 실패해도 사용자 비용이 0이어야 한다.
 if echo "$LOCO_BIN" | grep -q /; then

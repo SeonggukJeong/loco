@@ -329,7 +329,7 @@ impl<C: LlmClient> Agent<C> {
                     turn: turns + 1,
                     max_turns: self.max_turns,
                     mutation_ok: false,
-                    has_note_channel: false, // session.push 경로 — 이월
+                    has_note_channel: false, // record_extra+push_recovery_notice 경로 — 이월
                     mutated_since_verify,
                 });
                 turns += 1;
@@ -629,7 +629,7 @@ impl<C: LlmClient> Agent<C> {
             };
             let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
             self.update_perturb(&tracker, on_event);
-            // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
+            // 반복정지 우선 (§4-2) — 정지 턴에는 넛지를 평가하지 않는다
             if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
                 let nudge = if unreleased_due_to_pipe && nudge == finish_nudge::FINISH_NUDGE {
                     finish_nudge::FINISH_NUDGE_PIPE
@@ -2094,7 +2094,7 @@ mod tests {
             let mut session = new_session(&agent);
             let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
             assert!(matches!(outcome, AgentOutcome::RepetitionStop), "{outcome:?}");
-            assert!(!session_contains(&session, "do not re-verify"), "정지 턴에는 니지를 평가하지 않는다");
+            assert!(!session_contains(&session, "do not re-verify"), "정지 턴에는 넛지를 평가하지 않는다");
         }
     }
 
