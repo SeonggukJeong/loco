@@ -49,6 +49,9 @@ pub struct RunRecord {
     /// 이 런에 실제로 적용된 턴 상한 — 과제별 `max_turns` 오버라이드는
     /// M15 이전부터 있었으나 리포트에 도달한 적이 없다 (M15 H9)
     pub effective_max_turns: usize,
+    /// `sync_protected` 실행 **전에** 센 protected 경로 변경 항목 수 (M15 H7).
+    /// 하네스가 전부 되돌리므로 판정에는 영향이 없다 — 리워드 해킹의 기계 발자국
+    pub protected_edits: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -185,6 +188,7 @@ mod tests {
             duration_secs: secs, schema_fallback: false,
             effective_context_tokens: 8192,
             effective_max_turns: 25,
+            protected_edits: 0,
         }
     }
 
@@ -194,6 +198,7 @@ mod tests {
             duration_secs: 1.0, schema_fallback,
             effective_context_tokens: 8192,
             effective_max_turns: 25,
+            protected_edits: 0,
         }
     }
 
