@@ -3,9 +3,17 @@
 - 날짜/디렉토리: `docs/experiments/2026-07-20-honest-verification-ii/`
 - 스펙 근거: `docs/superpowers/specs/2026-07-20-m14-honest-verification-ii-design.md`
   §7(성공 기준), §8(측정), §8-1(검출력), §8-3(비교가능성 각주), §8-4(관측 항목)
-- 상태: **초안 — 사용자 승인 대기.** 승인은 이 문서의 상태 행을 갱신하는
-  **별도 커밋**으로만 성립한다 — 전언 승인 불가(M11·M12·M13 전례). 이 커밋
-  시점에는 어떤 형태로도 승인이 성립하지 않았다.
+- 상태: **승인됨 (2026-07-20).** 사용자가 배치 수행을 승인했고, 이 상태 행
+  갱신 커밋이 그 승인의 성립 근거다 — 전언 승인 불가(M11·M12·M13 전례).
+  승인 시점의 사전등록 내용은 직전 커밋 `9ebd8aa`에 고정돼 있으며, 이 커밋은
+  상태 행 외의 어떤 조건도 바꾸지 않는다(임계값·대조·재측정·중단 규칙 불변).
+- 배치 전 점검 결과 (실행 직전, 컨트롤러 직접 확인):
+  `.loco/config.toml` = `context_tokens=8192`/`max_output_tokens=4096`/
+  `command_timeout_secs=60`/`base_url=http://localhost:8080/v1` — 대조 배치
+  `20260719T093254Z`의 `effective_config`(report.json 직접 조회)와 전 항목 일치.
+  **M12 배치 2 잔재 `command_timeout_secs=240` 없음.** `${TMPDIR}/.cargo` 없음.
+  `git diff a45e268..HEAD -- src/` 비어 있음. 서버 응답 정상(`ornith`).
+  `--release` 미사용, 측정 중 병행 빌드 없음.
 - 대상 커밋: `a45e268`(Task 1~11 완료 시점, 브랜치 `m14/honest-verification-ii`)
 - 대상 커밋 이후 배치 시점까지의 커밋은 **문서 전용이어야 한다** —
   `git diff a45e268..HEAD -- src/`가 비어 있지 않으면 배치를 중단하고
