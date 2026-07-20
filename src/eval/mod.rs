@@ -131,6 +131,7 @@ pub async fn run_eval<C: LlmClient>(
         passed_count: task_reports.iter().map(|t| t.passed_count).sum(),
         passed_strict_count: task_reports.iter().map(|t| t.passed_strict_count).sum(),
         false_finish_count: task_reports.iter().map(|t| t.false_finish_count).sum(),
+        schema_fallback_count: task_reports.iter().map(|t| t.schema_fallback_count).sum(),
         avg_duration_secs: Report::avg_duration_of(&task_reports),
         tasks: task_reports,
         effective_config: EffectiveConfig {
@@ -426,9 +427,14 @@ mod tests {
     fn ok(text: &str) -> Result<ChatResponse, LlmError> {
         Ok(ChatResponse {
             choices: vec![Choice {
-                message: ResponseMessage { role: "assistant".into(), content: Some(text.into()) },
+                message: ResponseMessage {
+                    role: "assistant".into(),
+                    content: Some(text.into()),
+                    reasoning_content: None,
+                },
                 finish_reason: Some("stop".into()),
             }],
+            usage: None,
         })
     }
 

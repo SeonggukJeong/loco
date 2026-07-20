@@ -67,7 +67,11 @@ pub const ARGS_TOOL_SWITCH_NOTE: &str =
      Put the tool name only in \"action\".\"tool\".";
 
 /// 무검증 finish 1회 반려 (M5 §7.1). 모델 대상 — 영어
-pub const VERIFY_NUDGE: &str = "You modified files but never ran a verification command. Run the project's tests (e.g. cargo test) with run_command, then finish.";
+pub const VERIFY_NUDGE: &str = "You modified files but never ran a verification command since your last edit. Run the project's tests (e.g. cargo test) with run_command, then finish.";
+
+/// §3-3-1 — 파이프 때문에 검증이 성립하지 않은 경우. 기본 문구는 "never ran"이라
+/// 방금 파이프로 검증을 돌린 모델에게 거짓말이 된다
+pub const VERIFY_NUDGE_PIPE: &str = "You ran a verification command, but it was a shell pipeline, so its exit code reflects only the last command in the pipe and does not tell whether the tests passed. Re-run it without a pipe, then finish.";
 
 /// summary 없는 finish 2연속 시 1회 주입 (M9 §4-1) — 모델이 내보내야 하는
 /// 전체 턴 형태를 제시한다 (인자 예시만 담은 FINISH_ERR 에코는 5연속 반복을
@@ -79,6 +83,35 @@ Do not call finish with empty args again.";
 /// S/R 스트릭 2연속 시 다음 요청의 temperature (M10 §5 — 저온 복사 어트랙터
 /// 가설의 개입값, 0단계 확정). 스트릭이 끊기면 즉시 원복, 래치 없음
 const SR_PERTURB_TEMPERATURE: f32 = 0.7;
+
+/// length 턴 회복 문구 (M9~M13에서 문자열 동일 — 상수로 승격해 중복 제거가 참조한다)
+pub(crate) const LENGTH_RECOVERY: &str = "Your previous response was cut off by the output token limit. \
+                                          Respond again with exactly one, much shorter JSON turn.";
+
+/// §4-2(c) 하한 — max_output_tokens가 context_tokens를 넘겨도 예산이 0이 되지
+/// 않게 한다. 0이면 pack()이 시스템 프롬프트와 마지막 메시지만 남긴다
+const MIN_INPUT_BUDGET: usize = 512;
+
+/// 입력 예산 = (context − max_output) × 0.9, 하한 MIN_INPUT_BUDGET 적용.
+/// input_budget()과 cramped_budget_warning()이 **같은 값**을 봐야 한다 —
+/// 공식을 두 벌로 두면 경고가 하한 적용 전 값을 출력한다
+fn floored_input_budget(context_tokens: usize, max_output_tokens: usize) -> usize {
+    (context_tokens.saturating_sub(max_output_tokens) * 9 / 10).max(MIN_INPUT_BUDGET)
+}
+
+/// 출력 예산이 컨텍스트의 절반 이상을 먹으면 입력 예산이 좁아진다는 경고.
+/// 사용자 대면이므로 한국어. None이면 경고 없음
+fn cramped_budget_warning(context_tokens: usize, max_output_tokens: usize) -> Option<String> {
+    if max_output_tokens * 2 < context_tokens {
+        return None;
+    }
+    let budget = floored_input_budget(context_tokens, max_output_tokens);
+    Some(format!(
+        "경고: max_output_tokens={max_output_tokens}가 context_tokens={context_tokens}의 절반 이상입니다 \
+         — 입력 예산이 {budget} 토큰으로 좁아져 오래된 대화가 일찍 잘립니다. \
+         context_tokens를 올리거나 max_output_tokens를 낮추는 것을 검토하세요."
+    ))
+}
 
 pub struct Agent<C: LlmClient> {
     client: C,
@@ -105,6 +138,19 @@ pub struct Agent<C: LlmClient> {
     temperature_override: Option<f32>,
 }
 
+/// 진단 가치가 있는 Notice는 트랜스크립트에도 남긴다 (M14 C-2).
+/// M13에서 오버플로가 "0이 아니라 미측정"이 된 원인 — 프로세스가 죽으면 Notice는
+/// 흔적 없이 사라졌다. `on_event(AgentEvent::Notice(...))` 호출은 19곳이지만
+/// 최소 적용 지점 2곳(컨텍스트 오버플로·length 절단)에만 쓴다 — 범위를 넓히면
+/// 트랜스크립트가 비대해진다
+macro_rules! notice_recorded {
+    ($session:expr, $on_event:expr, $msg:expr) => {{
+        let m: String = $msg;
+        $session.record_extra("notice", &m);
+        $on_event(AgentEvent::Notice(m));
+    }};
+}
+
 impl<C: LlmClient> Agent<C> {
     pub fn new(
         client: C,
@@ -113,6 +159,12 @@ impl<C: LlmClient> Agent<C> {
         model: String,
         config: &Config,
     ) -> Self {
+        // M14 §4-2c — run()엔 on_event 채널이 있지만 REPL은 run()을 요청마다
+        // 다시 호출하므로 거기 두면 경고가 반복된다. Agent::new는 런당 1회만
+        // 생성되므로 여기서 eprintln!으로 1회 낸다 (on_event 채널 부재)
+        if let Some(w) = cramped_budget_warning(config.context_tokens, config.max_output_tokens) {
+            eprintln!("{w}");
+        }
         Self {
             client,
             registry: std::sync::Arc::new(registry),
@@ -151,9 +203,11 @@ impl<C: LlmClient> Agent<C> {
         self.schema_fallback
     }
 
-    /// 스펙 §6: (context − max_output) × 0.9
+    /// 스펙 §6: (context − max_output) × 0.9, 하한 MIN_INPUT_BUDGET (M14 §4-2c) —
+    /// max_output_tokens >= context_tokens인 병리적 config에서도 예산이 0으로
+    /// 붕괴해 pack()이 히스토리를 지워버리는 것을 막는다
     fn input_budget(&self) -> usize {
-        self.context_tokens.saturating_sub(self.max_output_tokens as usize) * 9 / 10
+        floored_input_budget(self.context_tokens, self.max_output_tokens as usize)
     }
 
     fn schema_tool_names(&self) -> Vec<&'static str> {
@@ -198,6 +252,9 @@ impl<C: LlmClient> Agent<C> {
         let mut overflow_shrinks: u32 = 0;
         let mut mutated_since_verify = false;
         let mut verify_nudged = false;
+        // §3-3-1: "현재 미해제 상태를 만든 원인이 파이프인가" — 해제 술어를 평가할
+        // 때마다 무조건 대입한다(조건부 건너뛰기 금지, 4R C2)
+        let mut unreleased_due_to_pipe = false;
         let mut finish_nudge = finish_nudge::FinishNudge::new();
         // summary 없는 finish 연속 카운트 (M9 §4-1) — 무액션 턴은 유지, 디스패치·거부된
         // 다른 액션이 리셋
@@ -218,9 +275,11 @@ impl<C: LlmClient> Agent<C> {
                         if looks_like_context_overflow(&body) && overflow_shrinks < 2 =>
                     {
                         overflow_shrinks += 1;
-                        on_event(AgentEvent::Notice(format!(
-                            "(컨텍스트 초과로 보임 — 히스토리 절삭 후 재시도 {overflow_shrinks}/2)"
-                        )));
+                        notice_recorded!(
+                            session,
+                            on_event,
+                            format!("(컨텍스트 초과로 보임 — 히스토리 절삭 후 재시도 {overflow_shrinks}/2)")
+                        );
                         session.pack(self.input_budget() >> overflow_shrinks);
                     }
                     Err(LlmError::Api { status: 400, body }) if looks_like_context_overflow(&body) => {
@@ -233,22 +292,44 @@ impl<C: LlmClient> Agent<C> {
                 }
             };
 
+            // length 판정 **전**에 무조건 기록 — length 턴도 세야 하는 게 이 기록의
+            // 목적이다(M14 C-2, M13이 "빈-content 턴"으로만 대리 추정하던 것)
+            if let Some(fr) = resp.finish_reason() {
+                session.record_extra("finish_reason", fr);
+            }
+
             // 출력 잘림은 파싱 실패와 구분해 교정한다 (스펙 §9). 같은 요청 재시도는
             // 같은 지점에서 다시 잘리므로 "더 짧게"를 지시. 턴을 소모해 max_turns가
             // length 반복의 상한이 되게 한다 (스펙 §3 사각지대)
             if resp.finish_reason() == Some("length") {
+                // §4-2(b): 절단 blob을 **히스토리에 push하지 않는다**. 예산 초과를
+                // 만드는 것이 이 blob이고, 초과가 쌍 삭제를 부르면 사용자 과제가
+                // 함께 사라진다(M13 세션 Z1). 트랜스크립트에는 남긴다 —
+                // M13의 디코딩 퇴화 분석이 전부 이 blob을 읽어 만들어졌다
+                // §4-2-2: 최종 상태는 "히스토리에 push 안 함 + 트랜스크립트에만".
+                // B-1은 그 트랜스크립트 레코드의 **내용**을 "(empty)"에서 추론 꼬리로
+                // 바꾼다 — content가 비어도 모델은 예산을 추론에 다 쓴 것이지
+                // 아무것도 안 낸 것이 아니다
                 let t = resp.text();
-                session.push(ChatMessage::assistant(if t.is_empty() { "(empty)" } else { t }));
-                session.push(ChatMessage::user(
-                    "Your previous response was cut off by the output token limit. \
-                     Respond again with exactly one, much shorter JSON turn.",
-                ));
-                on_event(AgentEvent::Notice("(응답이 잘림 — 더 짧게 다시 요청)".to_string()));
+                let blob = if !t.is_empty() {
+                    t
+                } else {
+                    let r = resp.reasoning();
+                    if r.is_empty() { "(empty)" } else { r }
+                };
+                session.record_extra("assistant", blob);
+                // push가 아니라 push_recovery_notice: ① assistant를 건너뛰었으므로
+                // 꼬리가 user다 — 병합해야 role 교대가 유지되는데 교정 담당
+                // merge_adjacent_same_role는 pack()의 쌍 삭제 루프 안에서만 돌고
+                // (b)의 목적이 바로 pack 미발동이라 영영 교정되지 않는다
+                // ② 연속 주입 중복은 pack()이 회수할 수 없는 자리에 쌓인다
+                session.push_recovery_notice(LENGTH_RECOVERY);
+                notice_recorded!(session, on_event, "(응답이 잘림 — 더 짧게 다시 요청)".to_string());
                 let _ = status.on_turn(&status_note::TurnCtx {
                     turn: turns + 1,
                     max_turns: self.max_turns,
                     mutation_ok: false,
-                    has_note_channel: false, // session.push 경로 — 이월
+                    has_note_channel: false, // record_extra+push_recovery_notice 경로 — 이월
                     mutated_since_verify,
                 });
                 turns += 1;
@@ -303,8 +384,9 @@ impl<C: LlmClient> Agent<C> {
                     Some(s) => {
                         if mutated_since_verify && !verify_nudged {
                             verify_nudged = true;
+                            let nudge = if unreleased_due_to_pipe { VERIFY_NUDGE_PIPE } else { VERIFY_NUDGE };
                             on_event(AgentEvent::Notice("(검증 없는 종료 — 확인 요청 주입)".to_string()));
-                            session.push(tool_result_message("finish", VERIFY_NUDGE));
+                            session.push(tool_result_message("finish", nudge));
                             finish_missing_streak = 0;
                             let _ = finish_nudge.on_turn(finish_nudge::TurnEvent::FinishAttempt); // idle만 리셋 — 발동 불가
                             let _ = status.on_turn(&status_note::TurnCtx {
@@ -406,11 +488,35 @@ impl<C: LlmClient> Agent<C> {
                     };
                     let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
                     self.update_perturb(&tracker, on_event);
-                    // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
+                    // 반복정지 우선 (§4-2) — 정지 턴에는 넛지를 평가하지 않는다.
+                    // M14 B-4: 이 `!stop` 가드는 finish_nudge 억제 절반이다. 거부 경로의
+                    // 이벤트는 MutationAttempt/Other 둘뿐인데, MutationAttempt(write_file/
+                    // edit_file)는 disarm()을 불러 armed가 참이 될 수 없다. Other(denied
+                    // run_command)는 idle을 진전시키지 않는데, idle은 VerifyOk/ReadOnly
+                    // 이벤트에만 진전하고 거부 경로는 둘 다 방출하지 않는다. 또한 stop은
+                    // 해당 턴에서 run()을 즉시 종료하므로, armed 임계치를 넘으려면 승인
+                    // 경로에서 이미 넘어야 한다(그 쪽도 !stop 가드 있음). 그래서 이 가드를
+                    // 지워도 어떤 시나리오에서도 FINISH_NUDGE는 나오지 않는다(실측 확인,
+                    // 태스크 7 5-b) —
+                    // `a_rejected_action_on_a_repetition_stop_turn_emits_no_finish_nudge`는
+                    // 핀이 아니라 관측점: 훗날 거부 경로의 이벤트 매핑이 바뀌어 armed가
+                    // 참이 될 수 있게 되면 그 테스트가 빨간불이 된다. 이 사실을 이유로
+                    // 가드를 지우지 말 것 — 옆의 finish_nudge 이벤트 매핑(VerifyOk 등)도
+                    // 손대지 말 것(스펙 §3-3-3, 실측으로 기각된 대안: 손대면 재검증 루프
+                    // 감지가 죽는다).
                     if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
+                        let nudge = if unreleased_due_to_pipe && nudge == finish_nudge::FINISH_NUDGE {
+                            finish_nudge::FINISH_NUDGE_PIPE
+                        } else {
+                            nudge
+                        };
                         on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
                         note = merge_note(note, nudge);
                     }
+                    // M14 B-4: 이 `!stop` 가드가 status 억제 절반이다 — RepetitionStop
+                    // 턴에는 상태선을 붙이지 않는다(M11 불변식). 제거하면
+                    // `a_rejected_mutation_on_a_repetition_stop_turn_emits_no_status_note`가
+                    // 빨간불이 된다(실측 확인, 태스크 7 5-a) — 그 테스트가 이 가드의 핀이다.
                     if !stop
                         && let Some(s) = status.on_turn(&status_note::TurnCtx {
                             turn: turns + 1,
@@ -463,16 +569,34 @@ impl<C: LlmClient> Agent<C> {
                 .and_then(|_| crate::test_summary::parse_test_summary(&body));
             // 공허 런 = 필터가 아무 테스트도 못 맞힌 실행. "검증"으로 인정하지 않는다 (M12 §2-4)
             let empty_verify = cmd_summary.as_ref().is_some_and(|s| s.ran == 0 && s.filtered_out > 0);
+            // §3-3: 파이프가 섞이면 exit code가 파이프라인 마지막 명령의 것이라
+            // 검증 성립을 알 수 없다. **해제 술어에만** 건다 — VerifyOk 매핑을
+            // 건드리면 재검증 루프 감지가 죽는다(§3-3-3, 실측으로 기각된 대안)
+            let is_piped = turn.action.tool == "run_command"
+                && turn
+                    .action
+                    .args
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(crate::tools::run_command::has_unquoted_pipe);
             if dispatch_ok {
                 if turn.action.tool == "run_command" {
                     // M12 §2-4: 공허 런은 VERIFY_NUDGE를 해제하지 않는다
-                    // (해제 조건이었던 "Ok이면 종료코드 무관"에서 공허 런만 제외)
-                    if !empty_verify {
+                    // (해제 조건이었던 "Ok이면 종료코드 무관"에서 공허 런과 파이프를 제외)
+                    // §3-3-1: 플래그는 "현재 미해제 상태를 만든 원인이 파이프인가"다.
+                    // 조건부 건너뛰기 금지 — 해제 성공 시에도 갱신해야 한다.
+                    // 소비자가 둘이고 결합 조건이 다르기 때문: VERIFY_NUDGE는
+                    // mutated_since_verify와 묶여 낡은 값을 못 읽지만
+                    // FINISH_NUDGE는 묶여 있지 않아 그대로 읽는다 (4R C2)
+                    let released = !empty_verify && !is_piped;
+                    if released {
                         mutated_since_verify = false;
                     }
-                    status.record_command_result(cmd_exit.clone(), cmd_summary.clone());
+                    unreleased_due_to_pipe = !released && is_piped;
+                    status.record_command_result(cmd_exit.clone(), cmd_summary.clone(), is_piped);
                 } else if self.registry.get(&turn.action.tool).is_some_and(|t| t.is_mutating()) {
                     mutated_since_verify = true;
+                    unreleased_due_to_pipe = false; // 뮤테이션이 원인을 갈아치운다
                 }
                 if matches!(turn.action.tool.as_str(), "edit_file" | "write_file") {
                     status.record_mutation(&turn.action.args);
@@ -505,8 +629,13 @@ impl<C: LlmClient> Agent<C> {
             };
             let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
             self.update_perturb(&tracker, on_event);
-            // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
+            // 반복정지 우선 (§4-2) — 정지 턴에는 넛지를 평가하지 않는다
             if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
+                let nudge = if unreleased_due_to_pipe && nudge == finish_nudge::FINISH_NUDGE {
+                    finish_nudge::FINISH_NUDGE_PIPE
+                } else {
+                    nudge
+                };
                 on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
                 note = merge_note(note, nudge);
             }
@@ -695,9 +824,25 @@ mod tests {
                 message: ResponseMessage {
                     role: "assistant".into(),
                     content: Some(text.into()),
+                    reasoning_content: None,
                 },
                 finish_reason: Some(reason.into()),
             }],
+            usage: None,
+        })
+    }
+
+    fn ok_with_reasoning(content: &str, reasoning: &str, reason: &str) -> Result<ChatResponse, LlmError> {
+        Ok(ChatResponse {
+            choices: vec![Choice {
+                message: ResponseMessage {
+                    role: "assistant".into(),
+                    content: Some(content.to_string()),
+                    reasoning_content: Some(reasoning.to_string()),
+                },
+                finish_reason: Some(reason.to_string()),
+            }],
+            usage: None,
         })
     }
 
@@ -737,6 +882,25 @@ mod tests {
         request: &str,
     ) -> Result<AgentOutcome, LlmError> {
         agent.run(session, request, &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await
+    }
+
+    /// M14 T4 — 스크립트를 guided 에이전트로 돌리고 (결과, 모든 tool_result 본문)을
+    /// 반환한다. 파이프 검증 테스트들이 세션 메시지를 훑는 기존 패턴을 헬퍼로 뽑은 것
+    async fn run_capturing_tool_results(
+        script: Vec<Result<ChatResponse, LlmError>>,
+    ) -> (AgentOutcome, Vec<String>) {
+        let dir = tempfile::tempdir().unwrap();
+        let scripted = Scripted::new(script);
+        let mut agent = make_guided_agent(&scripted, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let notes = session
+            .messages()
+            .iter()
+            .filter(|m| m.content.contains("<tool_result"))
+            .map(|m| m.content.clone())
+            .collect();
+        (outcome, notes)
     }
 
     #[test]
@@ -1113,6 +1277,131 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn length_turns_keep_the_task_message_and_leave_the_blob_only_in_the_transcript() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+
+        // ⚠ blob 크기가 이 테스트의 구별력을 정한다. estimate_tokens = len/4 이므로
+        // 400자는 100토큰이고 5회 = 500토큰이라 예산 1843을 못 넘겨 **쌍 삭제가
+        // 발동하지 않는다** — 수선을 되돌려도 단언 ①이 통과한다(플랜 리뷰 실측:
+        // 400 구별불가 / 1500부터 구별). 1500자 이상을 쓸 것
+        let mut v = Vec::new();
+        for _ in 0..5 {
+            // LlmError는 Clone을 파생하지 않는다 — vec![x; 5]가 아니라 루프로 push
+            v.push(ok_with_reason(&"X".repeat(1500), "length"));
+        }
+        v.push(ok(&finish("done")));
+        let script = Scripted::new(v);
+
+        let config = Config {
+            context_tokens: 4096,
+            max_output_tokens: 2048, // 예산 1843
+            ..Default::default()
+        };
+        let mut agent = Agent::new(
+            &script,
+            Registry::guided(),
+            ToolCtx::new(dir.path().to_path_buf()),
+            "m".into(),
+            &config,
+        );
+        let mut session = Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        // run()이 요청을 스스로 push한다 — 과제를 미리 push하지 말 것
+        let out = run_quiet(&mut agent, &mut session, "TASK: 한국어 과제 원문").await.unwrap();
+
+        // T1이 input_budget 공식을 고치는 태스크다. 하한이 예산을 끌어올리면 이 blob이
+        // 조용히 구별력을 잃는다 — 요란하게 깨지도록 예산을 직접 단언한다
+        // (임계 ~775자, 1500은 약 1.9배 여유 — 플랜 리뷰 실측)
+        // `input_budget()`은 비공개지만 `mod tests`가 `agent`의 자식 모듈이라 보인다 —
+        // **이 테스트는 반드시 `agent/mod.rs`의 `mod tests` 안에 있어야 한다**
+        assert_eq!(
+            agent.input_budget(),
+            1843,
+            "T1이 예산 공식을 바꿨다면 blob 크기를 재측정할 것(임계 ~775자)"
+        );
+
+        // ① 과제 생존
+        let hist = session.messages().iter().map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n");
+        assert!(hist.contains("TASK: 한국어 과제 원문"), "과제가 삭제됐다:\n{hist}");
+
+        // ④ **연속** length가 5회여도 회복 문구는 1벌
+        assert_eq!(hist.matches(LENGTH_RECOVERY).count(), 1, "회복 문구 중복:\n{hist}");
+
+        // ③ role 교대 무손상
+        for w in session.messages().windows(2) {
+            assert_ne!(w[0].role, w[1].role, "role 연속: {:?}", session.messages());
+        }
+
+        // ② 절단 blob은 트랜스크립트에 남는다 (실 파일이어야 한다 —
+        //    Transcript::disabled()로는 이 단언이 공허하게 통과한다)
+        let jsonl = std::fs::read_to_string(&tpath).unwrap();
+        assert!(jsonl.contains(&"X".repeat(1500)), "절단 blob이 트랜스크립트에서 사라졌다");
+
+        assert!(matches!(out, AgentOutcome::Finished(_)));
+    }
+
+    #[tokio::test]
+    async fn a_length_turn_with_only_reasoning_records_the_reasoning_tail_not_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+
+        // content 공백 + reasoning_content 있음 + finish_reason length — 파일럿 형태
+        let script = Scripted::new(vec![
+            ok_with_reasoning("", "I was thinking about src/lib.rs", "length"),
+            ok(&finish("done")),
+        ]);
+        let config = Config::default();
+        let mut agent = Agent::new(
+            &script,
+            Registry::guided(),
+            ToolCtx::new(dir.path().to_path_buf()),
+            "m".into(),
+            &config,
+        );
+        let mut session = Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let _ = run_quiet(&mut agent, &mut session, "TASK").await.unwrap();
+
+        let jsonl = std::fs::read_to_string(&tpath).unwrap();
+        assert!(jsonl.contains("I was thinking about src/lib.rs"), "추론 꼬리가 안 남았다");
+        assert!(!jsonl.contains("\"(empty)\""), "(empty) 리터럴이 남았다:\n{jsonl}");
+    }
+
+    #[tokio::test]
+    async fn finish_reason_and_overflow_notices_reach_the_transcript() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+
+        // 오버플로 400(재시도로 회복) → length 턴 → finish. 세 신호 모두 한 런에서
+        // 트랜스크립트로 나가는지 본다: finish_reason(스톱값 포함), length 값,
+        // 오버플로 Notice(M13에서 "0이 아니라 미측정"이던 바로 그 신호)
+        let overflow = || Err(LlmError::Api { status: 400, body: "context length exceeded".into() });
+        let script = Scripted::new(vec![overflow(), ok_with_reason("cut", "length"), ok(&finish("done"))]);
+        let config = Config::default();
+        let mut agent = Agent::new(
+            &script,
+            Registry::guided(),
+            ToolCtx::new(dir.path().to_path_buf()),
+            "m".into(),
+            &config,
+        );
+        // new_session()은 Transcript::disabled()를 쓴다 — 이 테스트는 실 파일이 필요하다
+        // (그래야 아래 파일 읽기 단언이 공허하게 통과하지 않는다)
+        let mut session = Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let out = run_quiet(&mut agent, &mut session, "TASK").await.unwrap();
+        assert!(matches!(out, AgentOutcome::Finished(_)), "회복 후 정상 종료해야 단언 대상 신호가 다 남는다");
+
+        let jsonl = std::fs::read_to_string(&tpath).unwrap();
+        // finish_reason: length 턴에서도(판정 이전에) 남는다 — M13은 이걸 못 세서
+        // "빈-content 턴"을 대리 지표로 썼다
+        assert!(jsonl.contains("\"kind\":\"finish_reason\""), "finish_reason이 안 남았다:\n{jsonl}");
+        assert!(jsonl.contains("\"content\":\"length\""), "length 값이 안 남았다:\n{jsonl}");
+
+        // 오버플로 Notice: M13 스펙 리뷰 C1이 지적한 "배치는 끝났는데 흔적 0" 공백
+        assert!(jsonl.contains("\"kind\":\"notice\""), "notice kind가 안 남았다:\n{jsonl}");
+        assert!(jsonl.contains("컨텍스트 초과로 보임"), "오버플로 notice 본문이 안 남았다:\n{jsonl}");
+    }
+
+    #[tokio::test]
     async fn first_400_disables_json_schema_and_retries() {
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![api_400(), ok(&finish("ok"))]);
@@ -1431,6 +1720,79 @@ mod tests {
         assert!(session.messages().iter().any(|m| m.content.contains("mutated")));
     }
 
+    // M14 B-4: 거부 경로(Decision::Deny)에는 `!stop` 가드가 둘 있다 — status 억제와
+    // finish_nudge 억제. 각각 독립적으로 제거해도 cargo test/clippy는 초록불이라
+    // (1R 실측) 핀이 필요하다. 아래 두 테스트가 그 핀 쌍이다.
+
+    #[tokio::test]
+    async fn a_rejected_mutation_on_a_repetition_stop_turn_emits_no_status_note() {
+        // 거부 경로의 **status 억제** `!stop` 가드를 핀한다. 제거하면 RepetitionStop
+        // 턴에 상태선이 붙어 M11의 불변식이 깨진다
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(
+            (0..5)
+                .map(|_| ok(&turn("write_file", serde_json::json!({"path": "a.rs", "content": "x"}))))
+                .collect::<Vec<_>>(),
+        );
+        let approver = ScriptedApprover {
+            decisions: Mutex::new(
+                (0..5).map(|_| Decision::Deny { reason: "no".into() }).collect::<VecDeque<_>>(),
+            ),
+            seen: Mutex::new(Vec::new()),
+        };
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let out = agent.run(&mut session, "x", &mut &approver, &mut |_| {}).await.unwrap();
+
+        assert!(matches!(out, AgentOutcome::RepetitionStop));
+        let last = session
+            .messages()
+            .iter()
+            .rfind(|m| m.role == "user")
+            .expect("tool_result가 있어야 한다");
+        assert!(
+            !last.content.contains(status_note::STATUS_MARKER),
+            "정지 턴에 상태선이 붙었다: {}",
+            last.content
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rejected_action_on_a_repetition_stop_turn_emits_no_finish_nudge() {
+        // 거부 경로의 **finish_nudge 억제** `!stop` 가드를 지목한다.
+        // ⚠ 이것은 핀이 아니라 **관측점**이다 — Step 5-a의 예외.
+        //
+        // 도달불가 논증: (:470 주석 참고) 거부 경로의 이벤트는 둘뿐(MutationAttempt/Other)
+        // 인데, idle 진전은 VerifyOk/ReadOnly에만 연결되고 거부 경로는 둘 다 방출하지 않는다.
+        // MutationAttempt(write_file 거부)는 또한 disarm()을 불러 armed가 참이 될 수 없다.
+        // 따라서 이 경로에서는 어떤 시나리오로도 FINISH_NUDGE가 나올 수 없다. 이 가드를
+        // 지워도(플랜 리뷰가 실측) 결과는 바뀌지 않으므로, 이 테스트는 뮤테이션 검사로
+        // "핀"임을 증명할 수 없지만, 오늘의 이벤트 매핑 아래에서 이 가드의 도달불가를
+        // 기록하는 관측점 역할을 한다(스펙 §7 기준 4). 훗날 거부 경로의 이벤트 매핑이
+        // 바뀌어 armed가 참이 될 수 있게 되면 이 테스트가 빨간불이 되어 그 변경을 잡아낸다.
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(
+            (0..5)
+                .map(|_| ok(&turn("write_file", serde_json::json!({"path": "a.rs", "content": "x"}))))
+                .collect::<Vec<_>>(),
+        );
+        let approver = ScriptedApprover {
+            decisions: Mutex::new(
+                (0..5).map(|_| Decision::Deny { reason: "no".into() }).collect::<VecDeque<_>>(),
+            ),
+            seen: Mutex::new(Vec::new()),
+        };
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let out = agent.run(&mut session, "x", &mut &approver, &mut |_| {}).await.unwrap();
+
+        assert!(matches!(out, AgentOutcome::RepetitionStop));
+        assert!(
+            !session.messages().iter().any(|m| m.content.contains(finish_nudge::FINISH_NUDGE)),
+            "정지 턴에 FINISH_NUDGE가 붙었다"
+        );
+    }
+
     /// 읽기 툴은 approver를 부르지 않는다 — 불리면 패닉
     struct PanicApprover;
     impl Approver for PanicApprover {
@@ -1732,7 +2094,7 @@ mod tests {
             let mut session = new_session(&agent);
             let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
             assert!(matches!(outcome, AgentOutcome::RepetitionStop), "{outcome:?}");
-            assert!(!session_contains(&session, "do not re-verify"), "정지 턴에는 니지를 평가하지 않는다");
+            assert!(!session_contains(&session, "do not re-verify"), "정지 턴에는 넛지를 평가하지 않는다");
         }
     }
 
@@ -1858,6 +2220,65 @@ mod tests {
         assert!(
             !session_contains(&session, "never ran a verification command"),
             "타임아웃 본문에는 exit code 줄이 없다 — 우연히 섞인 요약 문구를 검증으로 읽으면 안 된다 (Minor 2)"
+        );
+    }
+
+    // M14 A-1 — 파이프 가드는 해제 술어에만: VerifyOk 매핑을 건드리면 재검증 루프
+    // 감지가 죽는다(§3-3-3, 실측으로 기각된 대안). 실셸 파이프 실행이 필요해 unix 한정
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_piped_verification_does_not_release_verify_nudge() {
+        let script = vec![
+            ok(&turn("write_file", serde_json::json!({"path":"a.rs","content":"fn a(){}"}))),
+            ok(&turn("run_command", serde_json::json!({"command":"cargo test 2>&1 | tail -5"}))),
+            ok(&finish("done")),  // 파이프 문구로 1회 반려
+            ok(&finish("done2")),
+        ];
+        let (out, notes) = run_capturing_tool_results(script).await;
+        assert!(matches!(out, AgentOutcome::Finished(ref s) if s == "done2"), "{out:?}");
+        assert!(notes.iter().any(|n| n.contains(VERIFY_NUDGE_PIPE)), "파이프 문구가 안 나왔다: {notes:?}");
+        assert!(!notes.iter().any(|n| n.contains(VERIFY_NUDGE)), "기본 문구가 나왔다 — 거짓말이다");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_pipe_still_counts_for_loop_detection() {
+        // §3-3-3 가드: VerifyOk 매핑에 가드를 걸면 이 테스트가 실패한다.
+        // 교대가 필수 — 동일 명령 반복은 5번째에 RepetitionStop이 !stop 가드로
+        // FINISH_NUDGE 평가를 선점한다. 5회는 하한이다(#1 무장 + #2~#5가 K=4를 채움)
+        let mut script = vec![ok(&turn("write_file", serde_json::json!({"path":"a.rs","content":"x"})))];
+        for i in 0..5 {
+            let cmd = if i % 2 == 0 { "cargo test 2>&1 | tail -5" } else { "cargo test 2>&1 | head -5" };
+            script.push(ok(&turn("run_command", serde_json::json!({"command": cmd}))));
+        }
+        script.push(ok(&finish("done")));
+        script.push(ok(&finish("done2")));
+        let (_out, notes) = run_capturing_tool_results(script).await;
+        assert!(
+            notes.iter().any(|n| n.contains(finish_nudge::FINISH_NUDGE_PIPE)),
+            "FINISH_NUDGE가 안 나왔다 — VerifyOk 매핑에 가드가 걸렸다: {notes:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_pipe_flag_is_cleared_once_a_clean_verification_releases() {
+        // 4R C2: 해제 성공 시 플래그를 안 고치면 FINISH_NUDGE가 낡은 true를 읽는다
+        let mut script = vec![ok(&turn("write_file", serde_json::json!({"path":"a.rs","content":"x"})))];
+        script.push(ok(&turn("run_command", serde_json::json!({"command":"cargo test 2>&1 | tail -5"}))));
+        // "cargo test" 단독은 이 스크래치 샌드박스에 Cargo.toml이 없어 exit 101로 실패하고
+        // VerifyOther가 finish_nudge를 disarm해 버려 이 테스트가 무의미하게 통과한다
+        // (RED 확인 중 실측 — verification-criteria-must-be-falsifiable). `|| true`로
+        // exit 0을 강제해 "파이프 없는 성공한 검증"을 실제로 재현한다 (T4 편차, 사유는 리포트)
+        script.push(ok(&turn("run_command", serde_json::json!({"command":"cargo test || true"})))); // 해제
+        for _ in 0..4 {
+            script.push(ok(&turn("read_file", serde_json::json!({"path":"a.rs"}))));
+        }
+        script.push(ok(&finish("done")));
+        let (_out, notes) = run_capturing_tool_results(script).await;
+        assert!(
+            !notes.iter().any(|n| n.contains(finish_nudge::FINISH_NUDGE_PIPE)),
+            "마지막 검증이 파이프가 아닌데 파이프 변형이 나왔다: {notes:?}"
         );
     }
 
@@ -2122,6 +2543,9 @@ mod tests {
         // remove_status_note가 최신만 유지 — 턴 3(케이던스)의 노트가 턴 5에서
         // 교체돼 히스토리에는 여전히 1개만 남는다 (M13 조밀화로 늘지 않음)
         assert_eq!(with_status.len(), 1, "턴 5에서 정확히 1회");
+        // M14 A-2 리뷰 수정: run_command를 한 번도 안 썼으므로 last_cmd_exit도
+        // None — "no test summary in output" 한정자는 명령이 실제로 실행된
+        // 경우에만 붙으므로 여기서는 렌더되지 않는다
         assert!(
             with_status[0].content.contains(
                 "[status] files edited: none yet | verification: last command gave no exit code | turns: 5 of 25 used"
@@ -2291,5 +2715,49 @@ mod tests {
         let c = &with_status[0].content;
         assert!(c.contains("turns: 16 of 25"), "이월분이 턴 16에 주입: {c}");
         assert!(c.contains("verification: none since your last edit"), "{c}");
+    }
+
+    #[test]
+    fn input_budget_has_a_floor_so_pathological_config_cannot_erase_history() {
+        // max_output >= context면 saturating_sub가 0을 주고 예산이 0이 된다 —
+        // pack()이 시스템 프롬프트와 마지막 메시지만 남기고 전부 지운다
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![]);
+        let config = Config { context_tokens: 4096, max_output_tokens: 8192, ..Default::default() };
+        let agent = Agent::new(
+            &script,
+            Registry::guided(),
+            ToolCtx::new(dir.path().to_path_buf()),
+            "test-model".into(),
+            &config,
+        );
+        assert!(
+            agent.input_budget() >= MIN_INPUT_BUDGET,
+            "예산이 {}로 붕괴했다 — 하한 {MIN_INPUT_BUDGET}이 없다",
+            agent.input_budget()
+        );
+    }
+
+    #[test]
+    fn cramped_output_budget_is_reported_to_the_user() {
+        // 파일럿 형태: 4096/8192 → 예산 3686. 하한에는 안 걸리지만 좁다
+        assert!(cramped_budget_warning(8192, 4096).is_some(), "파일럿 형태는 경고 대상");
+        assert!(cramped_budget_warning(8192, 2048).is_none(), "기본값은 경고 없음");
+    }
+
+    #[test]
+    fn cramped_budget_warning_reports_floored_value_not_pre_floor() {
+        // M14 B-2c: 하한이 발동하는 병리적 config(context=4096, output=8192)에서도
+        // 경고는 실제 예산(512)을 보고해야 한다. 하한 적용 전 값(0)을 출력하면
+        // 사용자가 도구가 부서졌다고 착각한다
+        let warning = cramped_budget_warning(4096, 8192).expect("경고가 발동해야 함");
+        assert!(
+            warning.contains("512 토큰"),
+            "경고는 floored_input_budget()의 결과(512)를 보고: {warning}"
+        );
+        assert!(
+            !warning.contains("0 토큰"),
+            "경고에 하한 미적용 값(0)이 나오면 안 된다: {warning}"
+        );
     }
 }

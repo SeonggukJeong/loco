@@ -100,6 +100,18 @@ impl Session {
         }
     }
 
+    /// §4-2-1 회복 문구 — 꼬리가 이미 같은 문구로 끝나면 **아무것도 하지 않는다**.
+    /// 이 문구는 `</tool_result>` 뒤 접미에 병합되는데 `pack()`의 축약이 그 접미를
+    /// 의도적으로 보존하므로(:133~136), 연속 주입분은 회수 경로가 없다.
+    /// 교대 형태(사이에 다른 턴이 끼는 경우)의 사본은 서로 다른 메시지에 실려
+    /// 쌍 삭제가 걷어내므로 여기서 막지 않는다
+    pub fn push_recovery_notice(&mut self, notice: &str) {
+        if self.messages.last().is_some_and(|m| m.role == "user" && m.content.ends_with(notice)) {
+            return;
+        }
+        self.push_user_request(notice);
+    }
+
     /// 히스토리에 넣지 않는 부가 기록 (/chat 경로 등)
     pub fn record_extra(&mut self, kind: &str, content: &str) {
         self.transcript.record(kind, content);
@@ -518,5 +530,31 @@ mod tests {
         assert!(s.messages().iter().any(|m| m.content.contains(ELIDED) && m.content.contains("[status]")));
         s.remove_status_note();
         assert!(!s.messages().iter().any(|m| m.content.contains("[status]")), "생략 메시지의 접미도 제거");
+    }
+
+    #[test]
+    fn recovery_notice_is_not_duplicated_when_appended_back_to_back() {
+        let mut s = sess(vec![ChatMessage::system("sys"), ChatMessage::user("TASK: fix it")]);
+        s.push_recovery_notice("CUT OFF");
+        s.push_recovery_notice("CUT OFF");
+        s.push_recovery_notice("CUT OFF");
+        let joined = s.messages().iter().map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n");
+        assert_eq!(joined.matches("CUT OFF").count(), 1, "연속 주입은 1벌만: {joined}");
+    }
+
+    #[test]
+    fn recovery_notice_merges_into_a_trailing_user_message() {
+        let mut s = sess(vec![ChatMessage::system("sys"), ChatMessage::user("TASK")]);
+        s.push_recovery_notice("CUT OFF");
+        assert_eq!(s.messages().len(), 2, "새 메시지가 아니라 병합이어야 role 교대가 유지된다");
+        assert!(s.messages()[1].content.ends_with("CUT OFF"));
+    }
+
+    #[test]
+    fn recovery_notice_pushes_when_the_tail_is_an_assistant_message() {
+        let mut s = sess(vec![ChatMessage::system("sys"), ChatMessage::assistant("a")]);
+        s.push_recovery_notice("CUT OFF");
+        assert_eq!(s.messages().len(), 3);
+        assert_eq!(s.messages()[2].role, "user");
     }
 }

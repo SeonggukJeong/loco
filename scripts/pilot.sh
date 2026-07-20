@@ -16,7 +16,29 @@ PILOT_LEDGER="${PILOT_LEDGER:?PILOT_LEDGER (원장 JSONL 경로)를 지정하세
 # 잡아야 정상적으로 오래 걸리는 빌드/테스트를 시간초과로 오분류하지 않는다.
 PILOT_BUILD_TIMEOUT_SECS="${PILOT_BUILD_TIMEOUT_SECS:-300}"
 PILOT_TEST_TIMEOUT_SECS="${PILOT_TEST_TIMEOUT_SECS:-600}"
-REPO="$(pwd)"
+# 비숫자 값은 감시자의 `sleep`을 즉시 죽여 상한을 사라지게 하고, `10m` 같은
+# 단위 접미사는 조용히 600초로 해석돼 변수 이름(_SECS)과 어긋난다.
+# 선행 `-`는 sleep의 getopt 단계에서 다른 오류가 되므로 case가 먼저 거른다
+for _v in BUILD TEST; do
+  eval "_val=\$PILOT_${_v}_TIMEOUT_SECS"
+  case "$_val" in
+    ''|*[!0-9]*)
+      echo "PILOT_${_v}_TIMEOUT_SECS는 초 단위 정수여야 합니다 (받은 값: '$_val')" >&2
+      exit 1
+      ;;
+  esac
+done
+unset _v _val
+# git 자체가 없으면 아래 REPO 캡처도 어차피 실패하지만, 원인이 "git 없음"인지
+# "레포 밖"인지를 구분해 더 정확한 메시지를 준다 (예전엔 이 검사가 REPO 캡처보다
+# 한참 뒤에 따로 있어 절대 도달하지 못하는 죽은 코드였다 — 여기로 옮겨 살린다)
+command -v git >/dev/null 2>&1 || { echo "git이 필요합니다"; exit 1; }
+# git diff는 레포 전체를 보므로 REPO도 레포 루트여야 한다 — 서브디렉터리에서
+# 실행하면 어긋난다
+REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "git 레포 안에서 실행해야 합니다"; exit 1
+}
+[ -n "$REPO" ] || { echo "git 레포 안에서 실행해야 합니다"; exit 1; }
 
 # --- 중단 안전망 ---------------------------------------------------------------
 # 세션이 시작된 뒤 원장 기록 전에 죽으면(Ctrl+C, 예기치 못한 오류) GPU 시간과
@@ -58,11 +80,12 @@ cleanup() {
   exit "$st"
 }
 trap cleanup EXIT
+# 실측(bash 3.2 = macOS /bin/sh): 포그라운드 자식 대기 중 프로세스 그룹 SIGINT는
+# 이 트랩을 실행시키지 않는다. 따라서 안전망이 실제로 발동하는 것은 판정 프롬프트
+# 대기 중뿐이다. 결과적 동작은 바람직하므로(loco만 죽고 세션은 기록됨) 그대로 둔다.
+# 세션 중 INT까지 잡으려면 wait 기반 구조가 필요하다 — 다음으로 미룸
 trap 'exit 130' INT
 trap 'exit 143' TERM
-
-command -v git >/dev/null || { echo "git이 필요합니다"; exit 1; }
-git rev-parse --git-dir >/dev/null 2>&1 || { echo "git 레포 안에서 실행하세요"; exit 1; }
 
 # 세션 시작(타이밍/리비전 캡처) 전에 확인 — 실패해도 사용자 비용이 0이어야 한다.
 if echo "$LOCO_BIN" | grep -q /; then
@@ -93,17 +116,29 @@ fi
 
 if [ -n "$(git status --porcelain)" ]; then
   printf '워킹트리가 더럽습니다. 세션 diff가 오염됩니다. 계속할까요? [y/N] '
-  read -r ans
+  if ! read -r ans; then
+    echo "입력이 필요합니다 (세션 전 수집은 의도적으로 비대화형 실행을 지원하지 않습니다)" >&2
+    exit 1
+  fi
   [ "$ans" = "y" ] || exit 1
 fi
 
 # --- 세션 전 수집: 결과를 알기 전에 받아야 분모로 쓸 수 있다 -----------------
 printf '과제 유형 한 단어 (bugfix/feature/refactor/explore/test/other): '
-read -r TASK_TYPE
+if ! read -r TASK_TYPE; then
+  echo "입력이 필요합니다 (세션 전 수집은 의도적으로 비대화형 실행을 지원하지 않습니다)" >&2
+  exit 1
+fi
 printf '난이도 추정 (상/중/하) — 지금 추정해야 의미가 있습니다: '
-read -r DIFFICULTY
+if ! read -r DIFFICULTY; then
+  echo "입력이 필요합니다 (세션 전 수집은 의도적으로 비대화형 실행을 지원하지 않습니다)" >&2
+  exit 1
+fi
 printf '과제 한 줄: '
-read -r TASK_DESC
+if ! read -r TASK_DESC; then
+  echo "입력이 필요합니다 (세션 전 수집은 의도적으로 비대화형 실행을 지원하지 않습니다)" >&2
+  exit 1
+fi
 
 SESSION_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 START_REV="$(git rev-parse HEAD)"

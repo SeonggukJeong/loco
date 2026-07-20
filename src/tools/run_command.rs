@@ -12,8 +12,11 @@ struct Args {
 
 /// M11 §5: 따옴표 밖 파이프 존재 판정 — `||`(OR)는 파이프가 아니고, 따옴표
 /// 안·백슬래시 이스케이프된 `|`는 무시한다(grep 패턴 상용 — 오발 방지).
-/// 잔여 이스케이프 엣지 케이스의 오발은 허용 오차(정보 한 줄, 무해)
-fn has_unquoted_pipe(cmd: &str) -> bool {
+/// M14부터 이 판정은 노트 한 줄(M11)뿐 아니라 VERIFY_NUDGE 해제 판정과
+/// 상태선 규칙4(전체 통과) 폴백의 게이트이기도 하다 — 잔여 이스케이프
+/// 엣지 케이스의 오탐은 더 이상 무해한 정보 한 줄이 아니라 모델의 턴
+/// 하나와 "전체 통과" 렌더를 대가로 치른다
+pub(crate) fn has_unquoted_pipe(cmd: &str) -> bool {
     let bytes = cmd.as_bytes();
     let (mut in_single, mut in_double) = (false, false);
     let mut i = 0;

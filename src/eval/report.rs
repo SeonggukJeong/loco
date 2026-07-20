@@ -52,6 +52,9 @@ pub struct TaskReport {
     pub passed_strict_count: usize,
     /// outcome==finished 인데 !passed — "자신 있는 오답" 지표 (M6 §5)
     pub false_finish_count: usize,
+    /// schema_fallback==true 인 런 수 — 앵커 게이트가 전수 순회를 스크립트에
+    /// 맡기지 않고 여기서 이미 집계해 fail-open 위험을 없앤다 (M14 B-3)
+    pub schema_fallback_count: usize,
     pub avg_turns: f64,
     pub avg_duration_secs: f64,
     pub runs: Vec<RunRecord>,
@@ -71,6 +74,7 @@ impl TaskReport {
                 .iter()
                 .filter(|r| !r.passed && r.outcome == RunOutcome::Finished)
                 .count(),
+            schema_fallback_count: runs.iter().filter(|r| r.schema_fallback).count(),
             avg_turns: runs.iter().map(|r| r.turns as f64).sum::<f64>() / n,
             avg_duration_secs: runs.iter().map(|r| r.duration_secs).sum::<f64>() / n,
             name,
@@ -95,6 +99,8 @@ pub struct Report {
     pub passed_count: usize,
     pub passed_strict_count: usize,
     pub false_finish_count: usize,
+    /// 과제별 schema_fallback_count의 합 — 앵커 게이트가 한 번에 확인 (M14 B-3)
+    pub schema_fallback_count: usize,
     /// 런당 에이전트 실행 시간의 **런 가중** 평균 — per-run `duration_secs`(agent.run만
     /// 계측, check 제외) 정의 승계라 벽시계 `duration_secs`/총런수와 일치하지 않는다 (M7 §4)
     pub avg_duration_secs: f64,
@@ -171,10 +177,10 @@ mod tests {
         }
     }
 
-    fn run_with(passed: bool, outcome: RunOutcome) -> RunRecord {
+    fn run_with(passed: bool, outcome: RunOutcome, schema_fallback: bool) -> RunRecord {
         RunRecord {
             repeat: 0, seed: 0, passed, outcome, turns: 1,
-            duration_secs: 1.0, schema_fallback: false,
+            duration_secs: 1.0, schema_fallback,
         }
     }
 
@@ -199,15 +205,29 @@ mod tests {
         let t = TaskReport::from_runs(
             "t".into(),
             vec![
-                run_with(true, RunOutcome::Finished),   // passed + strict
-                run_with(true, RunOutcome::MaxTurns),   // passed, 비엄격 (관대 채점의 대상)
-                run_with(false, RunOutcome::Finished),  // 거짓 성공 finish
-                run_with(false, RunOutcome::Timeout),   // 그냥 실패
+                run_with(true, RunOutcome::Finished, false),   // passed + strict
+                run_with(true, RunOutcome::MaxTurns, false),   // passed, 비엄격 (관대 채점의 대상)
+                run_with(false, RunOutcome::Finished, false),  // 거짓 성공 finish
+                run_with(false, RunOutcome::Timeout, false),   // 그냥 실패
             ],
         );
         assert_eq!(t.passed_count, 2);
         assert_eq!(t.passed_strict_count, 1, "Finished이면서 passed만");
         assert_eq!(t.false_finish_count, 1, "Finished인데 !passed만");
+    }
+
+    #[test]
+    fn schema_fallback_count_aggregates_like_the_other_count_fields() {
+        // M14 B-3: 앵커 게이트가 tasks[].runs[].schema_fallback을 전수 순회해야
+        // 하는데, 그 스크립트를 잘못 짜면(첫 런만 본다든지) fail-open 위험이
+        // Rust에서 스크립트로 이동할 뿐이다 — passed_count류와 같은 자리에 집계한다
+        let runs = vec![
+            run_with(true, RunOutcome::Finished, true),
+            run_with(true, RunOutcome::Finished, false),
+            run_with(false, RunOutcome::RepetitionStop, true),
+        ];
+        let t = TaskReport::from_runs("t".into(), runs);
+        assert_eq!(t.schema_fallback_count, 2);
     }
 
     #[test]
@@ -225,10 +245,20 @@ mod tests {
     }
 
     #[test]
+    fn report_json_carries_schema_fallback_count_at_both_levels() {
+        let v = serde_json::to_value(sample_report()).unwrap();
+        assert!(v.get("schema_fallback_count").is_some(), "최상위 집계가 없다");
+        assert!(v["tasks"][0].get("schema_fallback_count").is_some(), "과제별 집계가 없다");
+        // 기존 키 불변 — RunRecord::schema_fallback (report_json_has_design_schema_fields가
+        // 같은 필드를 이미 핀하고 있어 여기서는 존재만 재확인)
+        assert!(v["tasks"][0]["runs"][0].get("schema_fallback").is_some());
+    }
+
+    #[test]
     fn table_shows_strict_column_and_false_finish_summary() {
         let tasks = vec![TaskReport::from_runs(
             "demo".into(),
-            vec![run_with(true, RunOutcome::MaxTurns), run_with(false, RunOutcome::Finished)],
+            vec![run_with(true, RunOutcome::MaxTurns, false), run_with(false, RunOutcome::Finished, false)],
         )];
         let mut r = sample_report();
         r.total_pass_rate = Report::total_of(&tasks);
@@ -284,6 +314,7 @@ mod tests {
             passed_count: 1,
             passed_strict_count: 1,
             false_finish_count: 0,
+            schema_fallback_count: 0,
             tasks,
             effective_config: EffectiveConfig {
                 base_url: "http://localhost:1234/v1".into(),

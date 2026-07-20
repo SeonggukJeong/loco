@@ -30,6 +30,12 @@ MARKS = {
     "status_note": "[status] files edited",
     "pipe_note": "the exit code reflects only the last command",
     "empty_test_note": "0 tests ran (",
+    # ⚠ M14 비교가능성: §3-4-2의 규칙 4 → 규칙 5 폴백이 파이프 실행의 allpass 렌더를
+    # 규칙 5 문자열로 옮긴다. 모델이 파이프를 쓰는 만큼 verify_allpass·verify_total이
+    # **내려간다** — 하락은 회귀가 아니라 폴백이 작동한 증거일 수 있다.
+    # 파생 verify_failed(= total - allpass)는 규칙 2가 불변이고 두 원지표가 같은 양만큼
+    # 줄어 보존된다. M14 전후 배치의 이 두 지표를 나란히 인용하지 말 것.
+    # 선례: M12 sr_error(검사 순서), M13 T7 verify_*(무뮤테이션 렌더로 상향)
     "verify_total": "verification: last cargo test: ",
     "verify_zero": "verification: last cargo test ran 0 tests",
     "verify_allpass": "verification: last cargo test: all ",
@@ -45,11 +51,25 @@ MARKS = {
     # 자동 드리프트 감지 없음): 러스트 쪽 문구가 바뀌면 이 리터럴도 사람이
     # 함께 고쳐야 한다.
     "length_retry": "cut off by the output token limit",
+    # M14 T10 — A-1(파이프 가드가 해제 술어에만 걸림)·A-2(상태선 규칙 5 파이프
+    # 한정자)·A-3(모델용 diff 헤더) 소비자 신호. 문자열은 Rust 상수에서 문자
+    # 그대로 복사(드리프트 감시 대상 — 위 args_tool_key/switch·length_retry와
+    # 같은 사정, 자동 검출 없음):
+    #   verify_nudge_pipe   → agent/mod.rs::VERIFY_NUDGE_PIPE
+    #   finish_nudge_pipe   → agent/finish_nudge.rs::FINISH_NUDGE_PIPE
+    #   status_pipe_qual/status_no_summary → agent/status_note.rs 규칙 5 한정자
+    #   model_diff          → tools/diff.rs::render_diff_for_model 헤더(정상·절단 두 형태 모두 매치)
+    "verify_nudge_pipe": "but it was a shell pipeline",
+    "finish_nudge_pipe": "was a shell pipeline, so it did not establish",
+    "status_pipe_qual": "(via pipe",
+    "status_no_summary": "no test summary in output",
+    "model_diff": " lines, +",
 }
 COLS = ["run", "outcome", "passed"] + list(MARKS) + [
     "sr_recovered", "sr_recovery_denom", "finish_missing_maxrun", "perturb_turns", "stop_cause",
     "first_mut_turn", "cargo_after_mut", "zero_mut_end", "status_in_args", "sr_files",
     "verify_failed", "sr_corr_total", "perturb_turns_ext", "parse_fail_first",
+    "finish_nudge_total", "pipe_unreleased",
 ]
 
 # M12 §3-1 badargs_streak()이 세는 "missing field" BadArgs 접두 — tools/mod.rs
@@ -337,17 +357,43 @@ def process(stamp_dir):
         # sr_correction과 항상 같지 않다(예: 연속 2로 발화한 경우 sr_correction은
         # 1이어도 sr_corr_total은 0).
         verify_failed = counts["verify_total"] - counts["verify_allpass"]
+        # M14 T10 파생 컬럼 2종 — 신규 마커 카운트만으로는 직접 못 얻는 §8-4 관측
+        # 항목 2건의 해소.
+        # finish_nudge_total: agent/finish_nudge.rs::FINISH_NUDGE가 발동하는 순간
+        # 파이프가 원인(unreleased_due_to_pipe)이면 FINISH_NUDGE_PIPE로 치환되어
+        # 나간다(agent/mod.rs 508·634행) — 기본 문구(finish_nudge 마커)와 파이프
+        # 문구(finish_nudge_pipe 마커)는 상호배타적 발동이라 단순 합이 "FINISH_NUDGE
+        # 발동 총 횟수"다(스펙 §8-4).
+        # pipe_unreleased: `unreleased_due_to_pipe`는 렌더되는 문자열이 아니라 하네스
+        # 내부 상태라 직접 셀 마커가 없다. 그런데 agent/mod.rs 595행의 대입
+        # (`unreleased_due_to_pipe = !released && is_piped`)은 run_command가
+        # ExecEnd::Done에 도달한 파이프 명령마다 참이 되고, 이는 tools/run_command.rs가
+        # 같은 has_unquoted_pipe 판정으로 붙이는 M11 pipe_note와 발동 조건이 정확히
+        # 같다 — 그래서 새 마커를 만들지 않고 pipe_note를 그대로 재사용한다.
+        # 알려진 과소검출(고의로 안 고침): 파이프 명령이 타임아웃·취소로 끝나면
+        # run_command 쪽 ExecEnd::Done 분기를 안 타 pipe_note가 안 붙지만,
+        # agent/mod.rs의 dispatch_ok는 그 경우도 참(타임아웃도 도구 결과는 Ok)이라
+        # 플래그 자체는 여전히 참이 된다 — "파이프이면서 타임아웃"이라는 좁은
+        # 교집합만 이 프록시가 놓친다.
+        finish_nudge_total = counts["finish_nudge"] + counts["finish_nudge_pipe"]
+        pipe_unreleased = counts["pipe_note"]
         row = [name, outcome, str(passed)] + [str(counts[k]) for k in MARKS]
         row += [str(rec), str(den), str(fin_max), str(perturb), cause,
                 str(first_mut), str(cargo_mut), zme, str(st_args), files_col,
-                str(verify_failed), str(sr_corr_total), str(perturb_ext), str(pff)]
+                str(verify_failed), str(sr_corr_total), str(perturb_ext), str(pff),
+                str(finish_nudge_total), str(pipe_unreleased)]
         print("\t".join(row))
     marks = " ".join(f"{k}={totals[k]}" for k in MARKS)
+    # M14 T10 Step 1 — 이전엔 "parse_fail_first(총): N  <- 0이 아니면 ..." 형태의
+    # 한글 키+서술문이었다. 다른 전 필드처럼 key=value 한 항목으로: 의미(0이 아니면
+    # 그 배치는 앵커/게이트로 쓸 수 없다는 판정 기준)는 안 바뀌었고, 그 설명은
+    # parse_fail_first()의 독스트링에 이미 있다 — grep 레시피가 이 줄을 다른
+    # key=value 필드와 동일하게 파싱할 수 있도록 프로즈만 뺐다.
     print(f"# summary {marks} recovered={total_rec}/{total_den} "
           f"stops sr={stops['sr']} finish={stops['finish']} other={stops['other']} "
           f"zero_mut max_turns={zero_mut['max_turns']} finished={zero_mut['finished']} "
           f"other={zero_mut['other']} cargo_after_mut={cargo_runs}/{mut_runs} "
-          f"parse_fail_first(총): {parse_fail_total}  <- 0이 아니면 그 배치는 앵커/게이트로 쓸 수 없다")
+          f"parse_fail_first={parse_fail_total}")
 
 
 def selftest():
@@ -634,17 +680,60 @@ def selftest():
     counts_length = run_metrics(events_length)[0]
     assert counts_length["length_retry"] == 1, counts_length
 
+    # M14 T10 — 신규 마커 5종. 문자열은 Rust 상수 원문에서 그대로 복사
+    # (agent/mod.rs::VERIFY_NUDGE_PIPE, agent/finish_nudge.rs::FINISH_NUDGE/
+    # FINISH_NUDGE_PIPE, agent/status_note.rs 규칙 5 한정자,
+    # tools/diff.rs::render_diff_for_model 헤더). 교정/넛지 노트는 M11 이래 관례대로
+    # 별도 user 이벤트로, 도구 결과 본문(diff·pipe_note)은 tool_result 이벤트로 남긴다.
+    verify_nudge_pipe_text = (
+        "You ran a verification command, but it was a shell pipeline, so its exit code "
+        "reflects only the last command in the pipe and does not tell whether the tests "
+        "passed. Re-run it without a pipe, then finish."
+    )
+    finish_nudge_base_text = (
+        "You already ran a successful verification. If the task is complete, call finish "
+        "with a summary now; do not re-verify what you have already confirmed."
+    )
+    finish_nudge_pipe_text = (
+        "You have re-verified several times. Note your last verification was a shell "
+        "pipeline, so it did not establish that the tests passed - run it once without a "
+        "pipe, then finish."
+    )
+    events10 = [
+        ev("tool_result", "wrote", "write_file", {"path": "a.rs", "content": "x"}),
+        ev("user", verify_nudge_pipe_text),
+        ev("user", finish_nudge_base_text),
+        ev("user", finish_nudge_pipe_text),
+        ev("user", "[status] files edited: 1 (a.rs)\n"
+           "         verification: last command exited 0 (via pipe, no test summary in output)\n"
+           "         turns: 5 of 25 used"),
+        ev("tool_result", "-0 lines, +3 lines\n+fn x() {}", "write_file", {"path": "b.rs", "content": "y"}),
+        ev("tool_result", "exit code: 0\nok\nnote: this command is a pipeline - the exit code reflects "
+           "only the last command in the pipe", "run_command", {"command": "cargo test | tail -5"}),
+    ]
+    counts10 = run_metrics(events10)[0]
+    assert counts10["verify_nudge_pipe"] == 1, counts10
+    assert counts10["finish_nudge"] == 1, counts10       # 기본 문구(파이프 문구와 상호배타적으로 별도 발동)
+    assert counts10["finish_nudge_pipe"] == 1, counts10
+    assert counts10["status_pipe_qual"] == 1, counts10
+    assert counts10["status_no_summary"] == 1, counts10
+    assert counts10["model_diff"] == 1, counts10
+    assert counts10["pipe_note"] == 1, counts10          # pipe_unreleased 파생값의 원천
+
     # M12 T9 수정(리뷰 Item 2): verify_failed·sr_corr_total은 이제 process()를
     # 실제로 호출해 출력 테이블 값으로 검증한다(로컬 재계산이 아니라 실 코드
     # 경로) — process() 내부의 두 파생식을 각각 0으로 바꾸는 뮤턴트가 살아남던
     # 결함(리뷰 확인)을 여기서 잡는다. verify는 위 events7과 동일 시나리오,
     # sr_corr_total은 위 events8b(파일별 단독 귀속)와 동일 시나리오를 재사용.
+    # M14 T10: 같은 이유로 finish_nudge_total·pipe_unreleased도 여기서 process()의
+    # 실 출력으로 검증한다(events10을 같은 스탬프에 합친다 — verify_failed·
+    # sr_corr_total이 보는 마커와 겹치지 않아 두 기존 단언에 영향 없음).
     with tempfile.TemporaryDirectory() as stamp_dir:
         report = {"tasks": [{"name": "demo", "runs": [{"repeat": 0, "outcome": "finished", "passed": True}]}]}
         with open(os.path.join(stamp_dir, "report.json"), "w") as f:
             json.dump(report, f)
         with open(os.path.join(stamp_dir, "run-demo-0.jsonl"), "w") as f:
-            for e in events7 + events8b:
+            for e in events7 + events8b + events10:
                 f.write(json.dumps(e) + "\n")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -655,6 +744,8 @@ def selftest():
         col = {name: i for i, name in enumerate(header)}
         assert row[col["verify_failed"]] == "1", row       # process()의 뺄셈식이 실제로 실행됐는지
         assert row[col["sr_corr_total"]] == "1", row        # process()가 run_metrics의 실 반환값을 그대로 쓰는지
+        assert row[col["finish_nudge_total"]] == "2", row   # finish_nudge(1) + finish_nudge_pipe(1)의 합산식
+        assert row[col["pipe_unreleased"]] == "1", row       # pipe_note를 그대로 미러하는 파생값
 
     # M13 — parse_fail_first: 첫 assistant가 유효 턴이 아니면 1 (C1형 조용한 실패 포착)
     broken = [

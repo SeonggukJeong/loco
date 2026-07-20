@@ -40,6 +40,10 @@ pub struct ResponseMessage {
     pub role: String,
     #[serde(default)]
     pub content: Option<String>,
+    /// llama.cpp가 사고 토큰을 분리해 흘리는 필드 (M14 B-1). 이것을 안 읽으면
+    /// content가 빈 턴에서 모델 출력을 통째로 버린다 — 파일럿 "빈 응답" 4건
+    #[serde(default)]
+    pub reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,9 +53,19 @@ pub struct Choice {
     pub finish_reason: Option<String>,
 }
 
+/// 토큰 소비량. 서버가 reasoning_tokens를 분해해 주지 않으므로
+/// completion_tokens는 추론분을 **포함한** 합산값이다 (M14 B-1, 라이브 실측)
+#[derive(Debug, Clone, Deserialize)]
+pub struct Usage {
+    #[serde(default)]
+    pub completion_tokens: Option<u32>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatResponse {
     pub choices: Vec<Choice>,
+    #[serde(default)]
+    pub usage: Option<Usage>,
 }
 
 impl ChatResponse {
@@ -66,6 +80,20 @@ impl ChatResponse {
     /// 첫 번째 choice의 finish_reason ("stop", "length" 등)
     pub fn finish_reason(&self) -> Option<&str> {
         self.choices.first().and_then(|c| c.finish_reason.as_deref())
+    }
+
+    /// 첫 번째 choice의 추론 꼬리. 없으면 빈 문자열
+    pub fn reasoning(&self) -> &str {
+        self.choices
+            .first()
+            .and_then(|c| c.message.reasoning_content.as_deref())
+            .unwrap_or("")
+    }
+
+    /// 출력 토큰 소비량. content가 빈 턴에서는 곧 추론 소비량이고,
+    /// 그 외에는 합산값이라 분리되지 않는다
+    pub fn completion_tokens(&self) -> Option<u32> {
+        self.usage.as_ref().and_then(|u| u.completion_tokens)
     }
 }
 
@@ -200,6 +228,32 @@ mod tests {
         let chunk: StreamChunk = serde_json::from_str(done).unwrap();
         assert_eq!(chunk.choices[0].delta.content, None);
         assert_eq!(chunk.choices[0].finish_reason.as_deref(), Some("stop"));
+    }
+
+    #[test]
+    fn reasoning_content_is_parsed_from_a_non_streaming_response() {
+        // llama.cpp 실측 페이로드 형태 — content는 빈 채 reasoning_content만 온다
+        let raw = r#"{
+          "choices": [{
+            "message": {"role":"assistant","content":"","reasoning_content":"Let me think about the file layout"},
+            "finish_reason": "length"
+          }],
+          "usage": {"completion_tokens": 40, "prompt_tokens": 23, "total_tokens": 63}
+        }"#;
+        let r: ChatResponse = serde_json::from_str(raw).unwrap();
+        assert_eq!(r.text(), "");
+        assert_eq!(r.reasoning(), "Let me think about the file layout");
+        assert_eq!(r.completion_tokens(), Some(40));
+        assert_eq!(r.finish_reason(), Some("length"));
+    }
+
+    #[test]
+    fn a_response_without_the_new_fields_still_parses() {
+        let raw = r#"{"choices":[{"message":{"role":"assistant","content":"hi"}}]}"#;
+        let r: ChatResponse = serde_json::from_str(raw).unwrap();
+        assert_eq!(r.text(), "hi");
+        assert_eq!(r.reasoning(), "");
+        assert_eq!(r.completion_tokens(), None);
     }
 
     #[test]

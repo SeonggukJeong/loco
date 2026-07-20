@@ -8,6 +8,11 @@ use std::collections::VecDeque;
 pub const FINISH_NUDGE: &str = "You already ran a successful verification. If the task is complete, \
 call finish with a summary now; do not re-verify what you have already confirmed.";
 
+/// §3-3-3-1 — 마지막 검증이 파이프여서 "successful"이 참이 아닌 경우.
+/// 기본 문구를 그대로 쓰면 파이프 VERIFY_NUDGE와 같은 이벤트를 반대로 부른다
+pub const FINISH_NUDGE_PIPE: &str = "You have re-verified several times. Note your last verification \
+was a shell pipeline, so it did not establish that the tests passed - run it once without a pipe, then finish.";
+
 /// 발동에 필요한 연속 카운트 턴 수 (§4-2: K=4)
 const IDLE_WINDOW: usize = 4;
 
