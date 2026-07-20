@@ -199,6 +199,12 @@ async fn run_once<C: LlmClient>(
     )
     .await;
     let elapsed = start.elapsed();
+    // 폴백 발동 여부는 여기서 **한 번만** 읽는다. 아래 judge 호출이 두 갈래
+    // (타임아웃 / 정상)인데 각각에서 게터를 부르면 한쪽만 배선이 끊겨도
+    // 테스트가 안 죽는 지점이 생긴다 — 실제로 그랬다(정상 경로만 고정돼 있고
+    // 타임아웃 경로는 리터럴 false로 바꿔도 전 스위트 초록불이었다).
+    // 실패 방향이 fail-open("폴백 미발동 = 깨끗함")이라 지점 자체를 없앤다.
+    let schema_fallback = agent.schema_fallback_fired();
     let outcome = match bounded {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => {
@@ -213,7 +219,7 @@ async fn run_once<C: LlmClient>(
         Err(Stopped::TimedOut) => {
             let rec = judge(
                 &sb, t, opts, RunOutcome::Timeout, turns, elapsed, seed, repeat, interrupt, cargo_snapshot,
-                agent.schema_fallback_fired(),
+                schema_fallback,
             )
             .await;
             sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파
@@ -230,7 +236,7 @@ async fn run_once<C: LlmClient>(
     };
     let rec = judge(
         &sb, t, opts, kind, turns, elapsed, seed, repeat, interrupt, cargo_snapshot,
-        agent.schema_fallback_fired(),
+        schema_fallback,
     )
     .await;
     sb.cleanup(); // judge 에러 경로에서도 샌드박스를 정리한 뒤 전파

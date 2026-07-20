@@ -1149,6 +1149,10 @@ mod tests {
         assert_eq!(third[0].role, "user");
         assert!(third[0].content.contains("You are loco"), "시스템 프롬프트가 첫 user 앞에 병합");
         assert!(third[0].content.contains("질문"), "원래 사용자 요청 보존");
+        // 사다리 2단계로 승격해도 1단계에서 켠 폴백 플래그는 유지돼야 한다 —
+        // 누군가 사다리를 리팩터링하며 상태를 초기화하면 앵커 게이트가 조용히
+        // 눈멀기 때문에 여기서 고정한다 (M13 §3-6-1).
+        assert!(agent.schema_fallback_fired(), "json_schema 폴백 발동은 system 인라인 승격 후에도 유지");
     }
 
     #[tokio::test]

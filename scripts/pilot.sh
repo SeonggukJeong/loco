@@ -26,8 +26,23 @@ REPO="$(pwd)"
 # INT/TERM은 exit만 하고 실제 처리는 EXIT 하나로 모은다(핸들러 중복 실행 방지).
 SESSION_ID=""; START_REV=""; END_REV=""; DURATION=""
 BUILD_OUT=""; TEST_OUT=""; LEDGER_WRITTEN=0
+SESSION_STAMP=""; UNTRACKED=""
+
+# intent-to-add로 올린 경로만 언스테이지한다. 캡처 직후에 한 번 부르고,
+# 조기 종료(트랩) 시에도 부른다 — 어느 경로로 끝나든 사용자 인덱스는 원상태여야
+# 한다. 대상이 없으면 no-op이고, 두 번 불려도 안전하다(idempotent).
+unstage_intent_to_add() {
+  if [ -n "$UNTRACKED" ]; then
+    # shellcheck disable=SC2086
+    git reset -q -- $UNTRACKED >/dev/null 2>&1 || true
+    UNTRACKED=""
+  fi
+}
+
 cleanup() {
   st=$?
+  unstage_intent_to_add
+  if [ -n "$SESSION_STAMP" ]; then rm -f "$SESSION_STAMP"; fi
   if [ -n "$BUILD_OUT" ]; then rm -f "$BUILD_OUT" "$BUILD_OUT.timedout"; fi
   if [ -n "$TEST_OUT" ]; then rm -f "$TEST_OUT" "$TEST_OUT.timedout"; fi
   if [ -n "$SESSION_ID" ] && [ "$LEDGER_WRITTEN" -eq 0 ]; then
@@ -93,6 +108,9 @@ read -r TASK_DESC
 SESSION_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 START_REV="$(git rev-parse HEAD)"
 START_TS="$(date +%s)"
+# 트랜스크립트 귀속용 시간 기준점. POSIX `find -newer <파일>`이 이 파일보다
+# 나중에 생긴 것만 고르게 한다(위 ★ 참조 — `@epoch`는 BSD find에서 안 된다).
+SESSION_STAMP="$(mktemp)"
 
 # loco에는 위 "과제 한 줄"이 자동으로 전달되지 않는다 — 사용자가 loco> 프롬프트에서
 # 직접 다시 입력해야 한다. 안내가 없으면 응답 후 돌아온 loco> 프롬프트를 멈춤/종료로
@@ -112,22 +130,34 @@ END_REV="$(git rev-parse HEAD)"
 DURATION=$((END_TS - START_TS))
 
 # 세션이 만든 변경 = 미커밋 워킹트리 diff + 세션 중 생긴 커밋 + **신규 파일**.
-# `git add -N`으로 추적되지 않은 파일을 intent-to-add로 올려야 `git diff`가 본다 —
-# 안 그러면 `write_file`로 새 파일만 만든 성공 세션이 "산출물 0줄"로 기록되고,
-# 하류 생존율 집계에서 실패 세션과 구별되지 않는다(`write_file`은 6-tool set의
-# 정식 멤버라 가설이 아니다). `.loco/`는 제외 — 우리 자신의 부산물이다.
-git add -N -- . ':(exclude).loco' >/dev/null 2>&1 || true
+# 추적되지 않은 파일은 `git diff`에 안 잡히므로 intent-to-add로 잠깐 올렸다가
+# **반드시 되돌린다** — 안 그러면 인덱스에 잔재가 남아 사용자의 `git stash`가
+# `Entry '...' not uptodate` 로 깨진다(실측). 이 스크립트의 제1 원칙이
+# "세션을 감싸기만 한다"이므로 피측정 레포의 상태를 바꾼 채 끝내면 안 된다.
+# 대상 경로를 먼저 확정해 그것만 add/reset 한다 — `git reset -- .`(전면)은
+# 사용자가 미리 스테이징해 둔 것까지 언스테이지해 버린다.
+UNTRACKED="$(git ls-files --others --exclude-standard -- . | grep -v '^\.loco/' || true)"
+if [ -n "$UNTRACKED" ]; then
+  # shellcheck disable=SC2086  # 개행 구분 목록을 인자로 펼치는 것이 의도
+  git add -N -- $UNTRACKED >/dev/null 2>&1 || true
+fi
 if ! DIFF="$(git diff "$START_REV")"; then
   DIFF=""
   echo "경고: git diff 실패 — 원장의 diff가 비어 있으나 '변경 없음'을 뜻하지 않습니다." >&2
 fi
+unstage_intent_to_add   # 캡처 끝 — 인덱스 원복(조기 종료 시엔 cleanup이 부른다)
 
-# 이번 세션의 트랜스크립트. **mtime 하한이 필수다** — `ls -t | head -1`로 두면
+# 이번 세션의 트랜스크립트. **시간 하한이 필수다** — `ls -t | head -1`로 두면
 # loco가 크래시해 트랜스크립트를 못 남겼을 때 **직전 세션 것이 이번 세션에
 # 귀속**되고, 집계기가 그 마커를 세어 유령 범주를 만든다(침묵보다 나쁜, 적극적
-# 오데이터). 이름 대조가 아니라 mtime인 이유: loco 스탬프가 이 스크립트보다
+# 오데이터). 이름 대조가 아니라 시간인 이유: loco 스탬프가 이 스크립트보다
 # 1초 늦게 찍히는 경우가 실제로 있다(파일럿 20건 중 3건).
-TRANSCRIPT="$(find "$REPO/.loco/sessions" -name '*.jsonl' -newermt "@$START_TS" 2>/dev/null | sort | tail -1 || echo "")"
+#
+# ★ `-newermt "@epoch"`를 쓰지 말 것. GNU find는 받지만 **macOS의 BSD find는
+# `Can't parse date/time`으로 실패**하고, 그러면 TRANSCRIPT가 항상 빈 값이 된다
+# (실측: 20/20 수집이 0/20이 된다). 게다가 셸에 GNU find를 가리는 함수/별칭이
+# 있으면 검증조차 통과해 버린다 — POSIX `-newer <파일>`만 쓴다.
+TRANSCRIPT="$(find "$REPO/.loco/sessions" -name '*.jsonl' -newer "$SESSION_STAMP" 2>/dev/null | sort | tail -1 || echo "")"
 if [ -z "$TRANSCRIPT" ]; then
   echo "경고: 이번 세션의 트랜스크립트를 찾지 못했습니다 — 기계 판정 없이 기록됩니다." >&2
 fi
