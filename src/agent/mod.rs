@@ -467,7 +467,18 @@ impl<C: LlmClient> Agent<C> {
                     };
                     let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
                     self.update_perturb(&tracker, on_event);
-                    // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
+                    // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다.
+                    // M14 B-4: 이 `!stop` 가드는 finish_nudge 억제 절반이지만, 거부
+                    // 경로의 이벤트는 MutationAttempt/Other 둘뿐이고 write_file 거부는
+                    // MutationAttempt → disarm()을 불러 armed가 참이 될 수 없다. 그래서
+                    // 이 가드를 지워도 어떤 시나리오에서도 FINISH_NUDGE는 나오지 않는다
+                    // (실측 확인, 태스크 7 5-b) —
+                    // `a_rejected_action_on_a_repetition_stop_turn_emits_no_finish_nudge`는
+                    // 핀이 아니라 관측점: 훗날 거부 경로의 이벤트 매핑이 바뀌어 armed가
+                    // 참이 될 수 있게 되면 그 테스트가 빨간불이 된다. 이 사실을 이유로
+                    // 가드를 지우지 말 것 — 옆의 finish_nudge 이벤트 매핑(VerifyOk 등)도
+                    // 손대지 말 것(스펙 §3-3-3, 실측으로 기각된 대안: 손대면 재검증 루프
+                    // 감지가 죽는다).
                     if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
                         let nudge = if unreleased_due_to_pipe && nudge == finish_nudge::FINISH_NUDGE {
                             finish_nudge::FINISH_NUDGE_PIPE
@@ -477,6 +488,10 @@ impl<C: LlmClient> Agent<C> {
                         on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
                         note = merge_note(note, nudge);
                     }
+                    // M14 B-4: 이 `!stop` 가드가 status 억제 절반이다 — RepetitionStop
+                    // 턴에는 상태선을 붙이지 않는다(M11 불변식). 제거하면
+                    // `a_rejected_mutation_on_a_repetition_stop_turn_emits_no_status_note`가
+                    // 빨간불이 된다(실측 확인, 태스크 7 5-a) — 그 테스트가 이 가드의 핀이다.
                     if !stop
                         && let Some(s) = status.on_turn(&status_note::TurnCtx {
                             turn: turns + 1,
@@ -1643,6 +1658,79 @@ mod tests {
         agent.run(&mut session, "x", &mut (&approver), &mut |_| {}).await.unwrap();
         assert_eq!(hits.load(Ordering::SeqCst), 1);
         assert!(session.messages().iter().any(|m| m.content.contains("mutated")));
+    }
+
+    // M14 B-4: 거부 경로(Decision::Deny)에는 `!stop` 가드가 둘 있다 — status 억제와
+    // finish_nudge 억제. 각각 독립적으로 제거해도 cargo test/clippy는 초록불이라
+    // (1R 실측) 핀이 필요하다. 아래 두 테스트가 그 핀 쌍이다.
+
+    #[tokio::test]
+    async fn a_rejected_mutation_on_a_repetition_stop_turn_emits_no_status_note() {
+        // 거부 경로의 **status 억제** `!stop` 가드를 핀한다. 제거하면 RepetitionStop
+        // 턴에 상태선이 붙어 M11의 불변식이 깨진다
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(
+            (0..5)
+                .map(|_| ok(&turn("write_file", serde_json::json!({"path": "a.rs", "content": "x"}))))
+                .collect::<Vec<_>>(),
+        );
+        let approver = ScriptedApprover {
+            decisions: Mutex::new(
+                (0..5).map(|_| Decision::Deny { reason: "no".into() }).collect::<VecDeque<_>>(),
+            ),
+            seen: Mutex::new(Vec::new()),
+        };
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let out = agent.run(&mut session, "x", &mut &approver, &mut |_| {}).await.unwrap();
+
+        assert!(matches!(out, AgentOutcome::RepetitionStop));
+        let last = session
+            .messages()
+            .iter()
+            .rfind(|m| m.role == "user")
+            .expect("tool_result가 있어야 한다");
+        assert!(
+            !last.content.contains(status_note::STATUS_MARKER),
+            "정지 턴에 상태선이 붙었다: {}",
+            last.content
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rejected_action_on_a_repetition_stop_turn_emits_no_finish_nudge() {
+        // 거부 경로의 **finish_nudge 억제** `!stop` 가드를 지목한다.
+        // ⚠ 이것은 핀이 아니라 **관측점**이다 — Step 5-a의 예외.
+        //
+        // 거부 경로의 이벤트는 둘뿐이다(`MutationAttempt`/`Other`). `write_file` 거부는
+        // `MutationAttempt`를 내고, 그것이 `disarm()`을 불러 `armed`가 참이 될 수
+        // 없으므로 이 경로에서는 어떤 시나리오로도 FINISH_NUDGE가 나올 수 없다 —
+        // 이 가드를 지워도(플랜 리뷰가 실측) 결과는 바뀌지 않는다. 그래서 이 테스트는
+        // 뮤테이션 검사로 "핀"임을 증명할 수 없고, 대신 오늘의 이벤트 매핑 아래에서는
+        // 이 가드가 도달 불가임을 기록하는 관측점 역할을 한다(스펙 §7 기준 4). 훗날
+        // 거부 경로의 이벤트 매핑이 바뀌어 armed가 참이 될 수 있게 되면 이 테스트가
+        // 빨간불이 되어 그 변경을 잡아낸다.
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(
+            (0..5)
+                .map(|_| ok(&turn("write_file", serde_json::json!({"path": "a.rs", "content": "x"}))))
+                .collect::<Vec<_>>(),
+        );
+        let approver = ScriptedApprover {
+            decisions: Mutex::new(
+                (0..5).map(|_| Decision::Deny { reason: "no".into() }).collect::<VecDeque<_>>(),
+            ),
+            seen: Mutex::new(Vec::new()),
+        };
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let out = agent.run(&mut session, "x", &mut &approver, &mut |_| {}).await.unwrap();
+
+        assert!(matches!(out, AgentOutcome::RepetitionStop));
+        assert!(
+            !session.messages().iter().any(|m| m.content.contains(finish_nudge::FINISH_NUDGE)),
+            "정지 턴에 FINISH_NUDGE가 붙었다"
+        );
     }
 
     /// 읽기 툴은 approver를 부르지 않는다 — 불리면 패닉
