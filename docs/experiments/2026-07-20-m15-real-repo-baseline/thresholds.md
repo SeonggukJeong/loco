@@ -45,3 +45,26 @@ N=20이면 4.38 → **전승 ≥16 또는 전패 ≥16이 실격**.
 평균*의 것이라 척도가 완전히 같지 않다 — 보수적 방향의 휴리스틱 대역이다.
 ⚠ 이 대역은 정규근사로 사전 고정하며 §6-4-7 부트스트랩 CI와 수치가 일치할
 필요는 없다.
+
+## 4. 스테일 뮤테이션 수동 확인 절차 (실레포, 스펙 §3-6 남는 작업 2)
+
+자동 테스트(`verify_stage2_overlay_is_newer_than_stage1_artifacts`)는 합성
+픽스처를 쓴다. 조달된 실레포 과제 **각각에 대해** T21에서 한 번 손으로 확인한다.
+
+⚠ **레포별 소스 경로를 지정할 것** — ripgrep은 워크스페이스라 루트에 `src/`가
+없어 루트 `touch src/…`가 조용히 no-op이 된다(3R 실측).
+
+| 레포 | touch 대상 |
+|---|---|
+| zoxide | `src/main.rs` |
+| fd | `src/main.rs` |
+| ripgrep | `crates/core/main.rs` |
+| just | `src/lib.rs` |
+
+절차 (레포별로):
+1. `cargo run -- eval tasks-real --verify --filter <task>` 를 돌려 통과 확인
+2. 위 표의 경로를 `<task_dir>/solution/` 안에서 1시간 과거로 만든다:
+   `python3 -c "import os,time;p='<sol-path>';os.utime(p,(time.time()-3600,)*2)"`
+3. 다시 `--verify --filter <task>` — **여전히 통과해야 한다.** 실패하면
+   오버레이가 mtime을 보존하고 있는 것이므로 배치를 시작하지 말 것
+4. 확인 출력을 사전등록에 첨부한다
