@@ -4400,6 +4400,6 @@ git checkout main && git merge --no-ff m15/real-repo-track
 정직하게 적는다 — 2R의 교훈이 "고치는 자리에서 새로 만든다"이므로:
 
 - **T17의 `tree/`+`meta/` 분리는 구조 변경이다.** 소비자를 전수로 셌다고 믿지만(캐시 히트 마커·픽스처 실체화 `src`·A2 재조달 대조·Step 5 검증 명령), **`git worktree`처럼 경로를 가정하는 다른 자리가 남았을 수 있다**
-- **T2의 세 번째 사이트 수정이 `meta` 변수명을 재사용한다**(`let meta = std::fs::symlink_metadata(&src)?;`) — 그 분기에 동명 변수가 이미 있는지 확인되지 않았다
+- ~~T2의 세 번째 사이트가 `meta` 변수명을 재사용한다~~ — **확인 완료**: `sandbox.rs:55-61` 분기에 동명 변수가 없다(`bytes`뿐). 충돌 없음
 - **T15 Step 4의 단언 문자열**(`"nav_hit[fail] tasks=1 excluded=1"`)은 합성 데이터에 맞춰 실제 값을 넣어야 한다. 형태만 제시했다
-- **`--session`이 `run_metrics(...)[12]`를 쓰는데 T16이 여전히 13원소 언팩 형태로 적혀 있는지** 재확인 필요
+- ~~`--session`의 언팩 원소 수~~ — **확인 완료**: T16(`:3040`)과 `process()`(`:2438`) 둘 다 `…, sr_corr_total, tok)` 13원소 형태로 일치
