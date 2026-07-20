@@ -138,6 +138,19 @@ pub struct Agent<C: LlmClient> {
     temperature_override: Option<f32>,
 }
 
+/// 진단 가치가 있는 Notice는 트랜스크립트에도 남긴다 (M14 C-2).
+/// M13에서 오버플로가 "0이 아니라 미측정"이 된 원인 — 프로세스가 죽으면 Notice는
+/// 흔적 없이 사라졌다. `on_event(AgentEvent::Notice(...))` 호출은 19곳이지만
+/// 최소 적용 지점 2곳(컨텍스트 오버플로·length 절단)에만 쓴다 — 범위를 넓히면
+/// 트랜스크립트가 비대해진다
+macro_rules! notice_recorded {
+    ($session:expr, $on_event:expr, $msg:expr) => {{
+        let m: String = $msg;
+        $session.record_extra("notice", &m);
+        $on_event(AgentEvent::Notice(m));
+    }};
+}
+
 impl<C: LlmClient> Agent<C> {
     pub fn new(
         client: C,
@@ -262,9 +275,11 @@ impl<C: LlmClient> Agent<C> {
                         if looks_like_context_overflow(&body) && overflow_shrinks < 2 =>
                     {
                         overflow_shrinks += 1;
-                        on_event(AgentEvent::Notice(format!(
-                            "(컨텍스트 초과로 보임 — 히스토리 절삭 후 재시도 {overflow_shrinks}/2)"
-                        )));
+                        notice_recorded!(
+                            session,
+                            on_event,
+                            format!("(컨텍스트 초과로 보임 — 히스토리 절삭 후 재시도 {overflow_shrinks}/2)")
+                        );
                         session.pack(self.input_budget() >> overflow_shrinks);
                     }
                     Err(LlmError::Api { status: 400, body }) if looks_like_context_overflow(&body) => {
@@ -276,6 +291,12 @@ impl<C: LlmClient> Agent<C> {
                     other => break other?,
                 }
             };
+
+            // length 판정 **전**에 무조건 기록 — length 턴도 세야 하는 게 이 기록의
+            // 목적이다(M14 C-2, M13이 "빈-content 턴"으로만 대리 추정하던 것)
+            if let Some(fr) = resp.finish_reason() {
+                session.record_extra("finish_reason", fr);
+            }
 
             // 출력 잘림은 파싱 실패와 구분해 교정한다 (스펙 §9). 같은 요청 재시도는
             // 같은 지점에서 다시 잘리므로 "더 짧게"를 지시. 턴을 소모해 max_turns가
@@ -303,7 +324,7 @@ impl<C: LlmClient> Agent<C> {
                 // (b)의 목적이 바로 pack 미발동이라 영영 교정되지 않는다
                 // ② 연속 주입 중복은 pack()이 회수할 수 없는 자리에 쌓인다
                 session.push_recovery_notice(LENGTH_RECOVERY);
-                on_event(AgentEvent::Notice("(응답이 잘림 — 더 짧게 다시 요청)".to_string()));
+                notice_recorded!(session, on_event, "(응답이 잘림 — 더 짧게 다시 요청)".to_string());
                 let _ = status.on_turn(&status_note::TurnCtx {
                     turn: turns + 1,
                     max_turns: self.max_turns,
@@ -1343,6 +1364,41 @@ mod tests {
         let jsonl = std::fs::read_to_string(&tpath).unwrap();
         assert!(jsonl.contains("I was thinking about src/lib.rs"), "추론 꼬리가 안 남았다");
         assert!(!jsonl.contains("\"(empty)\""), "(empty) 리터럴이 남았다:\n{jsonl}");
+    }
+
+    #[tokio::test]
+    async fn finish_reason_and_overflow_notices_reach_the_transcript() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+
+        // 오버플로 400(재시도로 회복) → length 턴 → finish. 세 신호 모두 한 런에서
+        // 트랜스크립트로 나가는지 본다: finish_reason(스톱값 포함), length 값,
+        // 오버플로 Notice(M13에서 "0이 아니라 미측정"이던 바로 그 신호)
+        let overflow = || Err(LlmError::Api { status: 400, body: "context length exceeded".into() });
+        let script = Scripted::new(vec![overflow(), ok_with_reason("cut", "length"), ok(&finish("done"))]);
+        let config = Config::default();
+        let mut agent = Agent::new(
+            &script,
+            Registry::guided(),
+            ToolCtx::new(dir.path().to_path_buf()),
+            "m".into(),
+            &config,
+        );
+        // new_session()은 Transcript::disabled()를 쓴다 — 이 테스트는 실 파일이 필요하다
+        // (그래야 아래 파일 읽기 단언이 공허하게 통과하지 않는다)
+        let mut session = Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let out = run_quiet(&mut agent, &mut session, "TASK").await.unwrap();
+        assert!(matches!(out, AgentOutcome::Finished(_)), "회복 후 정상 종료해야 단언 대상 신호가 다 남는다");
+
+        let jsonl = std::fs::read_to_string(&tpath).unwrap();
+        // finish_reason: length 턴에서도(판정 이전에) 남는다 — M13은 이걸 못 세서
+        // "빈-content 턴"을 대리 지표로 썼다
+        assert!(jsonl.contains("\"kind\":\"finish_reason\""), "finish_reason이 안 남았다:\n{jsonl}");
+        assert!(jsonl.contains("\"content\":\"length\""), "length 값이 안 남았다:\n{jsonl}");
+
+        // 오버플로 Notice: M13 스펙 리뷰 C1이 지적한 "배치는 끝났는데 흔적 0" 공백
+        assert!(jsonl.contains("\"kind\":\"notice\""), "notice kind가 안 남았다:\n{jsonl}");
+        assert!(jsonl.contains("컨텍스트 초과로 보임"), "오버플로 notice 본문이 안 남았다:\n{jsonl}");
     }
 
     #[tokio::test]
