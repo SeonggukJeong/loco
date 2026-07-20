@@ -23,6 +23,15 @@ pub struct TaskSpec {
     pub check_timeout_secs: u64,
     /// 설정보다 우선하는 과제별 턴 상한
     pub max_turns: Option<usize>,
+    /// 설정보다 우선하는 과제별 컨텍스트 운용점 (M15 H1). `tasks-real`만 32768을
+    /// 지정하고 코드 기본값(8192)·`.loco/config.toml`·기존 두 트리의 앵커는 8K로
+    /// 불변이다 — 비교가능성 각주 3. ⚠ `EffectiveConfig`는 배치당 1회 전역 config에서
+    /// 만들어져 이 값을 증언하지 못한다. 실효값 자증은 `RunRecord`가 한다 (H9)
+    pub context_tokens: Option<usize>,
+    /// 설정보다 우선하는 과제별 툴 명령 상한 (M15 H2). 실레포 `cargo test`는
+    /// 콜드 빌드 포함 최악 27초(just, 3R 실측)이고 진짜 콜드 FS 캐시 + CPU 경합이면
+    /// 60~90초라 전역 기본 60초가 아슬아슬하다
+    pub command_timeout_secs: Option<u64>,
     /// 판정 자산 — check 전에 fixture 원본과 정확히 일치하도록 동기화 (스펙 §8)
     pub protected: Vec<String>,
 }
@@ -125,6 +134,10 @@ protected = ["keep.txt"]
         assert_eq!(tasks[0].spec.timeout_secs, 300, "기본값");
         assert_eq!(tasks[0].spec.check_timeout_secs, 120);
         assert_eq!(tasks[0].spec.max_turns, None);
+        // M15 H1·H2 — 미지정이면 None이고 전역 config가 그대로 쓰인다.
+        // 기존 15개 task.toml이 이 상태다
+        assert_eq!(tasks[0].spec.context_tokens, None);
+        assert_eq!(tasks[0].spec.command_timeout_secs, None);
     }
 
     #[test]
@@ -136,6 +149,8 @@ check = "cargo test"
 timeout_secs = 60
 check_timeout_secs = 30
 max_turns = 10
+context_tokens = 32768
+command_timeout_secs = 180
 protected = ["keep.txt"]
 "#;
         write_task(dir.path(), "t", toml, &["keep.txt"]);
@@ -143,6 +158,10 @@ protected = ["keep.txt"]
         assert_eq!(t.spec.timeout_secs, 60);
         assert_eq!(t.spec.check_timeout_secs, 30);
         assert_eq!(t.spec.max_turns, Some(10));
+        // M15 H1 — tasks-real의 32K 운용점은 이 경로로만 들어온다.
+        // 코드 기본값과 .loco/config.toml은 8K로 불변(비교가능성 각주 3)
+        assert_eq!(t.spec.context_tokens, Some(32768));
+        assert_eq!(t.spec.command_timeout_secs, Some(180));
     }
 
     #[test]

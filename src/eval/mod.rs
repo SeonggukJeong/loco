@@ -168,6 +168,14 @@ async fn run_once<C: LlmClient>(
     if let Some(mt) = t.spec.max_turns {
         cfg.max_turns = mt;
     }
+    // M15 H1·H2 — 과제별 오버라이드는 **ToolCtx·Agent 생성 전에** 전부 적용한다.
+    // 아래 ctx.command_timeout과 Agent::new가 이 cfg를 읽으므로 순서가 계약이다
+    if let Some(ct) = t.spec.context_tokens {
+        cfg.context_tokens = ct;
+    }
+    if let Some(cts) = t.spec.command_timeout_secs {
+        cfg.command_timeout_secs = cts;
+    }
     // eval은 --auto 의미 — config의 auto_deny_patterns 적용 (스펙 §5·§8)
     let mut approver = AutoApprover::new(&cfg.auto_deny_patterns)?;
     let sb = Sandbox::create(&t.fixture)?;
@@ -677,5 +685,35 @@ protected = ["data"]
         let r = &run.report.tasks[0].runs[0];
         assert_eq!(r.outcome, RunOutcome::MaxTurns);
         assert!(r.passed, "check(true)는 outcome과 무관하게 실행·통과");
+    }
+
+    /// M15 H2 — 과제별 command_timeout_secs가 ToolCtx에 실제로 도달하는지.
+    /// 트랜스크립트의 툴 결과 본문으로 확인한다(전역 기본 60초로 돌았다면
+    /// 5초 sleep이 그냥 완주해 "timed out"이 없다)
+    #[tokio::test]
+    async fn task_command_timeout_secs_reaches_the_tool_context() {
+        let tasks = tempfile::tempdir().unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            tasks.path(),
+            "slowcmd",
+            "prompt = \"p\"\ncheck = \"true\"\ncommand_timeout_secs = 1\nprotected = [\"keep.txt\"]\n",
+            &[("keep.txt", "x")],
+        );
+        // run_command 1회(5초 sleep) → finish. 전역 기본 60초였다면 5초를 완주해
+        // "timed out"이 안 나온다 — 즉 이 단언은 미배선에서 실패한다
+        let script = Scripted::new(vec![
+            ok(&turn("run_command", serde_json::json!({"command": "sleep 5"}))),
+            ok(&finish("done")),
+        ]);
+        let o = opts(tasks.path().to_path_buf());
+        let start = Instant::now();
+        let run = run_eval(&script, &Config::default(), "m", &o, proj.path()).await.unwrap();
+        assert!(start.elapsed() < Duration::from_secs(20), "1초 상한이 걸려야 한다");
+        let jsonl = std::fs::read_to_string(
+            run.report_path.parent().unwrap().join("run-slowcmd-0.jsonl"),
+        )
+        .unwrap();
+        assert!(jsonl.contains("timed out after 1s"), "과제별 상한 미배선: {jsonl}");
     }
 }
