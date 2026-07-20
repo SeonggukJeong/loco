@@ -67,7 +67,11 @@ pub const ARGS_TOOL_SWITCH_NOTE: &str =
      Put the tool name only in \"action\".\"tool\".";
 
 /// 무검증 finish 1회 반려 (M5 §7.1). 모델 대상 — 영어
-pub const VERIFY_NUDGE: &str = "You modified files but never ran a verification command. Run the project's tests (e.g. cargo test) with run_command, then finish.";
+pub const VERIFY_NUDGE: &str = "You modified files but never ran a verification command since your last edit. Run the project's tests (e.g. cargo test) with run_command, then finish.";
+
+/// §3-3-1 — 파이프 때문에 검증이 성립하지 않은 경우. 기본 문구는 "never ran"이라
+/// 방금 파이프로 검증을 돌린 모델에게 거짓말이 된다
+pub const VERIFY_NUDGE_PIPE: &str = "You ran a verification command, but it was a shell pipeline, so its exit code reflects only the last command in the pipe and does not tell whether the tests passed. Re-run it without a pipe, then finish.";
 
 /// summary 없는 finish 2연속 시 1회 주입 (M9 §4-1) — 모델이 내보내야 하는
 /// 전체 턴 형태를 제시한다 (인자 예시만 담은 FINISH_ERR 에코는 5연속 반복을
@@ -235,6 +239,9 @@ impl<C: LlmClient> Agent<C> {
         let mut overflow_shrinks: u32 = 0;
         let mut mutated_since_verify = false;
         let mut verify_nudged = false;
+        // §3-3-1: "현재 미해제 상태를 만든 원인이 파이프인가" — 해제 술어를 평가할
+        // 때마다 무조건 대입한다(조건부 건너뛰기 금지, 4R C2)
+        let mut unreleased_due_to_pipe = false;
         let mut finish_nudge = finish_nudge::FinishNudge::new();
         // summary 없는 finish 연속 카운트 (M9 §4-1) — 무액션 턴은 유지, 디스패치·거부된
         // 다른 액션이 리셋
@@ -356,8 +363,9 @@ impl<C: LlmClient> Agent<C> {
                     Some(s) => {
                         if mutated_since_verify && !verify_nudged {
                             verify_nudged = true;
+                            let nudge = if unreleased_due_to_pipe { VERIFY_NUDGE_PIPE } else { VERIFY_NUDGE };
                             on_event(AgentEvent::Notice("(검증 없는 종료 — 확인 요청 주입)".to_string()));
-                            session.push(tool_result_message("finish", VERIFY_NUDGE));
+                            session.push(tool_result_message("finish", nudge));
                             finish_missing_streak = 0;
                             let _ = finish_nudge.on_turn(finish_nudge::TurnEvent::FinishAttempt); // idle만 리셋 — 발동 불가
                             let _ = status.on_turn(&status_note::TurnCtx {
@@ -461,6 +469,11 @@ impl<C: LlmClient> Agent<C> {
                     self.update_perturb(&tracker, on_event);
                     // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
                     if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
+                        let nudge = if unreleased_due_to_pipe && nudge == finish_nudge::FINISH_NUDGE {
+                            finish_nudge::FINISH_NUDGE_PIPE
+                        } else {
+                            nudge
+                        };
                         on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
                         note = merge_note(note, nudge);
                     }
@@ -516,16 +529,34 @@ impl<C: LlmClient> Agent<C> {
                 .and_then(|_| crate::test_summary::parse_test_summary(&body));
             // 공허 런 = 필터가 아무 테스트도 못 맞힌 실행. "검증"으로 인정하지 않는다 (M12 §2-4)
             let empty_verify = cmd_summary.as_ref().is_some_and(|s| s.ran == 0 && s.filtered_out > 0);
+            // §3-3: 파이프가 섞이면 exit code가 파이프라인 마지막 명령의 것이라
+            // 검증 성립을 알 수 없다. **해제 술어에만** 건다 — VerifyOk 매핑을
+            // 건드리면 재검증 루프 감지가 죽는다(§3-3-3, 실측으로 기각된 대안)
+            let is_piped = turn.action.tool == "run_command"
+                && turn
+                    .action
+                    .args
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(crate::tools::run_command::has_unquoted_pipe);
             if dispatch_ok {
                 if turn.action.tool == "run_command" {
                     // M12 §2-4: 공허 런은 VERIFY_NUDGE를 해제하지 않는다
-                    // (해제 조건이었던 "Ok이면 종료코드 무관"에서 공허 런만 제외)
-                    if !empty_verify {
+                    // (해제 조건이었던 "Ok이면 종료코드 무관"에서 공허 런과 파이프를 제외)
+                    // §3-3-1: 플래그는 "현재 미해제 상태를 만든 원인이 파이프인가"다.
+                    // 조건부 건너뛰기 금지 — 해제 성공 시에도 갱신해야 한다.
+                    // 소비자가 둘이고 결합 조건이 다르기 때문: VERIFY_NUDGE는
+                    // mutated_since_verify와 묶여 낡은 값을 못 읽지만
+                    // FINISH_NUDGE는 묶여 있지 않아 그대로 읽는다 (4R C2)
+                    let released = !empty_verify && !is_piped;
+                    if released {
                         mutated_since_verify = false;
                     }
+                    unreleased_due_to_pipe = !released && is_piped;
                     status.record_command_result(cmd_exit.clone(), cmd_summary.clone());
                 } else if self.registry.get(&turn.action.tool).is_some_and(|t| t.is_mutating()) {
                     mutated_since_verify = true;
+                    unreleased_due_to_pipe = false; // 뮤테이션이 원인을 갈아치운다
                 }
                 if matches!(turn.action.tool.as_str(), "edit_file" | "write_file") {
                     status.record_mutation(&turn.action.args);
@@ -560,6 +591,11 @@ impl<C: LlmClient> Agent<C> {
             self.update_perturb(&tracker, on_event);
             // 반복정지 우선 (§4-2) — 정지 턴에는 니지를 평가하지 않는다
             if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
+                let nudge = if unreleased_due_to_pipe && nudge == finish_nudge::FINISH_NUDGE {
+                    finish_nudge::FINISH_NUDGE_PIPE
+                } else {
+                    nudge
+                };
                 on_event(AgentEvent::Notice("(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string()));
                 note = merge_note(note, nudge);
             }
@@ -806,6 +842,25 @@ mod tests {
         request: &str,
     ) -> Result<AgentOutcome, LlmError> {
         agent.run(session, request, &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await
+    }
+
+    /// M14 T4 — 스크립트를 guided 에이전트로 돌리고 (결과, 모든 tool_result 본문)을
+    /// 반환한다. 파이프 검증 테스트들이 세션 메시지를 훑는 기존 패턴을 헬퍼로 뽑은 것
+    async fn run_capturing_tool_results(
+        script: Vec<Result<ChatResponse, LlmError>>,
+    ) -> (AgentOutcome, Vec<String>) {
+        let dir = tempfile::tempdir().unwrap();
+        let scripted = Scripted::new(script);
+        let mut agent = make_guided_agent(&scripted, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let notes = session
+            .messages()
+            .iter()
+            .filter(|m| m.content.contains("<tool_result"))
+            .map(|m| m.content.clone())
+            .collect();
+        (outcome, notes)
     }
 
     #[test]
@@ -2017,6 +2072,65 @@ mod tests {
         assert!(
             !session_contains(&session, "never ran a verification command"),
             "타임아웃 본문에는 exit code 줄이 없다 — 우연히 섞인 요약 문구를 검증으로 읽으면 안 된다 (Minor 2)"
+        );
+    }
+
+    // M14 A-1 — 파이프 가드는 해제 술어에만: VerifyOk 매핑을 건드리면 재검증 루프
+    // 감지가 죽는다(§3-3-3, 실측으로 기각된 대안). 실셸 파이프 실행이 필요해 unix 한정
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_piped_verification_does_not_release_verify_nudge() {
+        let script = vec![
+            ok(&turn("write_file", serde_json::json!({"path":"a.rs","content":"fn a(){}"}))),
+            ok(&turn("run_command", serde_json::json!({"command":"cargo test 2>&1 | tail -5"}))),
+            ok(&finish("done")),  // 파이프 문구로 1회 반려
+            ok(&finish("done2")),
+        ];
+        let (out, notes) = run_capturing_tool_results(script).await;
+        assert!(matches!(out, AgentOutcome::Finished(ref s) if s == "done2"), "{out:?}");
+        assert!(notes.iter().any(|n| n.contains(VERIFY_NUDGE_PIPE)), "파이프 문구가 안 나왔다: {notes:?}");
+        assert!(!notes.iter().any(|n| n.contains(VERIFY_NUDGE)), "기본 문구가 나왔다 — 거짓말이다");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_pipe_still_counts_for_loop_detection() {
+        // §3-3-3 가드: VerifyOk 매핑에 가드를 걸면 이 테스트가 실패한다.
+        // 교대가 필수 — 동일 명령 반복은 5번째에 RepetitionStop이 !stop 가드로
+        // FINISH_NUDGE 평가를 선점한다. 5회는 하한이다(#1 무장 + #2~#5가 K=4를 채움)
+        let mut script = vec![ok(&turn("write_file", serde_json::json!({"path":"a.rs","content":"x"})))];
+        for i in 0..5 {
+            let cmd = if i % 2 == 0 { "cargo test 2>&1 | tail -5" } else { "cargo test 2>&1 | head -5" };
+            script.push(ok(&turn("run_command", serde_json::json!({"command": cmd}))));
+        }
+        script.push(ok(&finish("done")));
+        script.push(ok(&finish("done2")));
+        let (_out, notes) = run_capturing_tool_results(script).await;
+        assert!(
+            notes.iter().any(|n| n.contains(finish_nudge::FINISH_NUDGE_PIPE)),
+            "FINISH_NUDGE가 안 나왔다 — VerifyOk 매핑에 가드가 걸렸다: {notes:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_pipe_flag_is_cleared_once_a_clean_verification_releases() {
+        // 4R C2: 해제 성공 시 플래그를 안 고치면 FINISH_NUDGE가 낡은 true를 읽는다
+        let mut script = vec![ok(&turn("write_file", serde_json::json!({"path":"a.rs","content":"x"})))];
+        script.push(ok(&turn("run_command", serde_json::json!({"command":"cargo test 2>&1 | tail -5"}))));
+        // "cargo test" 단독은 이 스크래치 샌드박스에 Cargo.toml이 없어 exit 101로 실패하고
+        // VerifyOther가 finish_nudge를 disarm해 버려 이 테스트가 무의미하게 통과한다
+        // (RED 확인 중 실측 — verification-criteria-must-be-falsifiable). `|| true`로
+        // exit 0을 강제해 "파이프 없는 성공한 검증"을 실제로 재현한다 (T4 편차, 사유는 리포트)
+        script.push(ok(&turn("run_command", serde_json::json!({"command":"cargo test || true"})))); // 해제
+        for _ in 0..4 {
+            script.push(ok(&turn("read_file", serde_json::json!({"path":"a.rs"}))));
+        }
+        script.push(ok(&finish("done")));
+        let (_out, notes) = run_capturing_tool_results(script).await;
+        assert!(
+            !notes.iter().any(|n| n.contains(finish_nudge::FINISH_NUDGE_PIPE)),
+            "마지막 검증이 파이프가 아닌데 파이프 변형이 나왔다: {notes:?}"
         );
     }
 

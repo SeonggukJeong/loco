@@ -13,7 +13,7 @@ struct Args {
 /// M11 §5: 따옴표 밖 파이프 존재 판정 — `||`(OR)는 파이프가 아니고, 따옴표
 /// 안·백슬래시 이스케이프된 `|`는 무시한다(grep 패턴 상용 — 오발 방지).
 /// 잔여 이스케이프 엣지 케이스의 오발은 허용 오차(정보 한 줄, 무해)
-fn has_unquoted_pipe(cmd: &str) -> bool {
+pub(crate) fn has_unquoted_pipe(cmd: &str) -> bool {
     let bytes = cmd.as_bytes();
     let (mut in_single, mut in_double) = (false, false);
     let mut i = 0;
