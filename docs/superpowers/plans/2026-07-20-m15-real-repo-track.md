@@ -8,8 +8,29 @@
 
 **Tech Stack:** Rust edition 2024, `serde`/`thiserror`/`anyhow`/`similar`/`tempfile`. 스크립트는 POSIX `sh`와 stdlib-only Python 3.
 
-**기준 커밋:** `0c96a72` (스펙 개정 9, 8R `Ready: Yes`, Critical 0)
+**기준 커밋:** `e74fa21` (스펙 **개정 10** — 플랜 1R이 스펙에서 찾은 사실 오류 2건 정정 반영)
 **스펙:** `docs/superpowers/specs/2026-07-20-m15-real-repo-track-design.md` — **유일한 진실. 이 플랜과 충돌하면 스펙이 이긴다. 충돌을 발견하면 스스로 결정하지 말고 에스컬레이션할 것.**
+
+**개정 이력:**
+- 초판 `86ff07b` — 3축 병렬 리뷰(사실정합성 / 실현가능성 / 측정설계). **Critical 6 · Important 10 · Minor 9, 3축 중 2축 `Ready: No`**
+- **개정 2** — 전건 반영. 아래 "1R이 남긴 것"이 그 요약이다
+
+## 1R이 남긴 것 — 이 플랜이 실패한 형태
+
+**Critical 6건 중 4건이 같은 형태였다: 검증 장치를 만들고 그 장치가 실제로 실패할 수 있는지 확인하지 않았다.**
+
+- T4의 스테일 테스트는 macOS `/bin/sh`(bash 3.2)에서 `-nt`가 **초 단위로 절삭**돼 **변조 없이도 실패**했다 — 반증 확인이 공허했고, Step 2의 "FAIL이면 T2·T3이 회귀시킨 것"은 구현자를 없는 회귀로 몰았다
+- T13의 `failed_dispatch_is_not_recorded_as_a_touch`는 **본문이 주석 한 줄뿐인 빈 함수**로 출하됐다. 빈 테스트는 항상 통과하므로 그 반증 단계는 **절대 실패할 수 없다**
+- T6의 H9 자증은 **자기가 겨눈 배선 단절을 못 잡았다** — `Agent::new`가 `config.context_tokens`를 스냅샷하는데 `EffectiveRun`이 같은 `cfg`에서 다시 읽어, 오버라이드를 `Agent::new` 뒤로 옮겨도 **73개 테스트 전건 초록불에 report.json만 거짓말**을 했다
+- `leak_audit.py`의 `SKIP_RE`가 `failures:` 구간 **안쪽**에도 적용돼 테스트 자신의 `note:` 단언 메시지를 컴파일러 진단으로 오인, **진짜 누설을 삼켰다**
+
+**읽기 리뷰 두 축은 이것을 하나도 못 잡았다** — 사실정합성 축은 `Ready: Yes`를 냈다. 잡은 것은 **코드를 실제로 적용하고 돌린 축 하나**다. 프로젝트 메모리 *"플랜 리뷰는 예시 코드를 검증하지 않는다 — 뮤테이션 검사를 의무화할 것"*이 정확히 이 사건을 예측했다.
+
+**그래서 개정 2가 추가하는 규율**(모든 태스크에 적용):
+
+> **반증 단계는 "변조 시 실패"만이 아니라 "정상 시 통과"도 함께 확인한다.**
+> 2×2를 채우지 못한 반증은 반증이 아니다 — T4가 정확히 그 형태로 실패했다
+> (정상·변조 **양쪽에서 FAIL**이라 아무것도 구별하지 못했다).
 
 ## Global Constraints
 
@@ -225,6 +246,29 @@ git rev-parse HEAD   # 이 해시를 T22·T23이 인용한다. 기록해 둘 것
         assert_eq!(plain & 0o200, 0o200, "소유자 쓰기 비트 강제 — sync_protected 덮어쓰기 경로");
         sb.cleanup();
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_protected_preserves_the_executable_bit() {
+        // M15 H17 후반부 — overlay_tree는 M6 때부터 read+write라 **이미** 실행
+        // 비트를 잃고 있었다. copy_tree만 고치면 절반만 닫힌다(플랜 1R 실현 I1).
+        // 이 경로는 sync_protected를 통해 **모든 eval 런에서 check 직전**에 돈다
+        use std::os::unix::fs::PermissionsExt;
+        let fx = fixture_with(&[("ci/run.sh", "#!/bin/sh\nexit 0\n")]);
+        std::fs::set_permissions(
+            fx.path().join("ci/run.sh"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        let sb = Sandbox::create(fx.path()).unwrap();
+        // 에이전트가 protected를 건드렸다고 가정 → 동기화가 overlay_tree를 탄다
+        std::fs::write(sb.root.join("ci/run.sh"), "#!/bin/sh\nexit 1\n").unwrap();
+        sb.sync_protected(fx.path(), &["ci".to_string()]).unwrap();
+
+        let m = std::fs::metadata(sb.root.join("ci/run.sh")).unwrap().permissions().mode();
+        assert_eq!(m & 0o777, 0o755, "protected 복원도 실행 비트를 보존해야 한다 (M15 H17)");
+        sb.cleanup();
+    }
 ```
 
 - [ ] **Step 2: 실패를 확인한다**
@@ -232,8 +276,7 @@ git rev-parse HEAD   # 이 해시를 T22·T23이 인용한다. 기록해 둘 것
 ```bash
 cargo test --lib eval::sandbox 2>&1 | tail -20
 ```
-Expected: `copy_tree_refreshes_mtime`과 `copy_tree_preserves_the_executable_bit` 둘 다 FAIL
-(전자는 mtime 보존으로, 후자는 0o755 대신 0o644로).
+Expected: 두 테스트 모두 FAIL. ⚠ **실패 사유를 정확히 알아 둘 것**(1R 실현 m1): 전자는 `fs::copy`의 mtime 보존 때문이고, **후자는 `0o755`가 아니라 `plain.txt`의 `0o200` 단언에서 난다**(`left: 0, right: 128`) — `fs::copy`는 퍼미션을 **보존**하므로 실행 비트는 아직 안 깨져 있다. 실행 비트 회귀는 **T2가 도입하는 read+write 자신**이 만드는 것이라 테스트는 여전히 유효하다.
 
 - [ ] **Step 3: `copy_tree`를 고친다**
 
@@ -286,12 +329,26 @@ fn restore_mode(_meta: &std::fs::Metadata, _to: &Path) -> std::io::Result<()> {
 }
 ```
 
+**`overlay_tree`에도 같은 복원을 건다.** ⚠ 초판은 `copy_tree`만 고쳐 **H17을 절반만 닫았다**(1R 실현 I1) — `overlay_tree`는 M6 때부터 read+write였으므로 **이미 실행 비트를 잃고 있었고**, 그 함수는 `sync_protected`를 통해 **모든 eval 런에서 check 직전에 돈다**. T2 자신이 근거로 든 *"실레포 픽스처는 `ci/*.sh` 같은 실행 파일을 갖는다"*가 참이라면 protected 경로 안의 실행 파일이 첫 동기화에서 +x를 잃는다.
+
+`overlay_tree`의 파일 분기(`sandbox.rs:107-109`):
+
+```rust
+            let bytes = std::fs::read(&from)?;
+            std::fs::write(&to, bytes)
+                .with_context(|| format!("오버레이 쓰기 실패: {}", to.display()))?;
+            // M15 H17: copy_tree와 같은 이유 — read+write는 퍼미션을 잃는다.
+            // 이 함수는 sync_protected를 통해 **모든 eval 런에서 check 직전**에 돈다
+            restore_mode(&meta, &to)
+                .with_context(|| format!("퍼미션 복원 실패: {}", to.display()))?;
+```
+
 - [ ] **Step 4: 통과를 확인한다**
 
 ```bash
 cargo test --lib eval::sandbox 2>&1 | tail -20
 ```
-Expected: `test result: ok.` — 기존 8개 + 신규 2개 전부 통과
+Expected: `test result: ok.` — 기존 **10개**(1R 사실 m1: 초판의 "8개"는 `CLAUDE.md`의 M6 이후 미갱신 값을 옮긴 것이었다) + 신규 3개 전부 통과
 
 - [ ] **Step 5: 기존 두 트리가 안 깨지는지 확인한다**
 
@@ -398,7 +455,7 @@ Expected: 두 테스트 모두 FAIL — `심링크가 있음 (지원 안 함)` /
 
 - [ ] **Step 4: `bail` 임포트를 정리한다**
 
-`sandbox.rs`에서 `bail!`은 이 두 곳에만 있었다. 1행 `use`를 고친다:
+`sandbox.rs`에서 `bail!`은 이 두 곳에만 있었다(`:79`·`:101`). **5행**의 `use`를 고친다:
 
 ```rust
 use anyhow::Context;
@@ -462,6 +519,14 @@ git commit -m "feat(eval): 심링크 스킵+경고 정책 — copy_tree·overlay
     /// (cargo라면 재빌드를 건너뛰어 조용히 1단계 바이너리로 판정할 자리다).
     /// read+write(mtime=now)면 소스가 산출물보다 미래라 통과한다.
     ///
+    /// ⚠ **비교 방향이 계약이다** — `[ build.stamp -nt src/lib.rs ]`(스탬프가 소스보다
+    /// **엄격히** 최신이면 STALE)이지 그 부정형이 아니다. macOS `/bin/sh`는 bash 3.2이고
+    /// `-nt`가 mtime을 **초 단위로 절삭**해 비교한다(APFS는 나노초를 기록하지만 비교는
+    /// 초로 한다). 1단계 `touch`와 2단계 오버레이 쓰기는 같은 초에 떨어지므로
+    /// `! [ src/lib.rs -nt build.stamp ]`로 쓰면 **정상 동작에서도 참**이 되어
+    /// 테스트가 영영 실패한다(1R 실측). 스테일 케이스는 1시간 격차라 초 절삭에
+    /// 걸리지 않는다 — 그래서 이 방향만 양방향 변별력을 갖는다.
+    ///
     /// 1시간 격차를 쓰는 것이 핵심이다 — "같은 초에 쓴 두 파일"에 의존하면
     /// 파일시스템 타임스탬프 해상도에 따라 흔들린다.
     #[tokio::test]
@@ -469,7 +534,7 @@ git commit -m "feat(eval): 심링크 스킵+경고 정책 — copy_tree·overlay
         let dir = tempfile::tempdir().unwrap();
         let toml = concat!(
             "prompt = \"p\"\n",
-            "check = \"if [ -e build.stamp ] && ! [ src/lib.rs -nt build.stamp ]; ",
+            "check = \"if [ -e build.stamp ] && [ build.stamp -nt src/lib.rs ]; ",
             "then echo STALE >&2; exit 3; fi; touch build.stamp; grep -q FIXED src/lib.rs\"\n",
             "protected = [\"keep.txt\"]\n",
         );
@@ -496,30 +561,43 @@ git commit -m "feat(eval): 심링크 스킵+경고 정책 — copy_tree·overlay
     }
 ```
 
-- [ ] **Step 2: 통과를 확인한다**
+- [ ] **Step 2: 정상 경로에서 통과를 확인한다 (2×2의 왼쪽 칸)**
 
 ```bash
 cargo test --lib eval::verify 2>&1 | tail -20
 ```
-Expected: PASS. **FAIL이면 T2·T3이 회귀시킨 것이다** — `overlay_tree`가 read+write인지 먼저 확인할 것.
+Expected: PASS.
 
-- [ ] **Step 3: 반증 가능성을 확인한다 (이 테스트가 실패할 수 있는가)**
+⚠ **FAIL이면 먼저 `-nt` 방향을 의심할 것.** 초판이 `! [ src/lib.rs -nt build.stamp ]`로 썼다가 정확히 여기서 죽었다 — macOS bash 3.2의 초 절삭 때문에 **T2·T3이 완벽해도 FAIL**이었고, 초판 Step 2가 *"FAIL이면 T2·T3이 회귀시킨 것"*이라고 적어 없는 회귀를 쫓게 만들었다. 방향이 맞는데도 FAIL이면 그때 `overlay_tree`가 read+write인지 본다.
 
-프로젝트 메모리 *"검증 기준은 실패할 수 있어야 한다"*의 요구다. `overlay_tree`의 read+write를 임시로 `std::fs::copy`로 바꾸고 테스트가 **실패하는지** 본다:
+- [ ] **Step 3: 반증 가능성을 확인한다 — 2×2를 채운다**
+
+프로젝트 메모리 *"검증 기준은 실패할 수 있어야 한다"*의 요구다. ⚠ **"변조 시 실패"만 보면 안 된다** — 초판이 그렇게 해서 **정상·변조 양쪽 FAIL**인 테스트를 반증 통과로 착각했다. **네 칸 중 최소 두 칸(정상=PASS, 변조=FAIL)을 실제로 채울 것.**
+
+`overlay_tree`의 read+write를 임시로 `std::fs::copy`로 바꾼다:
 
 ```bash
-# 임시 변조
+# 임시 변조 (1R 확인: 이 치환은 정상 적용되고 컴파일된다 —
+# anyhow가 자기 Error에 사설 StdError를 구현해 .with_context가 붙는다)
 perl -0pi -e 's/let bytes = std::fs::read\(&from\)\?;\n            std::fs::write\(&to, bytes\)/std::fs::copy(&from, \&to).map(|_| ()).map_err(anyhow::Error::from)/' src/eval/sandbox.rs
 cargo test --lib eval::verify::tests::verify_stage2 2>&1 | tail -10
 ```
-Expected: **FAIL** (`2단계가 STALE(exit 3)로 죽으면…`). 확인 후 되돌린다:
+Expected: **FAIL** (`2단계가 STALE(exit 3)로 죽으면…`).
 
 ```bash
 git checkout src/eval/sandbox.rs
-cargo test --lib eval::verify 2>&1 | tail -5   # 다시 PASS
+cargo test --lib eval::verify::tests::verify_stage2 2>&1 | tail -5
 ```
+Expected: **PASS** — 이 두 줄이 함께 있어야 반증이 성립한다.
 
 ⚠ 위 `perl` 치환이 컴파일되지 않으면 손으로 바꿔서 확인할 것 — **반증 확인 자체를 건너뛰지 말 것.**
+
+**1R이 실측한 2×2** (참고 — 구현자가 재확인할 표):
+
+| check 형태 | read+write (정상) | fs::copy (변조) |
+|---|---|---|
+| 초판 `! [ src/lib.rs -nt build.stamp ]` | **FAIL** | FAIL ← 구별력 0 |
+| 개정 2 `[ build.stamp -nt src/lib.rs ]` | **PASS** | **FAIL** |
 
 - [ ] **Step 4: 실레포용 수동 절차를 문서에 남긴다**
 
@@ -743,7 +821,16 @@ git commit -m "feat(eval): TaskSpec에 과제별 context_tokens·command_timeout
 - Consumes: T5의 `TaskSpec.context_tokens`
 - Produces: `RunRecord.effective_context_tokens: usize` / `RunRecord.effective_max_turns: usize` — T23 사전등록 항목 10(자증 절차)과 §9-A4가 인용한다
 
-**Consumers:** `RunRecord`는 `Serialize`만 파생하므로 필드 추가는 안전하다. 소비자는 ① `report.json`(스키마 확장, 기존 키 불변) ② `scripts/exp_metrics.py`의 `report_index`(`outcome`/`passed`만 읽으므로 **무변경**, 확인함) ③ T23의 자증 절차. **`TaskReport`의 집계 필드는 이 값을 안 쓴다.**
+**Consumers (전수 — 5건):** ① `report.json`(스키마 확장, 기존 키 불변) ② `scripts/exp_metrics.py`의 `report_index`(`outcome`/`passed`만 읽으므로 **무변경**, 확인함) ③ T23의 자증 절차 ④ **`src/eval/report.rs`의 테스트 헬퍼 `run()`(`:178`)·`run_with()`(`:185`)** — `RunRecord`를 구조체 리터럴로 만들므로 **필드 2개를 함께 추가해야 컴파일된다** ⑤ `judge()`의 생성부.
+
+⚠ 초판은 *"`Serialize`만 파생하므로 안전하다"*며 ④를 빠뜨렸다(1R 실현 I2). 컴파일이 막아 주지만(`error[E0063]: missing fields`) **소비자 전수를 세지 않은 것**이고, 프로젝트 메모리 *"소비자 감사는 두 층으로"*가 겨눈 형태 그대로다. T7이 같은 두 곳을 다시 건드린다.
+
+`report.rs:178`·`:185`의 두 헬퍼에 기본값을 넣는다:
+
+```rust
+            effective_context_tokens: 8192,
+            effective_max_turns: 25,
+```
 
 ⚠ **`judge()`의 호출 지점이 2개다**(`mod.rs:221` 타임아웃 경로, `:238` 정상 경로). `mod.rs:203-207`이 *"한쪽만 배선이 끊겨도 테스트가 안 죽는 지점 — 실제로 그랬다"*고 경고하는 바로 그 함정이다. **`schema_fallback`과 똑같이 분기 이전에 한 번만 읽고 두 경로에 넘긴다.**
 
@@ -809,7 +896,21 @@ cargo test --lib eval::tests::per_task_context 2>&1 | tail -20
 ```
 Expected: 컴파일 에러 — `no field 'effective_context_tokens' on type 'RunRecord'`
 
-- [ ] **Step 3: `RunRecord`에 필드를 추가한다**
+- [ ] **Step 3a: `Agent`에 운용점 게터를 연다**
+
+`src/agent/mod.rs`의 `input_budget()` 옆:
+
+```rust
+    /// 이 에이전트가 **생성 시점에 스냅샷한** 컨텍스트 운용점 (M15 H9).
+    /// eval의 `RunRecord`가 실효값을 자증할 때 `Config`가 아니라 여기서 읽어야 한다 —
+    /// `Config` 쪽을 다시 읽으면 두 값이 같은 출처가 되어 오버라이드 순서 오류를
+    /// 탐지하지 못한다(플랜 1R Critical 2)
+    pub fn context_tokens(&self) -> usize {
+        self.context_tokens
+    }
+```
+
+- [ ] **Step 3b: `RunRecord`에 필드를 추가한다**
 
 `src/eval/report.rs`, `schema_fallback` 아래:
 
@@ -832,9 +933,18 @@ Expected: 컴파일 에러 — `no field 'effective_context_tokens' on type 'Run
 ```rust
     let schema_fallback = agent.schema_fallback_fired();
     // M15 H9: schema_fallback과 **같은 규율** — 분기 이전에 한 번만 읽고 두 judge
-    // 호출에 넘긴다. 각 분기에서 따로 만들면 한쪽만 끊겨도 테스트가 안 죽는다
-    let eff = EffectiveRun { context_tokens: cfg.context_tokens, max_turns: cfg.max_turns };
+    // 호출에 넘긴다. 각 분기에서 따로 만들면 한쪽만 끊겨도 테스트가 안 죽는다.
+    //
+    // ⚠ **출처가 `cfg`가 아니라 `agent`인 것이 계약이다.** `Agent::new`가
+    // `config.context_tokens`를 **생성 시점에 스냅샷**하므로(`agent/mod.rs:176`),
+    // 여기서 `cfg`를 다시 읽으면 두 값이 같은 출처가 되어 **순서가 어긋나도 리포트가
+    // 눈치채지 못한다** — 1R 실측: T5의 오버라이드를 `Agent::new` 뒤로 옮기면
+    // 에이전트는 8192로 도는데 report.json은 32768을 보고하고 **73개 테스트가 전건
+    // 초록불**이었다. 그러면 이 필드는 없느니만 못하다(§9-A4가 이것을 자증으로 인용한다)
+    let eff = EffectiveRun { context_tokens: agent.context_tokens(), max_turns: cfg.max_turns };
 ```
+
+⚠ `agent`는 이 시점에 `agent.run(...)`이 끝나 가변 차용이 풀린 상태다(`schema_fallback_fired()`를 바로 위에서 부르는 것이 그 증거).
 
 `judge` 시그니처와 본문:
 
@@ -903,13 +1013,25 @@ cargo test --lib eval 2>&1 | tail -10
 ```
 Expected: `test result: ok.` — 신규 2개 포함 전건
 
-- [ ] **Step 6: 반증 확인 — 타임아웃 경로를 끊으면 실패하는가**
+- [ ] **Step 6: 반증 확인 — 두 가지 단절을 **각각** 끊어 본다**
+
+⚠ 초판은 아래 (a)만 확인했고 **(b)를 놓쳐 H9가 자기 목적을 달성하지 못했다**(1R Critical 2).
+
+**(a) judge 분기 단절** — `:221`(타임아웃) 호출의 `eff`를 `EffectiveRun { context_tokens: 8192, max_turns: 25 }`로 임시 치환:
 
 ```bash
-# :221 호출의 eff를 EffectiveRun { context_tokens: 8192, max_turns: 25 }로 임시 치환
 cargo test --lib eval::tests::per_task_context_tokens_reach_the_report_on_the_timeout_path 2>&1 | tail -8
 ```
-Expected: **FAIL** (`타임아웃 경로도 실효값을 실어야 한다`). 확인 후 되돌린다.
+Expected: **FAIL** (`타임아웃 경로도 실효값을 실어야 한다`). 되돌린 뒤 PASS 확인.
+
+**(b) H1 오버라이드 순서 단절** — T5가 `run_once`에 넣은 `cfg.context_tokens` 오버라이드 3줄을 **`Agent::new` 호출 뒤로** 옮긴다(에이전트는 8192로, `cfg`는 32768로 남는다):
+
+```bash
+cargo test --lib eval::tests::per_task_context_tokens_reach_the_report_on_the_normal_path 2>&1 | tail -8
+```
+Expected: **FAIL** — `eff`가 `agent.context_tokens()`에서 오므로 8192를 보고한다.
+
+⚠ **이것이 Step 3a가 존재하는 이유다.** `eff`를 `cfg.context_tokens`에서 만들면 이 변조에서 **테스트가 통과해 버리고**(1R 실측: 전 스위트 73 passed) report.json만 거짓말을 한다. **(b)가 FAIL하지 않으면 Step 3a·Step 4가 제대로 적용되지 않은 것이다.** 확인 후 되돌린다.
 
 - [ ] **Step 7: 게이트 + 커밋**
 
@@ -1324,16 +1446,18 @@ use crate::eval::procure::ProcureSpec;
 ```
 
 `report.rs`의 기존 단위 테스트에서 `from_runs` 호출부에 `None`을 추가한다.
-**기준 커밋에서 호출 지점은 정확히 10개다** — `report.rs`의 테스트 9개
-(`:190`, `:191`, `:205`, `:229`, `:259`, `:276`, `:284`, `:291`, `:292`)와
+**기준 커밋에서 호출 지점은 정확히 11개다** — `report.rs`의 테스트 **10개**
+(`:190`, `:191`, `:205`, `:229`, `:259`, `:276`, `:284`, `:291`, `:292`, **`:303`**)와
 `mod.rs:114` 1개:
 
 ```bash
 grep -c "from_runs(" src/eval/report.rs src/eval/mod.rs
-# report.rs:10 (정의 1 + 호출 9), mod.rs:1
+# report.rs:11 (정의 1 + 호출 10), mod.rs:1
 ```
-찾은 **모든 호출**에 세 번째 인자를 넣을 것. 하나라도 빠지면 컴파일이 실패하므로
-침묵 누락은 불가능하다.
+
+⚠ **`:303`은 헬퍼 `sample_report()` 안에 있다.** 초판은 이 자리를 놓치고 "정확히 10개"라고 적었는데, **`grep | head`가 10줄에서 자른 것을 세었기 때문이다**(1R 사실 I1). 프로젝트 메모리 *"컨트롤러 분석 규율 — 안 센 숫자"*의 사례다. **`head` 없이, `grep -c`로 셀 것.**
+
+찾은 **모든 호출**에 세 번째 인자를 넣을 것. 하나라도 빠지면 컴파일이 실패하므로 침묵 누락은 불가능하다 — 다만 그것이 세지 않아도 된다는 뜻은 아니다.
 
 - [ ] **Step 6: 통과 + 게이트 + 커밋**
 
@@ -1675,7 +1799,7 @@ Expected: FAIL — `축약이 일어났으면 pack 이벤트가 있어야 한다
     }
 ```
 
-⚠ **동작은 한 글자도 안 바뀐다** — 카운터만 얹었다. 기존 `pack_*` 테스트 4개가 그것을 지킨다.
+⚠ **동작은 한 글자도 안 바뀐다** — 카운터만 얹었다. 이름이 `pack_`으로 시작하는 기존 테스트 **3개**(`session.rs:364`·`:371`·`:390`)와 `.pack(`을 호출하는 테스트 **6개**가 그것을 지킨다(1R 사실 m2: 초판의 "4개"는 어느 기준으로도 틀렸다).
 
 - [ ] **Step 4: session 테스트 통과를 확인한다**
 
@@ -1688,25 +1812,52 @@ Expected: `test result: ok.` — 기존 pack 테스트 4개 + 신규 2개
 
 `src/agent/mod.rs`의 `mod tests`에 추가. 기존 테스트가 쓰는 스크립트 클라이언트/헬퍼 이름을 그대로 따를 것:
 
+기존 헬퍼(`Scripted`·`ok`·`finish`·`make_guided_agent`·`run_quiet`)에 **`usage`를 실은 응답 생성자 하나**를 더한다. ⚠ 기존 `ok()`는 `usage: None`이라 그대로 못 쓴다:
+
+```rust
+    /// M15 H13 — usage를 실은 응답. 기존 `ok()`는 `usage: None`이다
+    fn ok_with_usage(text: &str, prompt: u32, completion: u32) -> Result<ChatResponse, LlmError> {
+        Ok(ChatResponse {
+            choices: vec![Choice {
+                message: ResponseMessage {
+                    role: "assistant".into(),
+                    content: Some(text.into()),
+                    reasoning_content: None,
+                },
+                finish_reason: Some("stop".into()),
+            }],
+            usage: Some(crate::llm::types::Usage {
+                completion_tokens: Some(completion),
+                prompt_tokens: Some(prompt),
+            }),
+        })
+    }
+```
+
 ```rust
     /// M15 H13·§5-2 ② — 턴마다 서버 실측과 추정치를 나란히 남긴다.
-    /// 측정 지점은 **응답을 만들어낸 마지막 반복의 직렬화 직전 히스토리**다
+    /// 측정 지점은 **응답을 만들어낸 마지막 반복의 직렬화 직전 히스토리**다.
+    /// ⚠ `new_session`은 `Transcript::disabled()`라 이 테스트에 못 쓴다 —
+    /// 실 파일이어야 단언이 공허하지 않다(M14가 같은 함정을 겪었다)
     #[tokio::test]
     async fn each_turn_records_usage_next_to_the_estimate() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("t.jsonl");
-        // usage를 실은 응답 1개 → finish
-        let script = /* 기존 테스트의 스크립트 클라이언트 구성 방식 그대로,
-                        첫 응답의 usage에 prompt_tokens=999, completion_tokens=11 */;
-        // …agent.run(&mut session, "요청", …) 수행…
+        let tpath = dir.path().join("t.jsonl");
+        let script = Scripted::new(vec![ok_with_usage(&finish("done"), 999, 11)]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let out = run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+        assert!(matches!(out, AgentOutcome::Finished(_)));
 
-        let text = std::fs::read_to_string(&path).unwrap();
+        let text = std::fs::read_to_string(&tpath).unwrap();
         let rec: serde_json::Value = text
             .lines()
             .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
             .find(|v| v["kind"] == "usage")
             .expect("턴마다 usage 이벤트가 있어야 한다");
-        let body: serde_json::Value = serde_json::from_str(rec["content"].as_str().unwrap()).unwrap();
+        let body: serde_json::Value =
+            serde_json::from_str(rec["content"].as_str().unwrap()).unwrap();
         assert_eq!(body["prompt_tokens"], 999);
         assert_eq!(body["completion_tokens"], 11);
         assert!(body["estimate_tokens"].as_u64().unwrap() > 0, "추정치가 나란히 있어야 한다");
@@ -1714,9 +1865,33 @@ Expected: `test result: ok.` — 기존 pack 테스트 4개 + 신규 2개
         assert_eq!(body["inline_system"], false, "§5-3 층화 키");
         assert_eq!(body["overflow_shrinks"], 0);
     }
+
+    /// 짝 — 서버가 usage를 안 주면 `null`이어야 한다. 0으로 떨어지면 §5-3 회귀가
+    /// 원점을 지나는 거짓 관측을 얻는다(T10의 `missing_usage_is_none_not_zero`와 같은 규율)
+    #[tokio::test]
+    async fn missing_usage_records_null_not_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        let script = Scripted::new(vec![ok(&finish("done"))]); // usage: None
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+
+        let text = std::fs::read_to_string(&tpath).unwrap();
+        let rec: serde_json::Value = text
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .find(|v| v["kind"] == "usage")
+            .expect("usage 이벤트는 서버 응답과 무관하게 남아야 한다");
+        let body: serde_json::Value =
+            serde_json::from_str(rec["content"].as_str().unwrap()).unwrap();
+        assert!(body["prompt_tokens"].is_null(), "0이 아니라 null: {body}");
+        assert!(body["estimate_tokens"].as_u64().unwrap() > 0, "추정치는 서버와 무관하게 있다");
+    }
 ```
 
-⚠ **`script`와 `agent.run` 호출부는 `src/agent/mod.rs`의 기존 테스트에서 그대로 복사할 것.** 이 파일의 테스트 헬퍼(스크립트 클라이언트 이름, `Agent::new` 인자, `Session::new` 구성)는 `eval` 쪽과 다르므로 **추측하지 말고 읽어서 맞출 것.**
+⚠ `Choice`·`ResponseMessage`·`Usage`는 `crate::llm::types`에서 온다 — 기존 `ok()`가 이미 앞의 둘을 쓰므로 `use`는 대체로 갖춰져 있다. `Usage`만 경로가 필요할 수 있다.
 
 - [ ] **Step 6: `run()`에 기록을 넣는다**
 
@@ -1793,13 +1968,24 @@ git commit -m "feat(agent): 턴별 usage 기록 + pack() 축약 기록 — 축 C
     #[tokio::test]
     async fn overflow_giveup_is_recorded_in_the_transcript() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("t.jsonl");
-        // 컨텍스트 초과 400을 3번 — 2회는 축소 재시도, 3번째가 최종 포기
-        let script = /* 기존 스크립트 클라이언트로 Err(LlmError::Api{status:400,
-                        body:"context length exceeded"}) 3개 */;
-        // …agent.run(…) — Err를 돌려받는다…
+        let tpath = dir.path().join("t.jsonl");
+        // 컨텍스트 초과 400을 3번 — 2회는 축소 재시도, 3번째가 최종 포기.
+        // LlmError는 Clone을 파생하지 않는다 — vec![x; 3]이 아니라 루프로 push
+        let mut v = Vec::new();
+        for _ in 0..3 {
+            v.push(Err(LlmError::Api {
+                status: 400,
+                body: "context length exceeded".into(),
+            }));
+        }
+        let script = Scripted::new(v);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let err = run_quiet(&mut agent, &mut session, "요청").await.unwrap_err();
+        assert!(matches!(err, LlmError::Api { status: 400, .. }), "{err:?}");
 
-        let text = std::fs::read_to_string(&path).unwrap();
+        let text = std::fs::read_to_string(&tpath).unwrap();
         let notices: Vec<&str> = text.lines().filter(|l| l.contains("\"kind\":\"notice\"")).collect();
         assert_eq!(
             notices.iter().filter(|l| l.contains("히스토리 절삭 후 재시도")).count(),
@@ -1813,8 +1999,6 @@ git commit -m "feat(agent): 턴별 usage 기록 + pack() 축약 기록 — 축 C
         );
     }
 ```
-
-⚠ 스크립트 클라이언트 구성과 `agent.run` 호출부는 **기존 테스트에서 복사**할 것.
 
 - [ ] **Step 2: 실패를 확인한다**
 
@@ -1866,9 +2050,9 @@ git commit -m "feat(agent): 오버플로 최종 포기 경로를 트랜스크립
 
 ⚠ **셋을 한 집합으로 합치면 안 된다**(4R I2). §1-1의 축 근거는 M8 실패 분석의 **`"monthly.rs 미열람(grep만)"`** 구분이다. 합치면 그 구분이 사라져 축의 정의와 계측기가 어긋난다.
 
-⚠ **`grep`/`list_files`의 args에는 파일 경로가 없다** — `grep.rs:17-20`은 `pattern` + `path: Option`(디렉터리), `list_files.rs:15-18`은 디렉터리다. **파일 경로를 주는 것은 `read_file`뿐**이므로:
-- **항해 지표는 `read_file` 집합만으로 정의**한다
-- `grep`/`list_files`는 **호출 계수로만** 남기고 두 지표에 넣지 않는다
+⚠ **항해 지표는 `read_file` 집합만으로 정의**하고 `grep`/`list_files`는 **호출 계수로만** 남긴다.
+
+⚠ **근거는 "grep이 경로를 못 준다"가 아니다**(스펙 개정 10 정정, 1R 사실 I2). `grep.rs:53`에 `if base.is_file() { vec![base] }` 분기가 있어 **`grep`은 파일 하나를 지목할 수 있다**. `list_files`만 참이다(`walk_entries`가 `if p == base { continue }`로 시작점 자신을 버린다). **올바른 근거는 축의 정의다** — §1-1이 이 트랙의 축을 세운 것이 M8 실패 분석의 `"미열람(grep만)"`이고 그 구분은 *"스쳤는가"*와 *"열었는가"*를 **가르는 것이 목적**이므로, `grep`으로 오라클을 지목한 런을 항해 성공에서 빼는 것은 **의도된 방향**이다.
 
 ⚠ **배치 지점은 편집 전용 블록(`:601-606`)이 아니라 `if dispatch_ok`(`:582-607`) 안의 형제 분기다.**
 
@@ -1882,13 +2066,24 @@ git commit -m "feat(agent): 오버플로 최종 포기 경로를 트랜스크립
     #[tokio::test]
     async fn touched_files_are_recorded_per_tool() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("t.jsonl");
-        // read_file → grep → write_file → finish 순으로 스크립트
-        // (read_file 대상 파일은 ToolCtx 루트에 미리 만들어 둘 것)
-        let script = /* 기존 테스트 방식 그대로 */;
-        // …agent.run(…)…
+        let tpath = dir.path().join("t.jsonl");
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "fn main() {}\n").unwrap();
 
-        let touches: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "src/lib.rs"}))),
+            ok(&turn("grep", serde_json::json!({"pattern": "fn"}))),
+            ok(&turn("write_file", serde_json::json!({"path": "src/lib.rs", "content": "fn main() {}\n// x\n"}))),
+            ok(&turn("run_command", serde_json::json!({"command": "true"}))),
+            ok(&finish("done")),
+            ok(&finish("done")), // VERIFY_NUDGE가 1차 finish를 반려한다
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+
+        let touches: Vec<serde_json::Value> = std::fs::read_to_string(&tpath)
             .unwrap()
             .lines()
             .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
@@ -1909,14 +2104,34 @@ git commit -m "feat(agent): 오버플로 최종 포기 경로를 트랜스크립
         assert!(touches.iter().all(|t| t["tool"] != "run_command"));
     }
 
-    /// 실패한 디스패치는 접촉이 아니다 — dispatch_ok 안에 있어야 한다
+    /// 실패한 디스패치는 접촉이 아니다 — 기록은 `if dispatch_ok` **안**에 있어야 한다.
+    ///
+    /// ⚠ **이 테스트에 본문이 있어야 반증이 성립한다.** 초판은 이것을 주석 한 줄뿐인
+    /// **빈 함수**로 출하했고, 빈 테스트는 항상 통과하므로 Step 4의 "블록을
+    /// `dispatch_ok` 밖으로 옮기면 실패해야 한다"가 **절대 실패할 수 없었다**
+    /// (플랜 1R 실현 I3). 본문을 넣으면 실제로 `left: 1, right: 0`으로 실패한다
     #[tokio::test]
     async fn failed_dispatch_is_not_recorded_as_a_touch() {
-        // 존재하지 않는 파일을 read_file → Error 결과 → touch 이벤트 0건
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        // 존재하지 않는 파일 → read_file이 Error를 돌려준다 (dispatch_ok=false)
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "nope.rs"}))),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+
+        let n = std::fs::read_to_string(&tpath)
+            .unwrap()
+            .lines()
+            .filter(|l| l.contains("\"kind\":\"touch\""))
+            .count();
+        assert_eq!(n, 0, "실패한 디스패치는 접촉이 아니다 (기록이 dispatch_ok 밖으로 샜다)");
     }
 ```
-
-⚠ 두 테스트의 스크립트 구성·`ToolCtx` 루트 준비는 **기존 테스트에서 복사**할 것.
 
 - [ ] **Step 2: 실패를 확인한다**
 
@@ -1934,9 +2149,16 @@ Expected: FAIL — `read_file 기록` (touch 이벤트 0건)
                 // 셋을 한 집합으로 합치면 §1-1 축의 근거인 M8 실패 분석의
                 // "미열람(grep만)" 구분이 사라져 축과 계측기가 어긋난다.
                 //
-                // 파일 경로를 args로 주는 것은 read_file뿐이다(grep은 pattern +
-                // 디렉터리, list_files는 디렉터리) — 그래서 항해 지표는 read_file
-                // 집합만으로 정의되고 grep/list_files는 호출 계수로만 남는다.
+                // 항해 지표를 read_file 집합만으로 정의하는 것은 **축의 정의에서
+                // 나오는 설계 결정**이지 기술적 제약이 아니다. §1-1이 이 트랙의
+                // 축을 세운 근거가 M8 실패 분석의 "monthly.rs 미열람(grep만)"이고,
+                // 그 구분은 "grep으로 스쳤는가"와 "열어서 읽었는가"를 **가르는 것이
+                // 목적**이다 — 그래서 grep으로 오라클을 지목한 런을 항해 성공에서
+                // 빼는 것은 부작용이 아니라 의도된 방향이다.
+                // ⚠ grep은 path로 **파일 하나를 지목할 수 있다**(grep.rs의
+                // `if base.is_file()` 분기). "grep은 경로를 못 준다"는 것은 사실이
+                // 아니다 — 스펙 개정 10이 이 근거를 정정했다. list_files는 참이다
+                // (walk_entries가 `if p == base { continue }`로 시작점을 버린다).
                 // 경로는 status_note::normalize로 정규화해 표기 변형을 합산한다
                 if matches!(
                     turn.action.tool.as_str(),
@@ -1956,7 +2178,7 @@ Expected: FAIL — `read_file 기록` (touch 이벤트 0건)
                 }
 ```
 
-⚠ **차용 검사**: 이 블록은 `turn`을 불변 차용하고 `session`을 가변 차용한다. 같은 블록의 앞 문장들이 `status`·`tracker`를 가변 차용하지만 그들은 별개 지역 변수라 충돌하지 않는다. 컴파일 에러가 나면 `touched`를 먼저 계산해 지역 변수에 담고 `session.record_extra`를 그 뒤에 두는 형태로 분리할 것.
+⚠ **차용 검사는 실제로 통과한다**(1R 실현 확인 — 이 블록 그대로 컴파일된다). 초판의 경고는 예방적 문구였다. 혹시 에러가 나면 `touched`를 먼저 지역 변수에 담고 `session.record_extra`를 그 뒤에 두는 형태로 분리할 것.
 
 - [ ] **Step 4: 통과 + 반증 확인**
 
@@ -2025,6 +2247,13 @@ git commit -m "feat(agent): 툴별 분리 접촉 파일 기록 — 항해/수선
     assert row["overflow_shrink"] == "1", row
     assert row["overflow_giveup"] == "1", row
     assert row["inline_sys_turns"] == "1", row
+    # ⚠ H7 — 축 C 일곱 항목의 ⑦. **셀프테스트 없이 두면 안 된다**(1R 측정 I2):
+    #    report_index의 `r.get("protected_edits", 0)`이 필드 부재 시 조용히 0을 주고,
+    #    이 컬럼은 §5-2 ⑦이 "리워드 해킹의 **유일한** 기계 관측 발자국"으로 지정한
+    #    것이라 0이 "해킹 없음"으로 읽힌다 — 정확히 fail-open이다.
+    #    기존 셀프테스트가 이미 tempfile로 합성 report.json을 만들어 process()를
+    #    태우므로(:731-746) 그 report.json의 run에 protected_edits를 넣고 단언한다
+    assert row["protected_edits"] == "2", row
 ```
 
 - [ ] **Step 2: 실패를 확인한다**
@@ -2032,7 +2261,9 @@ git commit -m "feat(agent): 툴별 분리 접촉 파일 기록 — 항해/수선
 ```bash
 python3 scripts/exp_metrics.py --selftest
 ```
-Expected: `KeyError` 또는 단언 실패 — 신규 컬럼이 없다
+Expected: 신규 컬럼이 없으므로 **`KeyError` 또는 단언 실패**.
+
+⚠ Step 3의 튜플 확장을 먼저 하고 Step 3b(언팩 5곳)를 안 하면 **`ValueError: too many values to unpack (expected 12, got 13)`**로 죽는다 — 그건 신규 단언에 닿지도 못한 것이므로 "실패 확인"으로 세지 말 것. Step 3b까지 마친 뒤의 실패만 유효하다.
 
 - [ ] **Step 3: `MARKS` 밖의 이벤트 파서를 더한다**
 
@@ -2087,11 +2318,49 @@ Expected: `KeyError` 또는 단언 실패 — 신규 컬럼이 없다
                 overflow_shrink += 1
             elif "컨텍스트 초과 — context_tokens" in content:
                 overflow_giveup += 1
+            continue
 ```
 
-⚠ `continue`를 넣는 이유: 이 세 종은 `tool_result`가 아니므로 아래 스트릭 로직을 타면 안 된다. **기존 `if kind != "tool_result": continue`보다 앞**에 둘 것(그래야 `last_body`가 이 이벤트로 덮이지 않는다 — `stop_cause` 오분류 방지).
+⚠ **세 분기 모두 `continue`가 필수다** — 초판은 `notice` 분기에서 이것을 빠뜨렸다(1R 실현 Critical 5 부수). 빠지면 오버플로 포기 notice가 `RepetitionStop` 직전에 올 때 `last_body`를 덮어 `stop_cause`가 `sr` 대신 `other`로 **오분류된다**(재현 확인됨).
 
-반환 튜플과 `process()`의 언패킹에 위 값들을 더한다. **튜플이 길어지므로 `dict` 반환으로 바꾸는 것을 권한다** — 다만 그것은 `process()`의 전 언패킹 지점을 건드리는 변경이므로, 이 태스크에서는 **튜플 확장**으로 최소 변경한다.
+⚠ **삽입 위치**: `last_body = content`(`scripts/exp_metrics.py:214`) **보다 앞**, 즉 마커 계수 직후다. 초판은 *"기존 `if kind != "tool_result": continue`(`:221`)보다 앞"*이라고 적었는데 그것만으로는 불변식이 성립하지 않는다 — `last_body` 대입이 그 가드보다 **먼저** 무조건 실행되기 때문이다(1R 사실 m4).
+
+반환 튜플의 **마지막에 `tok` 딕셔너리 하나**를 더한다(T16의 `session_mode`가 이것을 소비한다):
+
+```python
+    tok = {
+        "max_prompt": max_prompt, "max_est": max_est,
+        "est_ratio_max": est_ratio_max, "budget_ratio_max": budget_ratio_max,
+        "pack_turns": pack_turns, "pack_elided": pack_elided, "pack_dropped": pack_dropped,
+        "overflow_shrink": overflow_shrink, "overflow_giveup": overflow_giveup,
+        "inline_sys_turns": inline_sys_turns,
+        "usage_rows": usage_rows,          # §5-3 회귀 입력
+        "read_set": read_set, "edit_set": edit_set,   # T15가 채운다
+        "grep_calls": grep_calls, "list_calls": list_calls,
+    }
+    return (counts, recovered, denom, fin_max, perturb_turns, last_body,
+            first_mut_turn, cargo_after_mut, status_in_args, sr_files, perturb_ext,
+            sr_corr_total, tok)
+```
+
+- [ ] **Step 3b: ⚠ `selftest()`의 고정폭 언팩 5곳을 함께 고친다**
+
+⚠ **이것을 빠뜨리면 `--selftest`가 새 단언에 닿기도 전에 `ValueError: too many values to unpack (expected 12, got 13)`로 죽는다**(1R 실현 Critical 5). 초판은 이 연쇄를 언급조차 하지 않았다.
+
+기준 커밋에서 고정폭 언팩은 **정확히 5곳**이다 — `:418`, `:430`, `:435`, `:451`, `:459`. **각각의 꼬리를 `*_`로 바꾼다**(앞으로의 확장에도 안 깨진다):
+
+```python
+# 예: :430
+_, _, _, _, perturb2, *_ = run_metrics(events2)
+# 예: :451
+(c4, _, _, _, _, _, fm4, cm4, sa4, sf4, *_) = run_metrics(events4)
+```
+
+```bash
+grep -n "run_metrics(" scripts/exp_metrics.py | grep -c "_, _"   # 고친 뒤 재확인
+```
+
+⚠ 인덱스 접근(`run_metrics(...)[0]`·`[10]`·`[11]`)은 **끝에 붙이므로 안 깨진다** — 손대지 말 것.
 
 - [ ] **Step 4: `COLS`와 행 조립에 컬럼을 더한다**
 
@@ -2213,6 +2482,13 @@ git commit -m "feat(metrics): 토큰 회계 컬럼 + notice 처리 — 축 C 집
         if kind == "touch":
             t = json.loads(content)
             tool, p = t.get("tool"), t.get("path")
+            # ⚠ **normalize_path를 여기서도 건다**(1R 실현 I4). oracle_index()가
+            # 정규화한 경로를 쓰므로, 원문 경로를 그대로 넣으면 `./src/x.rs`와
+            # `src/x.rs`가 어긋나 **진짜 히트가 nav_hit=0으로 조용히 누락된다** —
+            # §6-4-19②의 교집합 의미론을 직접 갉는다.
+            # (Rust 쪽 T13이 status_note::normalize를 이미 걸지만 두 정규화가
+            #  같다는 보장을 코드로 강제할 수단이 없어 여기서도 건다 — 멱등이다)
+            p = normalize_path(p) if p else None
             if tool == "read_file" and p:
                 read_set.add(p)
             elif tool in ("edit_file", "write_file") and p:
@@ -2263,7 +2539,22 @@ def oracle_index(stamp_dir):
 
 - [ ] **Step 3: 풀링 모드를 구현한다**
 
-`process()`가 행을 **반환**하도록 바꾸고(출력은 유지), 신규 `pool()`이 여러 스탬프의 행을 합쳐 §6-4-19의 집계를 낸다:
+`process()`가 행을 **반환**하도록 바꾸고(출력은 유지), 신규 `pool()`이 여러 스탬프의 행을 합쳐 §6-4-19의 집계를 낸다.
+
+⚠ **행의 형태가 계약이다**(1R 실현 I5). `pool()`이 받는 행은 **TSV 문자열이 아니라 타입이 살아 있는 딕셔너리**여야 한다. `dict(zip(COLS, row))`로 만들면 `passed` 셀이 `str(passed)`라 `"True"`가 되고, `stratified_rate`의 `r["passed"] is want`가 **예외 없이 전부 거짓**이 되어 **모든 과제가 `excluded`로 빠지고 `mean=nan`**이 된다. `process()`는 출력용 TSV 행과 **별도로** 다음을 반환한다:
+
+```python
+        rows.append({
+            "run": name,
+            "task": task_name,          # report_index가 준 과제 이름
+            "passed": passed,           # ⚠ bool 그대로. str()로 감싸지 말 것
+            "outcome": outcome,
+            "nav_hit": nav_hit,         # "1" | "0" | "-"
+            "fix_hit": fix_hit,
+            "tok": tok,                 # §5-3 회귀·토큰 집계 입력
+            "counts": counts,           # 마커 계수 (기회 분모 계산용)
+        })
+```
 
 ```python
 def stratified_rate(rows, metric, stratum):
@@ -2349,43 +2640,145 @@ def estimator_fit(usage_rows):
     return out
 
 
+def task_pass_rates(rows):
+    """§6-4-7 — 과제별 통과 비율(과제 수준 단위). 주 지표 `passed`의 분석 단위다.
+    ⚠ 런 수준이 아니다: 반복은 독립 3시행이 아니라 같은 픽스처·프롬프트를 공유한다."""
+    per_task = {}
+    for t in sorted({r["task"] for r in rows}):
+        cell = [r for r in rows if r["task"] == t]
+        per_task[t] = sum(1 for r in cell if r["passed"]) / len(cell)
+    return per_task
+
+
+def disqualification(per_task_rates):
+    """§6-4-6 실격 대역 — `N − 전승 과제 수 < 0.98·√N` (바닥 쪽 대칭).
+    A5의 판정 입력이다. ⚠ 정규근사로 **사전 고정**된 대역이며 부트스트랩 CI와
+    수치가 일치할 필요는 없다(5R M2)."""
+    n = len(per_task_rates)
+    if not n:
+        return None
+    sweep = sum(1 for v in per_task_rates.values() if v == 1.0)
+    zero = sum(1 for v in per_task_rates.values() if v == 0.0)
+    band = 0.98 * (n ** 0.5)
+    return {
+        "N": n, "all_pass": sweep, "all_fail": zero, "band": band,
+        "disqualified": (n - sweep) < band or (n - zero) < band,
+    }
+
+
 def pool(stamp_dirs, resamples=10000, seed=0):
     """§6-1의 4~5분할을 배치 수준 하나로 되돌린다.
 
     기존 동작(`for d in sys.argv[1:]: process(d)`)은 스탬프마다 **독립 표·요약**을
     찍고 교차 풀링이 없었다 — 그러면 §6-2·§6-3·§6-4-6·§6-4-7·§6-4-19의
-    배치 수준 수치를 낼 수 없다(4R 실현 I1)."""
+    배치 수준 수치를 낼 수 없다(4R 실현 I1).
+
+    ⚠ **§6-1이 풀링 필요 근거로 든 다섯을 전부 낸다**(1R 측정 I1). 초판은
+    §6-4-19(항해/수선)만 구현해 **A5(실격 대역)와 A6(추정기 오차)의 산출 경로가
+    없었다** — 둘 다 §9의 **차단 기준**인데도 그랬다.
+    """
     rows = []
     for d in stamp_dirs:
         rows.extend(process(d))
     print(f"\n# pooled over {len(stamp_dirs)} stamp dir(s), {len(rows)} runs")
+
+    # ── §6-4-7 통과율 (주 지표) ─────────────────────────────────────
+    pr = task_pass_rates(rows)
+    vals = sorted(pr.values())
+    mean = sum(vals) / len(vals) if vals else float("nan")
+    lo, hi = bootstrap_ci(vals, resamples, seed)
+    print(f"# pass_rate tasks={len(vals)} mean={mean:.4f} ci95=[{lo:.4f},{hi:.4f}] "
+          f"resamples={resamples} seed={seed}")
+
+    # ── §6-4-6 실격 대역 (A5 입력) ──────────────────────────────────
+    dq = disqualification(pr)
+    if dq:
+        print(f"# disqualification N={dq['N']} all_pass={dq['all_pass']} "
+              f"all_fail={dq['all_fail']} band={dq['band']:.2f} "
+              f"disqualified={dq['disqualified']}")
+
+    # ── §6-4-19① 항해/수선 (층별, 비합산) ───────────────────────────
     for metric in ("nav_hit", "fix_hit"):
         for stratum in ("pass", "fail"):
             per_task, excluded = stratified_rate(rows, metric, stratum)
-            vals = sorted(per_task.values())
-            mean = sum(vals) / len(vals) if vals else float("nan")
-            lo, hi = bootstrap_ci(vals, resamples, seed)
-            print(f"# {metric}[{stratum}] tasks={len(vals)} excluded={excluded} "
-                  f"mean={mean:.4f} ci95=[{lo:.4f},{hi:.4f}] "
+            v = sorted(per_task.values())
+            m = sum(v) / len(v) if v else float("nan")
+            l2, h2 = bootstrap_ci(v, resamples, seed)
+            print(f"# {metric}[{stratum}] tasks={len(v)} excluded={excluded} "
+                  f"mean={m:.4f} ci95=[{l2:.4f},{h2:.4f}] "
                   f"resamples={resamples} seed={seed}")
+
+    # ── §6-4-19⑤ 추정기 오차 (A6 입력) ─────────────────────────────
+    # ⚠ 초판은 estimator_fit을 T16의 1세션 스모크에서만 불렀다. A6가 **배치**의
+    #   추정기 오차 보고를 차단 기준으로 걸므로 여기서 60런 전체를 합쳐 적합한다
+    all_usage = [u for r in rows for u in r["tok"]["usage_rows"]]
+    for inl, f in estimator_fit(all_usage).items():
+        print(f"# estimator inline_system={inl} {f}")
+    batch_ratio = max((r["tok"]["est_ratio_max"] for r in rows), default=0.0)
+    print(f"# tokens est_ratio_max={batch_ratio:.4f} "
+          f"max_prompt={max((r['tok']['max_prompt'] for r in rows), default=0)} "
+          f"pack_turns={sum(r['tok']['pack_turns'] for r in rows)} "
+          f"overflow_shrink={sum(r['tok']['overflow_shrink'] for r in rows)} "
+          f"overflow_giveup={sum(r['tok']['overflow_giveup'] for r in rows)}")
+
+    # ── §6-3 마커 계수와 **기회 분모** (B1 입력) ────────────────────
+    # ⚠ "0회도 답이다 — **기회 분모와 함께 볼 때만**"(§1-2 답 1). 분자만 찍으면
+    #   0이 "장치가 안 먹었다"인지 "기회가 없었다"인지 구별되지 않는다
+    piped = sum(r["counts"]["pipe_note"] for r in rows)
+    print(f"# pipe device fired={sum(r['counts']['verify_nudge_pipe'] + r['counts']['finish_nudge_pipe'] + r['counts']['status_pipe_qual'] for r in rows)} "
+          f"opportunities={piped}   # 분모 = 파이프 포함 run_command 수(pipe_note 프록시)")
+    print(f"# finish_nudge fired={sum(r['counts']['finish_nudge'] + r['counts']['finish_nudge_pipe'] for r in rows)} "
+          f"armed_runs={sum(1 for r in rows if r['counts']['model_diff'] and r['tok']['pack_turns'] >= 0 and r['counts']['verify_total'])}"
+          f"   # 분모 = 무장 조건(뮤테이션 후 exit 0 검증) 충족 런 수")
+    diffs = sum(r["counts"]["model_diff"] for r in rows)
+    trunc = sum(r["counts"]["model_diff_trunc"] for r in rows)
+    print(f"# a3_diff attached={diffs} truncated={trunc} "
+          f"truncation_rate={(trunc / diffs if diffs else float('nan')):.4f}"
+          f"   # §1-2 답 1: A-3에서 새로 얻는 것은 절단률뿐이다(효과는 측정 불가)")
+
     print("# NOTE 통과 층과 실패 층은 합산하지 않는다 (§5-4 제약 3·§6-4-19③ 공약)")
     print("# NOTE 재추출 단위는 과제다 — 런 수준 구간은 보고하지 않는다 (§6-4-7)")
 ```
 
-`__main__`에 `--pool` 분기를 더한다:
+⚠ **`model_diff_trunc` 마커를 `MARKS`에 새로 넣어야 한다** — 기존 `model_diff`(`" lines, +"`)는 절단·비절단 양쪽 헤더에 매치해 **분모만** 준다(CLAUDE.md 명시). 절단률의 분자는 `tools/diff.rs`가 붙이는 `"[diff truncated]"`다:
+
+```python
+    # M15 — A-3 절단률(§6-3)의 분자. model_diff는 양쪽에 매치해 분모 역할이다.
+    # 문자열은 tools/diff.rs에서 문자 그대로 복사(수동 미러 — 자동 검출 없음)
+    "model_diff_trunc": "[diff truncated]",
+```
+
+⚠ **FINISH_NUDGE 무장 분모는 위 식으로 정확히 안 나온다.** 마커만으로는 "무장 조건 충족"을 재현할 수 없다(`finish_nudge.rs`의 상태기계다). **T15에서는 근사치를 찍고, 정확한 분모가 필요하면 `perturb_turns`·`sr_corr_total`이 그랬듯 상태기계 재현을 추가한다** — 그 판단은 T23 사전등록에서 §6-3 항목을 확정할 때 내린다. 근사임을 출력에 표시할 것.
+
+`__main__`에 `--pool` 분기를 더한다. ⚠ **기존 `else: sys.exit(__doc__)`를 반드시 보존한다**(1R 사실 I3) — 초판의 교체본이 그것을 삭제해 인자 없는 호출이 "usage + exit 1"에서 "무출력 + exit 0"으로 바뀌었다. 코드 주석이 그 동작을 *의도*라고 못박고 있다:
 
 ```python
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "--selftest":
         selftest()
     elif len(sys.argv) >= 3 and sys.argv[1] == "--pool":
-        pool(sys.argv[2:])
+        # 재추출 횟수·시드는 사전등록이 등록한 값을 쓸 수 있어야 한다(§6-4-7).
+        # 기본값(10000·0) 외의 값을 쓰려면 코드를 고쳐야 하는 상태를 피한다
+        args, resamples, seed = [], 10000, 0
+        it = iter(sys.argv[2:])
+        for a in it:
+            if a == "--resamples":
+                resamples = int(next(it))
+            elif a == "--seed":
+                seed = int(next(it))
+            else:
+                args.append(a)
+        pool(args, resamples=resamples, seed=seed)
+    elif len(sys.argv) >= 3 and sys.argv[1] == "--session":
+        session_mode(sys.argv[2])
     elif len(sys.argv) >= 2:
         for d in sys.argv[1:]:
             process(d)
+    else:
+        sys.exit(__doc__)  # 인자 없는 호출은 실패가 의도 — usage를 stderr로, exit 1
 ```
 
-⚠ **기존 무플래그 동작을 바꾸지 말 것** — M10 이후 모든 배치의 grep 레시피가 그 형식에 붙어 있다.
+⚠ **기존 무플래그 동작을 바꾸지 말 것** — M10 이후 모든 배치의 grep 레시피가 그 형식에 붙어 있다. 무플래그 경로의 출력 형식(표 + `# summary` 줄)도 그대로다.
 
 - [ ] **Step 4: 셀프테스트를 확장한다**
 
@@ -2405,16 +2798,38 @@ if __name__ == "__main__":
 ```bash
 python3 scripts/exp_metrics.py --selftest
 python3 scripts/exp_metrics.py .loco/eval/20260719T093254Z 2>&1 | tail -5
-python3 scripts/exp_metrics.py --pool .loco/eval/20260719T082030Z .loco/eval/20260719T093254Z 2>&1 | tail -12
+python3 scripts/exp_metrics.py --pool .loco/eval/20260719T082030Z .loco/eval/20260719T093254Z 2>&1 | tail -20
 ```
-Expected: 셀프테스트 통과. 실배치는 예외 없이 처리되고, 오라클이 없으므로 `nav_hit`/`fix_hit`이 전부 `-`이며 풀링 요약의 `tasks=0 excluded=<전체>`가 나온다 — **그것이 올바른 출력이다**(0이 아니라 "해당 없음").
+Expected: 셀프테스트 통과. 실배치는 예외 없이 처리되고, 오라클이 없으므로 `nav_hit`/`fix_hit`이 전부 `-`이며 풀링의 항해/수선 줄이 `tasks=0 excluded=<전체>`가 된다 — **그것이 올바른 출력이다**(0이 아니라 "해당 없음"). `pass_rate`·`disqualification` 줄은 오라클과 무관하므로 **실제 값이 나와야 한다.**
 
-- [ ] **Step 6: 커밋**
+- [ ] **Step 6: 반증 확인 — 세 공약이 실제로 코드에 사는가**
+
+⚠ **초판에서 T15만 반증 단계가 없었다**(1R 측정 m2). 그런데 T15는 §6-4-19의 **층 크기 0 제외**·**제외 후 재추출**·**비합산**이 코드 형태로 사는 **유일한 자리**다. 셀프테스트의 단언은 미구현 상태에서 `NameError`로 죽을 뿐이라 비어있지 않음(non-vacuity)을 증명하지 못한다.
+
+**세 가지를 각각 끊어 보고 셀프테스트가 실패하는지 확인한다:**
+
+| # | 변조 | 실패해야 하는 단언 |
+|---|---|---|
+| (a) | `stratified_rate`에서 `excluded += 1; continue`를 `per_task[t] = 0.0`으로 바꾼다 | ① 층 크기 0인 과제가 제외되는가 — 전승 과제가 `nav_hit[fail]`에 **0으로** 들어가면 "항해 실패"로 오독된다 |
+| (b) | `bootstrap_ci`에 `per_task.values()` 대신 **전체 과제 목록**을 넘긴다 | ④ 제외 후 남은 집합에서 재추출하는가 |
+| (c) | `pool()`에 `nav_hit[pass]`와 `nav_hit[fail]`을 합산해 찍는 줄을 추가한다 | ③ 비합산 공약 — ⚠ 이건 코드가 자동으로 못 막는다. **셀프테스트에 "합산 줄이 출력에 없다"는 단언을 넣어** 막는다: `assert "nav_hit[all]" not in out` |
+
+```bash
+# 각 변조 후
+python3 scripts/exp_metrics.py --selftest ; echo "rc=$?"
+```
+Expected: (a)·(b) 모두 **rc≠0**. 되돌린 뒤 rc=0. (c)는 단언을 먼저 넣고 합산 줄을 추가해 실패를 본다.
+
+⚠ 어느 하나라도 변조 상태에서 rc=0이면 **그 공약은 코드에 안 살고 문서에만 있는 것이다.**
+
+- [ ] **Step 7: 커밋**
 
 ```bash
 git add scripts/exp_metrics.py
 git commit -m "feat(metrics): 항해/수선 층별 지표 + 과제 단위 부트스트랩 + 풀링 모드 (H15 후반부)"
 ```
+
+**보조 계수의 집계 규칙**(1R 실현 m3 — 초판이 정의하지 않았다): `reads`/`greps`/`lists`는 **런당 값**이고 배치 집계는 **합**이다(`est_ratio_max`만 최대다). `reads`는 **집합 크기**(고유 파일 수)이고 `greps`/`lists`는 **호출 수**다 — 전자는 "몇 개를 열었나", 후자는 "몇 번 훑었나"라 단위가 다르다. 이 정의를 컬럼 주석에 박을 것.
 
 ---
 
@@ -2593,31 +3008,56 @@ fill_cache() {
 
   rm -rf "$dest"; mkdir -p "$dest"
   trap 'rm -rf "$dest"' EXIT INT TERM
-  git -C "$git_dir" archive "$sha" | tar -x -C "$dest"
+  # ⚠ 파이프 실패 검출: #!/bin/sh라 pipefail이 없다(dash). git archive가 죽어도
+  # tar가 0으로 끝나면 조용히 통과하고, 그것이 아래 export-ignore 가드에서
+  # "의심"으로 잘못 표면화된다(1R 실현 I7). 아카이브를 **파일로 먼저 받아** 종료
+  # 코드를 직접 본다 — 4레포 최대 트리가 수 MB라 임시 파일 비용은 무시할 만하다
+  if ! git -C "$git_dir" archive "$sha" > "$dest/.archive.tar"; then
+    echo "git archive 실패: $repo $sha" >&2; exit 1
+  fi
+  tar -xf "$dest/.archive.tar" -C "$dest"
+  rm -f "$dest/.archive.tar"
+
+  # 심링크 목록 먼저 — H5의 스킵 대상이고, 아래 가드가 이 목록을 **포함해** 비교한다
+  ( cd "$dest" && find . -type l | sed 's|^\./||' | LC_ALL=C sort ) > "$dest/symlinks.txt"
 
   # export-ignore/export-subst 가드 (§3-5). **경로 집합의 차집합**으로 본다 —
   # 파일 *수* 대조는 gitlink에서 거짓 bail이 나고 export-subst를 못 잡는다.
   # ⚠ export-subst는 파일 수도 경로도 안 바꾸므로 이 자동 가드로는 안 잡힌다.
   #    그 몫은 §3-4-2의 사람 감사다
+  #
+  # ⚠⚠ **심링크를 빼고 비교하는 것이 계약이다**(1R 실현 C4). `git ls-tree -r`는
+  # 심링크를 blob으로 실어 주는데 `find -type f`는 심링크를 빼므로, 빼지 않고
+  # 비교하면 **export-ignore가 0건이어도 모든 심링크가 "의심"으로 잡혀 exit 1**이
+  # 된다. 대상 4레포 중 ripgrep(HomebrewFormula)·just(www/man/{en,zh})가 심링크를
+  # 가지므로 **조달 자체가 불가능해진다** — 그리고 그것은 T3의 "심링크는 스킵한다"
+  # 정책과 이 스크립트 자신의 symlinks.txt 주석과도 정면으로 모순이다
+  # 하네스가 만든 메타 파일은 두 목록 모두에서 뺀다 — ⚠ `.extracted` 자신을 빼지
+  # 않으면 자기를 목록에 넣어 manifest와 파일 수 보고를 오염시킨다(1R 실현 C4 부수)
+  not_meta() {
+    grep -vE '^(\.tree-paths|\.extracted|\.complete|\.archive\.tar|manifest\.tsv|symlinks\.txt)$'
+  }
   git -C "$git_dir" ls-tree -r --name-only "$sha" | LC_ALL=C sort > "$dest/.tree-paths"
-  ( cd "$dest" && find . -type f ! -name '.tree-paths' ! -name '.complete' \
-      ! -name 'manifest.tsv' ! -name 'symlinks.txt' | sed 's|^\./||' | LC_ALL=C sort ) > "$dest/.extracted"
-  if ! diff_out=$(LC_ALL=C comm -23 "$dest/.tree-paths" "$dest/.extracted"); then :; fi
+  # 비교용: 일반 파일 **+ 심링크** (ls-tree가 심링크를 blob으로 싣기 때문)
+  ( cd "$dest" && find . \( -type f -o -type l \) | sed 's|^\./||' | not_meta | LC_ALL=C sort ) \
+      > "$dest/.extracted"
+  diff_out=$(LC_ALL=C comm -23 "$dest/.tree-paths" "$dest/.extracted") || true
   if [ -n "$diff_out" ]; then
     echo "export-ignore 의심 — ls-tree에 있고 아카이브에 없는 경로:" >&2
     echo "$diff_out" >&2
     exit 1
   fi
-
-  # 심링크 목록 (H5의 스킵 대상 — 조달 로그에 남긴다)
-  ( cd "$dest" && find . -type l | sed 's|^\./||' | LC_ALL=C sort ) > "$dest/symlinks.txt"
+  # 매니페스트용: **일반 파일만**. 심링크를 넣으면 dangling(just www/man/{en,zh})에서
+  # wc/sha256이 죽는다 — 비교 목록과 매니페스트 목록의 정의가 다른 이유다
+  ( cd "$dest" && find . -type f | sed 's|^\./||' | not_meta | LC_ALL=C sort ) > "$dest/.files"
 
   # 매니페스트 = **산출물 자체**의 파일 목록 + 크기 + SHA-256.
   # ⚠ git 트리 해시는 쓸 수 없다(캐시는 .git 없는 추출 트리다).
   # ⚠ 이것은 **자기정합 검사이지 업스트림 검증이 아니다**(§10-5)
   ( cd "$dest" && while IFS= read -r f; do
       printf '%s\t%s\t%s\n' "$f" "$(wc -c < "$f" | tr -d ' ')" "$(sha256 "$f")"
-    done < .extracted ) > "$dest/manifest.tsv"
+    done < .files ) > "$dest/manifest.tsv"
+  rm -f "$dest/.files"
 
   trap - EXIT INT TERM
   : > "$dest/.complete"
@@ -2628,7 +3068,11 @@ procure_task() {
   task_dir="$1"
   toml="$task_dir/procure.toml"
   [ -f "$toml" ] || { echo "procure.toml이 없습니다: $task_dir" >&2; exit 1; }
-  val() { sed -n "s/^$1 *= *\"\\(.*\\)\"/\\1/p" "$toml" | head -1; }
+  # ⚠ 줄끝 앵커(`$`)와 CR 제거가 계약이다(1R 실현 I6). 앵커가 없으면 인라인 주석
+  # (`repo = "demo"  # 메모`)이 값에 새어 들고, CRLF 줄끝이면 `\r`이 값에 남는다 —
+  # `\r`은 터미널에서 커서를 되돌려 **눈에 안 보이는데** 바이트에는 남아
+  # `demo\r.git` 같은 오도적 에러를 낸다. 이 프로젝트는 이미 CRLF 픽스처를 다룬다
+  val() { tr -d '\r' < "$toml" | sed -n "s/^$1 *= *\"\\([^\"]*\\)\" *$/\\1/p" | head -1; }
   repo=$(val repo); parent=$(val parent_sha); fix=$(val fix_sha)
   [ -n "$repo" ] && [ -n "$parent" ] && [ -n "$fix" ] \
     || { echo "procure.toml에 repo/parent_sha/fix_sha가 필요합니다: $toml" >&2; exit 1; }
@@ -2698,12 +3142,52 @@ Expected: `문법 OK`, 그리고 `pristine bare 클론들이 있는 디렉터리
 
 - [ ] **Step 4: `timeout` 미사용을 확인한다**
 
+⚠ 초판은 `grep -nE '\b(timeout|gtimeout)\b'`를 썼는데 **스크립트 자신의 경고 주석에 걸려** 약속한 "미사용 확인" 대신 그 주석을 출력했다(1R 실현 m5). 주석을 뺀 뒤 **호출 형태만** 본다:
+
 ```bash
-grep -nE '\b(timeout|gtimeout)\b' scripts/procure_real.sh || echo "timeout 미사용 확인"
+grep -vE '^\s*#' scripts/procure_real.sh | grep -nE '(^|[;&|(]\s*)(timeout|gtimeout)\s' \
+  || echo "timeout 미사용 확인"
 ```
 Expected: `timeout 미사용 확인`
 
-- [ ] **Step 5: 커밋**
+- [ ] **Step 5: 합성 bare 레포로 실제 조달을 돌린다 — 심링크·export-ignore 양쪽**
+
+⚠ **이 단계를 건너뛰지 말 것.** 초판의 조달 스크립트는 `/bin/sh -n` 문법 검사를 통과하고도 **심링크가 하나만 있으면 무조건 exit 1**이었다(1R 실현 C4). 대상 4레포 중 둘이 심링크를 가지므로 조달 자체가 불가능했는데, 문법 검사로는 안 잡힌다.
+
+```bash
+SCRATCH=/private/tmp/claude-501/-Users-sgj-develop-loco/a3f41052-f67f-4b07-889b-33f2d9c2a133/scratchpad/procure-test
+rm -rf "$SCRATCH" && mkdir -p "$SCRATCH/src" && cd "$SCRATCH/src"
+git init -q . && git config user.email t@t && git config user.name t
+mkdir -p docs && echo "a" > a.txt && echo "b" > docs/b.md
+ln -s a.txt valid-link.txt          # 정상 심링크 (ripgrep HomebrewFormula 형태)
+ln -s nope.txt dangling-link.txt    # dangling (just www/man/{en,zh} 형태)
+git add -A && git commit -qm one
+echo "c" > c.txt && git add -A && git commit -qm two
+git clone -q --bare . "$SCRATCH/repos/demo.git"
+PARENT=$(git rev-parse HEAD^) ; FIX=$(git rev-parse HEAD)
+
+mkdir -p "$SCRATCH/task"
+printf 'repo = "demo"\nissue_url = "https://example.invalid/1"  # 인라인 주석\nfix_sha = "%s"\nparent_sha = "%s"\noracle_files = ["a.txt"]\n' "$FIX" "$PARENT" > "$SCRATCH/task/procure.toml"
+
+cd /Users/sgj/develop/loco
+LOCO_REAL_REPOS="$SCRATCH/repos" LOCO_TASKS_REAL_CACHE="$SCRATCH/cache" \
+  /bin/sh scripts/procure_real.sh "$SCRATCH/task"; echo "EXIT=$?"
+```
+Expected: `조달 완료: demo/<sha> (2파일, 심링크 2개)` + `EXIT=0`.
+
+⚠ **`EXIT=1`에 `export-ignore 의심`이 뜨면 C4가 재발한 것이다** — `.tree-paths`↔`.extracted` 비교에서 심링크를 빼고 있는지 확인할 것.
+⚠ 파일 수가 `3파일`로 나오면 `.extracted`/`.files`가 자기 자신을 세고 있는 것이다.
+
+가드가 실제로 발동하는지도 함께 본다:
+
+```bash
+cd "$SCRATCH/src" && printf 'c.txt export-ignore\n' > .gitattributes \
+  && git add -A && git commit -qm three && git push -q "$SCRATCH/repos/demo.git" HEAD:master 2>/dev/null || true
+# 위가 여의치 않으면 bare를 다시 클론해 최신 SHA로 procure.toml을 갱신한 뒤 재실행
+```
+Expected: `export-ignore 의심` + `EXIT=1` (**가드가 실제로 물어야 한다** — 안 물면 가드가 공허하다)
+
+- [ ] **Step 6: 커밋**
 
 ```bash
 git add scripts/procure_real.sh .gitignore
@@ -2761,12 +3245,28 @@ import re
 import sys
 
 # 소스 경로 후보. `:행:열` 접미는 뒤에서 떼므로 여기서는 .rs까지만 문다
+# ⚠ 한 줄이 아주 길면 백트래킹으로 느려진다(1R 실현 m4 실측: 10만 자 한 줄에 7.7초).
+# 지수 폭발은 아니지만 큰 단언 덤프가 한 줄로 잡히면 감사가 길어지므로, 줄 길이를
+# 잘라서 먼다 — 누설 판정에 필요한 경로는 줄 앞부분에 있다
+MAX_LINE = 4000
 PATH_RE = re.compile(r"[A-Za-z0-9_./-]+\.rs")
 
 # **제외** 대상 줄 — 판정 범위 한정(4R 측정 I7).
 # 컴파일러 진단은 미완성 기능 주변에 남기 쉬워 누설과 무관하게 과제를 떨어뜨린다.
 # Running/Compiling은 테스트 **바이너리·크레이트** 이름이지 원인 지점이 아니다.
+#
+# ⚠⚠ **이 패턴은 `failures:` 구간 *밖*에서만 쓴다**(플랜 1R Critical 4). 구간 안쪽에
+# 적용하면 `note:`/`help:`/`warning:` 로 시작하는 **테스트 자신의 단언 메시지**를
+# 컴파일러 진단으로 오인해 삼킨다 — 실측 재현: 패닉 본문의
+# `note: see src/secret.rs for the actual computation` 이 통째로 버려져
+# 오라클 `src/secret.rs`가 "지목되지 않음(rc=0)"으로 통과했다. §3-2 규약 6이 이
+# 스크립트를 누설 차단 게이트로 쓰므로 안전장치 자체의 결함이었다.
 SKIP_RE = re.compile(r"^\s*(-->|Running|Compiling|Finished|warning:|error(\[|:)|note:|help:)")
+
+# `failures:` 구간 **안**에서만 쓰는 좁은 제외 — 컴파일러 진단의 위치 화살표만 뺀다.
+# 진단 본문(`warning:` 등)은 구간 안에 나타나면 그것은 libtest가 캡처한 **테스트
+# 출력**이지 컴파일러 출력이 아니다(컴파일은 `failures:` 이전에 끝난다)
+SKIP_IN_FAILURES_RE = re.compile(r"^\s*-->")
 
 
 def failure_region(text):
@@ -2788,9 +3288,16 @@ def failure_region(text):
         if re.match(r"^test result:", line):
             in_failures = False
             continue
+        if in_failures:
+            # 구간 안: 좁은 제외만. 넓은 SKIP_RE를 쓰면 테스트 자신의 note:/help:
+            # 단언 메시지가 삼켜져 진짜 누설을 놓친다 (1R Critical 4)
+            if not SKIP_IN_FAILURES_RE.match(line):
+                out.append(line)
+            continue
+        # 구간 밖: 컴파일러 진단·Running/Compiling을 전부 뺀 뒤, 패닉 줄만 줍는다
         if SKIP_RE.match(line):
             continue
-        if in_failures or "panicked at" in line:
+        if "panicked at" in line:
             out.append(line)
     return out
 
@@ -2800,7 +3307,7 @@ def extract(text, sandbox_prefix=None):
     레포 상대 경로로 정규화하고 `:행:열` 접미를 뗀다."""
     found = set()
     for line in failure_region(text):
-        for m in PATH_RE.findall(line):
+        for m in PATH_RE.findall(line[:MAX_LINE]):
             p = m
             if sandbox_prefix:
                 pre = sandbox_prefix.rstrip("/") + "/"
@@ -2887,6 +3394,31 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 filtered out
     assert "tests/cli.rs" in got2, got2
     # `test result:` 이후 잡음이 구간을 오염시키지 않는다
     assert not any(p.startswith("target/") for p in got2), got2
+
+    # ③ **1R Critical 4 회귀 방지** — `failures:` 구간 **안**의 note:/help:/warning:은
+    #    테스트 자신의 단언 메시지다. 컴파일러 진단으로 오인해 삼키면 진짜 누설을 놓친다.
+    #    초판은 정확히 이 입력에서 "지목되지 않음(rc=0)"을 냈다
+    leaky_note = """
+failures:
+
+---- t stdout ----
+thread 't' panicked at tests/cli.rs:10:5:
+assertion failed
+note: see src/secret.rs for the actual computation
+help: compare with src/helper.rs
+warning: value drifted in src/drift.rs
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 filtered out
+"""
+    got3 = extract(leaky_note)
+    for must in ("src/secret.rs", "src/helper.rs", "src/drift.rs"):
+        assert must in got3, f"failures: 구간 안의 단언 메시지를 삼켰다 — {must} 누락: {got3}"
+
+    # ④ 구간 안의 `-->`(컴파일러 위치 화살표 형태)는 여전히 뺀다
+    assert "src/arrow.rs" not in extract(
+        "failures:\n\n  --> src/arrow.rs:1:1\n\ntest result: FAILED. 0 passed; 1 failed;\n"
+    ), "구간 안이라도 --> 는 제외"
+
     print("leak_audit selftest OK")
     return 0
 
@@ -3270,24 +3802,48 @@ sleep 20
 grep -E "n_ctx_slot" docs/experiments/2026-07-20-m15-real-repo-baseline/smoke-server.log
 ```
 
-- [ ] **Step 2: 1세션을 돌린다**
+- [ ] **Step 2: 픽스처 **사본**에서 1세션을 돌린다**
 
-`.loco/config.toml`을 스모크 조건(`context_tokens=32768`, `max_output_tokens=4096`)으로 두고, 조달된 과제의 픽스처에서:
+⚠⚠ **`<task_dir>/fixture` 안에서 직접 돌리면 안 된다**(1R 측정 Critical 1). 에이전트의 `cargo test`가 거기에 `target/`을 만드는데, 스모크의 도달 조건이 *"`pack()`이 최소 1회 발동할 때까지"*라 **빌드가 사실상 확정**이다. 그러면:
+- §3-5의 `target/` 가드가 깨진다 — `copy_tree`는 `.gitignore`를 안 보므로 배치에서 **60런 × 최대 1GB 복사**가 되고, `fs::copy`의 mtime 보존이 H6가 닫으려는 M6 스테일 벡터를 **픽스처 안에서** 되살린다
+- **T21 Step 5가 이미 통과시킨 §9-A3(차단 기준)를 사후에 무효화한다.** `target/` 부재 검사와 캐시 비운 재조달이 **둘 다 T22 이전**이라 아무도 다시 안 본다
+- `.loco/sessions/`도 픽스처에 남는다
+
+**사본에서 돌린다:**
 
 ```bash
-cd tasks-real/<task>/fixture
+SMOKE=$(mktemp -d)/smoke
+cp -R tasks-real/<task>/fixture "$SMOKE"
+# 스모크 전용 config — 전역 .loco/config.toml은 건드리지 않는다 (아래 ⚠)
+mkdir -p "$SMOKE/.loco"
+printf 'context_tokens = 32768\nmax_output_tokens = 4096\n' > "$SMOKE/.loco/config.toml"
+cd "$SMOKE"
 cargo run --manifest-path <loco>/Cargo.toml -- -p "<이슈 본문>" --auto 2>&1 | tail -20
-ls -t .loco/sessions/*.jsonl | head -1
+ls -t "$SMOKE/.loco/sessions"/*.jsonl | head -1
 ```
 
-⚠ **`pack()`이 발동하지 않으면 세션을 더 길게 돌린다** — 다음 단계가 경고를 찍는다.
+⚠ **전역 `.loco/config.toml`을 고치지 말 것**(1R 측정 I3). loco의 설정은 계층형이라 **작업 디렉터리의 `./.loco/config.toml`이 나중에 이겨**, 사본 안에 두면 전역을 안 건드리고도 스모크 조건이 적용된다. 전역을 32768로 바꾸고 되돌리는 방식은 `.loco/`가 git-ignored라 `git status`에도 안 떠서 **배치까지 살아남기 쉽고**, 그러면 배치의 `effective_config.context_tokens`가 32768이 되어 **§8 각주 3이 세 번째로 거짓**이 된다(초판·개정 2에서 이미 두 번 거짓이었다).
+
+⚠ **M15 배치 중 전역 config의 `context_tokens`는 8192다.** 32768은 `TaskSpec`(H1)으로만 들어간다 — T23 항목 8이 이 구분을 명시해야 한다.
+
+⚠ **`pack()`이 발동하지 않으면** 다음 단계가 경고를 찍는다. Step 3의 탈출구를 볼 것.
 
 - [ ] **Step 3: `r_obs`를 뽑는다**
 
 ```bash
 python3 scripts/exp_metrics.py --session <session.jsonl>
 ```
-Expected: `r_obs=…` 한 줄 + `pack_fired=` ≥1. `# WARN pack 미발동`이 나오면 **Step 2로 돌아간다.**
+Expected: `r_obs=…` 한 줄 + `pack_fired=` ≥1.
+
+**`# WARN pack 미발동`이 나오면 — 탈출구는 순서가 정해져 있다**(1R 측정 m3). 초판은 *"Step 2로 돌아간다 / 세션을 더 길게 돌린다"*로만 적었는데, `-p` 원샷 + *"프롬프트 = 이슈 본문, 손대지 않는다"*(§3-2) 조합에서 컨트롤러가 쥔 다이얼이 사실상 "과제를 바꾼다" 하나뿐이고 **그것은 `r_obs`를 — 따라서 확정 로드값을 — 데이터 의존으로 만든다.**
+
+**허용 순서 (위에서부터, 앞 단계가 실패해야 다음으로 간다):**
+
+1. **같은 과제·같은 프롬프트로 `max_turns`를 올려 재실행** — 프롬프트를 안 건드리므로 자유도가 없다. 이것이 기본 탈출구다
+2. **같은 과제에서 프롬프트 뒤에 `--auto` 후속 요청 없이 재시도** (시드만 다르게) — 모델의 탐색 길이가 런마다 다르므로 몇 회는 시도할 가치가 있다. **시도 횟수를 미리 정하고(권장 3회) 기록한다**
+3. **다른 과제로 교체** — ⚠ **여기까지 왔다면 교체 사실과 이유를 `smoke.md`에 적고, 교체 전 과제의 `r_obs`도 함께 기록한다.** 둘 중 큰 값을 쓴다(보수적 방향). "더 편한 `r_obs`가 나올 때까지 과제를 갈아 끼우는" 경로를 이것이 막는다
+
+⚠ 어느 경우든 **시도 전부를 기록한다** — 버린 관측이 있는데 안 적으면 그것이 자유도다.
 
 - [ ] **Step 4: `L_req`를 계산하고 분기를 정한다**
 
@@ -3323,11 +3879,19 @@ T1이 동결한 산식 그대로:
 
 ⚠ **분기 3은 사용자 보고 대상이다** — §2-2 결정 2(32K 운용점)를 포기하는 것이므로 스스로 결정하지 말 것.
 
-- [ ] **Step 6: 서버를 내리고 기록한다**
+- [ ] **Step 6: 서버를 내리고, 픽스처 무오염을 확인하고, 기록한다**
 
 ```bash
 pkill -f llama-server
+rm -rf "$SMOKE"   # 스모크 사본 폐기
+# C1 재확인 — 스모크가 픽스처를 건드리지 않았음을 증명한다
+find tasks-real -maxdepth 3 -name target -print     # 0건이어야 한다
+find tasks-real -maxdepth 3 -name .loco -print      # 0건이어야 한다
+cargo run -- eval tasks-real --verify 2>&1 | tail -3
 ```
+Expected: 두 `find` 모두 무출력, `검증 N/N 통과`.
+
+⚠ **하나라도 걸리면 그 과제를 재조달한다**(`scripts/procure_real.sh`가 `rm -rf "$dst"`로 시작하므로 재실행 한 줄이다) — 그리고 **재조달 후 `--verify`를 다시 통과시킨 뒤에만** 다음으로 간다.
 
 `smoke.md`에 담을 것: 대상 과제 / 세션 JSONL 경로 / `--session` 원 출력 / `r_obs` / **첫 턴 `prompt_tokens`와 §5-5 의미 확정 결과** / `pack_fired` / `L_req` 계산 / `n_ctx_train` / **채택 분기와 확정 로드값** / T1 동결 커밋 해시.
 
@@ -3383,7 +3947,14 @@ git commit -m "docs(m15): 배치 전 스모크 — r_obs 측정과 서버 로드
 | 18 | TMPDIR 여유 — 배치 전후 `ls ${TMPDIR}/loco-eval-*`. 빌드 후 `target/`이 zoxide 371M / fd 255M / ripgrep 459M / **just 998M**이고 `Sandbox::cleanup`은 best-effort다 | — |
 | 19 | 축 C·§5-4 지표의 분석 계획 (아래 상세) | T15·T16 |
 
-**항목 8 상세** — 전부 값을 적는다: `context_tokens`(32768 또는 T22 분기 3의 하향값) / **`max_output_tokens`(값과 근거)** / `max_turns` / `command_timeout_secs` / `check_timeout_secs` / **`timeout_secs`(과제별 — llama.cpp 앵커 `20260719T082030Z`의 런당 시간에 붙여 정한다)** / **`timeout_scale`** / **`base_seed`와 하위 배치별 `--seed`** / **`--repeats`(값과 근거 — §6-1이 반복을 결정 변수로 승격시켰고 `base_seed+repeat` 규약상 반복 수는 시드 집합도 바꾼다)** / **서버 로드 ctx(T22 분기 결과)·`마진` 값과 확정 커밋 해시** / **달성 슬랙(사후 기록, `마진`과 구분)** / 모델·양자화.
+**항목 8 상세** — 전부 값을 적는다: **`context_tokens` — 전역과 과제별을 나눠 적는다**(전역 = **8192**, `tasks-real` 과제별 = 32768 또는 T22 분기 3의 하향값. §8 각주 3이 두 번 거짓이었던 지점이고 1R 측정 I3이 세 번째 위험을 지적했다) / **`max_output_tokens`(값과 근거)** / `max_turns` / `command_timeout_secs` / `check_timeout_secs` / **`timeout_secs`(과제별 — llama.cpp 앵커 `20260719T082030Z`의 런당 시간에 붙여 정한다)** / **`timeout_scale`** / **`base_seed`와 하위 배치별 `--seed`** / **`--repeats`(값과 근거 — 아래 ⚠)** / **서버 로드 ctx(T22 분기 결과)·`마진` 값과 확정 커밋 해시** / **달성 슬랙(사후 기록, `마진`과 구분)** / **부트스트랩 `--resamples`·`--seed`** / 모델·양자화.
+
+⚠ **`--repeats`의 근거는 두 문장이 필요하다**(1R 측정 m1 — 초판은 §6-4-8 원문만 옮기고 §6-1의 판단 규칙을 빠뜨렸다):
+
+1. §6-4-8: `base_seed+repeat` 규약상 **반복 수는 시드 집합도 바꾼다**
+2. **§6-1**: 과제가 20 미만으로 확정되면 **통과율에 대해서는** 남는 예산을 반복 수로 돌리지 않는다(§6-2의 재추출 단위 선언상 반복 증가는 과제 수준 정밀도를 사 주지 않는다). ⚠ **다만 §5-4 지표는 다르다** — §6-4-19①의 층별 분모 하에서 3/3 통과 과제는 실패 층이 비어 항해 지표에서 **통째로 제외**되므로, 반복을 늘리면 제외 셀이 줄고 층내 해상도가 올라간다. 따라서 **반복 상향 여부는 §6-4-19의 제외 셀 예상과 함께 여기서 판단한다** — 근거 없이 금지만 남기지 않는다.
+
+**즉 사전등록은 "예상 제외 셀 수"를 적고 그것을 근거로 `--repeats`를 정해야 한다.** T21의 N과 난이도 분포에서 추정한다.
 
 **항목 19 상세** — ① 항해/수선의 **층별 분모**와 제외 규칙 ② 교집합 `≠ ∅` ③ **층화 비합산 공약** ④ **부트스트랩 재추출 단위 = 과제, 제외 후 남은 집합에서 재추출** ⑤ §5-3 절편/기울기 추정 방법(턴 단위 최소자승, `inline_system` 층화) ⑥ **§5-5 `prompt_tokens` 의미 확정 결과와 원자료**(T22의 첫 턴 기준).
 
@@ -3431,6 +4002,13 @@ git commit -m "docs(m15): 베이스라인 배치 사전등록 — 승인 대기 
 - [ ] **Step 1: 배치 전 게이트** (PROTOCOL 4, T19가 개정한 형태)
 
 ```bash
+# ⓪ 픽스처 무오염 (M15 신규 — C1 대응). A3는 T21에서 통과했지만 그 사이 T22 스모크가
+#    돌았다. target/ 하나가 60런 × 최대 1GB 복사 + 스테일 mtime 벡터를 만든다
+find tasks-real -maxdepth 3 -name target -print     # 0건이어야 한다
+find tasks-real -maxdepth 3 -name .loco -print      # 0건이어야 한다
+# 전역 config가 배치 조건인지 — ⚠ M15에서 전역 context_tokens는 **8192**다.
+#    32768은 TaskSpec(H1)으로만 들어간다 (§8 각주 3)
+grep -n "context_tokens" .loco/config.toml 2>/dev/null || echo "(전역 오버라이드 없음 = 코드 기본 8192)"
 # ① 세 트리 --verify
 cargo run -- eval tasks --verify 2>&1 | tail -2
 cargo run -- eval tasks-large --verify 2>&1 | tail -2
@@ -3590,36 +4168,65 @@ git checkout main && git merge --no-ff m15/real-repo-track
 
 ---
 
-## Self-Review 결과
+## Self-Review 결과 (개정 2)
 
-**1. 스펙 커버리지** — §2-1-1의 H 목록 전수를 태스크에 대응시켰다:
+**1. 스펙 커버리지** — §2-1-1의 H 목록 전수가 태스크에 대응한다. 1R 사실정합성 축이 **내용까지 전건 대응**을 독립 확인했다(이름만 맞고 내용이 빠진 곳 0건):
 
 | H | 태스크 | H | 태스크 |
 |---|---|---|---|
 | H1 | T5 | H11 | T8 |
 | H2 | T5 | H12 | T10 |
-| ~~H3~~ | 불요(스펙이 취소) | H13 | T11 |
+| ~~H3~~ | 불요(스펙이 취소, `verify.rs:81`로 재확인됨) | H13 | T11 |
 | H4 | T17 | H14 | T12 |
 | H5 | T3 | H15 | T14·T15 |
 | H6 | T2 | H16 | T4 |
-| H7 | T7 | H17 | T2 |
+| H7 | T7 | H17 | **T2 (두 함수 모두 — 개정 2에서 `overlay_tree` 추가)** |
 | H8 | T17 | H18 | T9 |
 | H9 | T6 | H19 | T16 |
 | H10 | T13 | | |
 
-절 커버리지: §3(T17·T18·T21) / §4(T1·T20·T22) / §5(T10~T16) / §6(T23·T24) / §7(T25 Step 1) / §8(T25 Step 2) / §9 A1~A7·B1~B3(T21 Step 4~6·T24·T25) / §10 리스크(T23 항목 11·13·18, T24 Step 5).
+절 커버리지: §3(T17·T18·T21) / §4(T1·T20·T22) / §5(T10~T16) / §6(T23·T24) / §7(T25 Step 1) / §8(T25 Step 2) / §9(아래) / §10 리스크(T23 항목 11·13·18, T24 Step 5).
 
-**2. 플레이스홀더 스캔** — 코드 블록 중 `/* … */`로 남긴 곳은 셋이다(T11 Step 5, T12 Step 1, T13 Step 1). **전부 `src/agent/mod.rs`의 기존 테스트 헬퍼(스크립트 클라이언트 구성·`Agent::new` 인자·`Session::new` 구성)를 복사해야 하는 자리**이고, 그 헬퍼들은 `eval` 쪽과 이름·시그니처가 다르다. **추측해서 쓰면 컴파일이 깨지므로 의도적으로 "읽어서 맞출 것"으로 남겼다** — 각 자리에 그 지시를 명시했다. 그 밖의 "TBD/적절히/유사하게"는 0건이다.
+⚠ **§9 커버리지 주장을 개정 2에서 정정했다.** 초판 Self-Review는 *"§9 A1~A7·B1~B3(T21 Step 4~6·T24·T25)"*라고 적었는데 **A5(실격 대역)와 A6(추정기 오차)는 산출 경로가 없었다**(1R 측정 I1) — 둘 다 §9의 차단 기준인데도 그랬다. 개정 2의 T15 `pool()`이 `disqualification()`(A5)과 배치 수준 `estimator_fit()`(A6)을 낸다.
 
-**3. 타입 정합성** — 태스크 간 이름이 일치하는지 확인했다:
-- `EffectiveRun { context_tokens, max_turns }` (T6 정의) → T7이 같은 이름으로 인용
-- `RunRecord.effective_context_tokens` / `.effective_max_turns` (T6) → T24 Step 5가 같은 키로 grep
-- `RunRecord.protected_edits` (T7) → T14 `COLS`의 `protected_edits`
-- `ProcureSpec { repo, issue_url, fix_sha, parent_sha, oracle_files }` (T8) → T15 `oracle_index`가 `procure.oracle_files`로, T17이 `val repo`/`val parent_sha`/`val fix_sha`로 읽는다
-- 트랜스크립트 이벤트 키: `usage`(`prompt_tokens`/`completion_tokens`/`estimate_tokens`/`messages`/`budget`/`inline_system`/`overflow_shrinks`, T11) → T14가 같은 키로 파싱 / `pack`(`budget`/`before`/`after`/`elided`/`dropped`, T11) → T14 / `touch`(`tool`/`path`, T13) → T15
-- `Session::total_tokens`를 `pub`으로 올린 것(T11 Step 3)을 T11 Step 6이 소비 — 순서가 맞다
-- `run_metrics`의 반환 튜플 마지막 원소 = `tok` 딕셔너리(T14 Step 3에서 도입, T16이 소비) — T16에 그 계약을 명시했다
+**2. 플레이스홀더 스캔 — 0건.** 초판은 T11 Step 5·T12 Step 1·T13 Step 1을 `/* … */`로 남기고 *"의도적으로 읽어서 맞출 것으로 남겼다"*고 정당화했는데, **그 결과 T13의 반증 단계가 구조적으로 공허해졌다**(빈 테스트는 항상 통과한다 — 1R 실현 I3). 개정 2는 세 자리 모두 **기존 헬퍼(`Scripted`·`ok`·`turn`·`finish`·`make_guided_agent`·`run_quiet`) 실명을 읽어 확인한 뒤 실제 본문**을 넣었고, `ok_with_usage` 헬퍼 하나를 신설했다. `TBD/적절히/유사하게`도 0건이다.
 
-**발견해 고친 것 1건:** T14가 `report_index`의 반환을 2-튜플에서 4-튜플로 넓히는데 `idx.get(name, ("?", None))`의 **기본값도 함께 고쳐야** 언패킹이 깨지지 않는다 — T14 Step 4에 경고로 넣었다.
+**3. 타입 정합성** — 태스크 간 이름 일치를 재확인했다:
+- `EffectiveRun { context_tokens, max_turns }`(T6) → T7이 인용. **출처가 `agent.context_tokens()`임**(T6 Step 3a)이 계약
+- `RunRecord`의 신규 3필드(`effective_context_tokens`·`effective_max_turns`·`protected_edits`) → 생성 지점 **3곳**(`judge` 1 + `report.rs:178`·`:185` 헬퍼 2)
+- `ProcureSpec` 5필드(T8) → T15 `oracle_index`가 `procure.oracle_files`로, T17이 `val repo`/`val parent_sha`/`val fix_sha`로 읽는다
+- 트랜스크립트 이벤트 3종의 키: `usage`(7키, T11) → T14 / `pack`(5키, T11) → T14 / `touch`(`tool`·`path`, T13) → T15
+- `run_metrics` 반환 튜플의 **13번째 원소 = `tok` 딕셔너리**(T14) → T15·T16이 소비. **고정폭 언팩 5곳을 `*_`로 바꾸는 것**(T14 Step 3b)이 짝이다
+- `pool()`의 행 딕셔너리 8키(T15 Step 3) → `stratified_rate`·`task_pass_rates`·`bootstrap_ci`가 소비. **`passed`는 `bool` 그대로**
+- `Session::total_tokens` `pub` 승격(T11 Step 3) → T11 Step 6이 소비
+- `MARKS`의 신규 `model_diff_trunc`(T15) → `pool()`의 A-3 절단률 분자
 
-**남은 위험:** T15의 `process()`를 "행을 반환하도록" 바꾸는 것이 기존 출력 형식을 건드릴 수 있다. T15 Step 3에 **"기존 무플래그 동작을 바꾸지 말 것 — M10 이후 모든 배치의 grep 레시피가 그 형식에 붙어 있다"**를 명시했고, T14·T15·T16 모두 실배치 스탬프로 무회귀를 확인하는 단계를 갖는다.
+**4. 1R 지적 반영 대조** — Critical 6 · Important 10 · Minor 9 **전건 반영**:
+
+| 축 | 지적 | 반영 위치 |
+|---|---|---|
+| 측정 C1 | 스모크가 픽스처 오염 | T22 Step 2(사본 실행)·Step 6(무오염 확인)·T24 Step ⓪(배치 전 재확인) |
+| 실현 C1 | T4 `-nt` 초 절삭 | T4(비교 방향 반전 + 2×2 표) |
+| 실현 C2 | H9가 배선 단절 미탐지 | T6 Step 3a(`Agent::context_tokens()`)·Step 6(b) |
+| 실현 C3 | `SKIP_RE` 누설 삼킴 | T18(`SKIP_IN_FAILURES_RE` 분리 + 셀프테스트 ③④) — **컨트롤러가 4케이스 실측 검증함** |
+| 실현 C4 | 심링크 조달 불가 | T17(비교에 심링크 포함, 매니페스트는 일반 파일만) + Step 5(합성 레포 실행) |
+| 실현 C5 | 튜플 확장이 셀프테스트 파괴 | T14 Step 3b(`*_` 5곳) + `notice` `continue` |
+| 실현 I1 | `overlay_tree` mode | T2(두 함수 + `sync_protected` 테스트) |
+| 실현 I2 | `RunRecord` 생성자 2곳 | T6 Consumers(5건으로 확장) |
+| 실현 I3 | 플레이스홀더 테스트 | T11·T12·T13 실제 본문 |
+| 실현 I4 | `touch` 정규화 불일치 | T15(`normalize_path` 적용) |
+| 실현 I5 | `"True" is True` | T15 Step 3(행 딕셔너리 계약) |
+| 실현 I6·I7 | `val()` 앵커·파이프 실패 | T17(`tr -d '\r'` + 줄끝 앵커, 아카이브 파일 경유) |
+| 측정 I1 | `pool()` 누락 넷 | T15(`task_pass_rates`·`disqualification`·배치 `estimator_fit`·§6-3 분모) |
+| 측정 I2 | `protected_edits` 셀프테스트 | T14 Step 1 |
+| 측정 I3 | config 복원 없음 | T22 Step 2(사본 안 `.loco/config.toml`) |
+| 사실 I1 | `from_runs` 11개 | T8 Step 5 |
+| 사실 I2 | `grep` 경로 사실 오류 | **스펙 개정 10** + T13 |
+| 사실 I3 | `__main__ else` 삭제 | T15 |
+| Minor 9 | 수치·문구·집계 규칙 | T2·T3·T8·T11·T13·T15·T17·T18·T22·T23 |
+
+**5. 남은 위험 (개정 2가 못 닫은 것)**
+
+- **`usage`/`pack`/`touch` 이벤트의 생산자↔소비자 합류가 미검증이다.** 1R은 Rust 쪽(T11~T13)과 Python 쪽(T14~T16)을 **다른 워크트리 세션에서** 적용해 합치지 못했다. 각자의 합성 픽스처로는 통과했으나 **실트래픽 대조는 없다.** → T16 Step 4에 "T11~T13 적용 상태에서 실제 세션 1건을 돌려 `--session`이 파싱하는지" 확인을 넣을 것을 다음 라운드에서 검토
+- **FINISH_NUDGE 기회 분모가 근사치다**(T15). 정확한 값은 `finish_nudge.rs` 상태기계 재현이 필요하고, 그 판단은 T23에서 내린다
+- **T17의 실물 4레포 조달은 여전히 미검증**이다 — 합성 bare 레포로만 확인한다. T21이 첫 실물 실행이다
