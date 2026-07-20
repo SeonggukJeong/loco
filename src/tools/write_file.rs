@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::diff::render_diff;
+use super::diff::{render_diff, render_diff_for_model};
 use super::eol::{dominant_crlf, normalize_eol, restore_eol};
 use super::path::confine_for_write;
 use super::{Tool, ToolCtx, ToolError};
@@ -56,14 +56,26 @@ impl Tool for WriteFile {
         let args = parse(args)?;
         let path = confine_for_write(&ctx.root, &args.path)?;
         let normalized = normalize_eol(&args.content);
+        let old_text = existing_text(&path);
         // 덮어쓰기: 기존 지배적 EOL 유지. 새 파일: \n (스펙 §4)
-        let crlf = existing_text(&path).map(|old| dominant_crlf(&old)).unwrap_or(false);
+        let crlf = old_text.as_deref().map(dominant_crlf).unwrap_or(false);
         let text = restore_eol(&normalized, crlf);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(&path, &text)?;
-        Ok(format!("Wrote {} ({} lines)", args.path, normalized.lines().count()))
+        // 신규 파일과 비UTF-8은 existing_text()가 둘 다 None을 준다(주석 참조).
+        // 신규는 전 줄이 추가라 신호가 0이고 비UTF-8은 diff를 낼 원문이 없다 —
+        // 둘 다 현행 요약 줄을 유지한다 (스펙 §3-5-2)
+        Ok(match old_text {
+            Some(old) => format!(
+                "Wrote {} ({} lines)\n{}",
+                args.path,
+                normalized.lines().count(),
+                render_diff_for_model(&normalize_eol(&old), &normalized)
+            ),
+            None => format!("Wrote {} ({} lines)", args.path, normalized.lines().count()),
+        })
     }
 }
 
@@ -110,6 +122,24 @@ mod tests {
             .preview(&serde_json::json!({"path": "fresh.txt", "content": "hello\n"}), &ctx(&dir))
             .unwrap();
         assert!(p2.contains("새 파일") && p2.contains("+hello"), "{p2}");
+    }
+
+    #[test]
+    fn run_result_carries_a_diff_for_overwrite_but_not_for_a_new_file() {
+        // Step 6 배선의 run() 쪽 회귀 커버리지 — preview()는 이미 diff 형태를
+        // 검증하지만 run()의 반환 문자열은 이 테스트 이전엔 파일 바이트만
+        // 간접 확인됐다 (M14 A-3)
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "old\n").unwrap();
+        let out = WriteFile
+            .run(&serde_json::json!({"path": "f.txt", "content": "new\n"}), &ctx(&dir))
+            .unwrap();
+        assert!(out.contains("-old") && out.contains("+new"), "덮어쓰기는 diff를 실어야 한다: {out}");
+
+        let out2 = WriteFile
+            .run(&serde_json::json!({"path": "fresh.txt", "content": "hello\n"}), &ctx(&dir))
+            .unwrap();
+        assert!(!out2.contains("-0 lines"), "신규 파일은 diff 헤더 없이 요약 줄만 유지한다: {out2}");
     }
 
     #[test]

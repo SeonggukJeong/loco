@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::diff::render_diff;
+use super::diff::{render_diff, render_diff_for_model};
 use super::eol::{dominant_crlf, normalize_eol, restore_eol};
 use super::path::confine;
 use super::{Tool, ToolCtx, ToolError};
@@ -41,14 +41,10 @@ fn parse(args: &serde_json::Value) -> Result<Args, ToolError> {
     Ok(a)
 }
 
-/// apply_edit 결과 — run()이 성공 컨텍스트를 렌더링하는 데 필요한 위치 정보까지 담는다
+/// apply_edit 결과
 struct EditOutcome {
     new_text: String,
     mode: MatchMode,
-    /// 새 텍스트 기준 치환 시작 줄(0-기준) — 성공 컨텍스트 렌더링용 (첫 매치)
-    start_line: usize,
-    /// 치환으로 들어간 줄 수 (최소 1)
-    replaced_lines: usize,
     occurrences: usize,
 }
 
@@ -59,23 +55,16 @@ fn apply_edit(text: &str, search: &str, replace: &str, replace_all: bool) -> Res
     let exact_positions: Vec<usize> = text.match_indices(search).map(|(i, _)| i).collect();
     match exact_positions.len() {
         1 => {
-            let start_line = text[..exact_positions[0]].matches('\n').count();
-            let replaced_lines = replace.split('\n').count().max(1);
             return Ok(EditOutcome {
                 new_text: text.replacen(search, replace, 1),
                 mode: MatchMode::Exact,
-                start_line,
-                replaced_lines,
                 occurrences: 1,
             });
         }
         n if n >= 2 && replace_all => {
-            let start_line = text[..exact_positions[0]].matches('\n').count();
             return Ok(EditOutcome {
                 new_text: text.replace(search, replace),
                 mode: MatchMode::Exact,
-                start_line,
-                replaced_lines: replace.split('\n').count().max(1),
                 occurrences: n,
             });
         }
@@ -111,15 +100,8 @@ fn apply_edit(text: &str, search: &str, replace: &str, replace_all: bool) -> Res
         1 => {
             let i = stage2[0];
             let replacement = replace_lines(replace, "");
-            let replaced_lines = replacement.len().max(1);
             let new_text = splice(&t_lines, i, window, &replacement);
-            return Ok(EditOutcome {
-                new_text,
-                mode: MatchMode::IgnoreTrailingWs,
-                start_line: i,
-                replaced_lines,
-                occurrences: 1,
-            });
+            return Ok(EditOutcome { new_text, mode: MatchMode::IgnoreTrailingWs, occurrences: 1 });
         }
         n if n >= 2 && replace_all => {
             // 비중첩 탐욕: 시작이 직전 창의 끝 이전이면 건너뜀 (M5 §6.4)
@@ -134,12 +116,9 @@ fn apply_edit(text: &str, search: &str, replace: &str, replace_all: bool) -> Res
                 let repl = replace_lines(replace, "");
                 lines.splice(i..i + window, repl);
             }
-            let replaced_lines = replace_lines(replace, "").len().max(1);
             return Ok(EditOutcome {
                 new_text: lines.join("\n"),
                 mode: MatchMode::IgnoreTrailingWs,
-                start_line: kept[0],
-                replaced_lines,
                 occurrences: kept.len(),
             });
         }
@@ -157,15 +136,8 @@ fn apply_edit(text: &str, search: &str, replace: &str, replace_all: bool) -> Res
         1 => {
             let (i, indent) = &stage3[0];
             let replacement = replace_lines(replace, indent);
-            let replaced_lines = replacement.len().max(1);
             let new_text = splice(&t_lines, *i, window, &replacement);
-            Ok(EditOutcome {
-                new_text,
-                mode: MatchMode::IndentShift(indent.clone()),
-                start_line: *i,
-                replaced_lines,
-                occurrences: 1,
-            })
+            Ok(EditOutcome { new_text, mode: MatchMode::IndentShift(indent.clone()), occurrences: 1 })
         }
         n if n >= 2 && replace_all => {
             // 비중첩 탐욕 + 위치별 indent 적용 (M5 §6.4) — 각 창은 자기 indent로 재적용
@@ -180,13 +152,10 @@ fn apply_edit(text: &str, search: &str, replace: &str, replace_all: bool) -> Res
                 let repl = replace_lines(replace, indent);
                 lines.splice(*i..*i + window, repl);
             }
-            let (start_line, first_indent) = kept[0].clone();
-            let replaced_lines = replace_lines(replace, &first_indent).len().max(1);
+            let (_, first_indent) = kept[0].clone();
             Ok(EditOutcome {
                 new_text: lines.join("\n"),
                 mode: MatchMode::IndentShift(first_indent),
-                start_line,
-                replaced_lines,
                 occurrences: kept.len(),
             })
         }
@@ -325,23 +294,6 @@ impl EditFile {
     }
 }
 
-/// 편집 후 변경 부위 ±3줄 (M5 §6.1). 줄번호는 헤더에만 — 본문에 접두를 붙이면
-/// 모델이 다음 search에 복사한다
-fn render_context(new_text: &str, start_line: usize, replaced_lines: usize) -> String {
-    let mut lines: Vec<&str> = new_text.split('\n').collect();
-    if lines.last() == Some(&"") {
-        lines.pop(); // 후행 개행의 빈 꼬리 줄은 컨텍스트·줄 범위에서 제외
-    }
-    let from = start_line.saturating_sub(3);
-    let to = (start_line + replaced_lines + 3).min(lines.len());
-    format!(
-        "Context after edit (lines {}-{}):\n{}\nVerify this is what you intended.",
-        from + 1,
-        to,
-        lines[from..to].join("\n")
-    )
-}
-
 impl Tool for EditFile {
     fn name(&self) -> &'static str {
         "edit_file"
@@ -363,7 +315,7 @@ impl Tool for EditFile {
 
     fn run(&self, args: &serde_json::Value, ctx: &ToolCtx) -> Result<String, ToolError> {
         let args = parse(args)?;
-        let (_old, outcome, crlf) = self.dry_run(&args, ctx)?;
+        let (old, outcome, crlf) = self.dry_run(&args, ctx)?;
         let path = confine(&ctx.root, &args.path)?;
         std::fs::write(&path, restore_eol(&outcome.new_text, crlf))?;
         // occurrences 분기를 지금부터 사용 — Task 11 전까지는 항상 1이지만, 안 읽는
@@ -378,7 +330,7 @@ impl Tool for EditFile {
         } else {
             format!("Edited {} (matched {})", args.path, outcome.mode.describe())
         };
-        Ok(format!("{head}\n{}", render_context(&outcome.new_text, outcome.start_line, outcome.replaced_lines)))
+        Ok(format!("{head}\n{}", render_diff_for_model(&old, &outcome.new_text)))
     }
 }
 
@@ -564,29 +516,14 @@ mod tests {
     }
 
     #[test]
-    fn success_reports_post_edit_context_with_line_numbers_in_header_only() {
-        let (_d, ctx) = setup("l1\nl2\nl3\nl4\nOLD\nl6\nl7\nl8\nl9\n");
-        let out = edit(&ctx, "OLD", "NEW").unwrap();
-        assert!(out.contains("Context after edit (lines 2-8):"), "{out}");
-        assert!(out.contains("NEW"), "{out}");
-        assert!(out.contains("l2\nl3\nl4\nNEW\nl6\nl7\nl8"), "±3줄 원문 — 줄번호 접두 금지: {out}");
-        assert!(out.contains("Verify this is what you intended"), "{out}");
-    }
-
-    #[test]
-    fn context_clamps_at_file_boundaries() {
-        let (_d, ctx) = setup("OLD\nl2\n");
-        let out = edit(&ctx, "OLD", "NEW").unwrap();
-        assert!(out.contains("Context after edit (lines 1-2):"), "{out}");
-    }
-
-    #[test]
-    fn stage_two_deletion_keeps_replaced_lines_at_least_one() {
-        // 2단계(후행 공백 무시) 매칭에서 replace가 빈 문자열이면 replace_lines()가
-        // 빈 Vec을 반환 — replaced_lines가 0이 될 수 있다. 필드 계약(최소 1, 문서
-        // 주석 참조)을 지키려면 stage 1처럼 .max(1)로 보정되어야 한다.
+    fn stage_two_deletion_with_empty_replace_removes_the_matched_lines() {
+        // 2단계(후행 공백 무시) 매칭에서 replace가 빈 문자열이면 매치된 줄이 통째로
+        // 사라져야 한다 (M14 A-3: EditOutcome에서 start_line/replaced_lines 필드
+        // 제거 — render_context의 유일한 소비자였고 그 함수가 render_diff_for_model로
+        // 대체되며 필드 자체가 dead_code가 됨. 이 테스트가 원래 고정하던 성질 중
+        // "replaced_lines 최소 1" 불변식은 필드와 함께 사라졌고, "삭제가 실제로
+        // 적용된다"는 성질만 남아 이걸로 고정한다)
         let outcome = super::apply_edit("a;  \nb;\nc\n", "a;\nb;", "", false).unwrap();
-        assert_eq!(outcome.replaced_lines, 1, "삭제(빈 치환)도 replaced_lines는 최소 1이어야 함");
         assert_eq!(outcome.new_text, "c\n");
     }
 
@@ -643,5 +580,23 @@ mod tests {
             .unwrap();
         let t = String::from_utf8(std::fs::read(dir.path().join("f.rs")).unwrap()).unwrap();
         assert_eq!(t, "x\r\nD\r\ny\r\nD\r\n");
+    }
+
+    #[test]
+    fn a_deletion_is_visible_in_the_result_the_model_receives() {
+        let (dir, ctx) = setup("pub const A: u8 = 1;\npub const B: u8 = 2;\npub const C: u8 = 3;\nfn f() {}\n");
+        let out = EditFile
+            .run(
+                &serde_json::json!({
+                    "path": "f.rs",
+                    "search": "pub const A: u8 = 1;\npub const B: u8 = 2;\npub const C: u8 = 3;\n",
+                    "replace": ""
+                }),
+                &ctx,
+            )
+            .unwrap();
+        assert!(out.contains("-3 lines"), "삭제 개수가 안 보인다:\n{out}");
+        assert!(out.contains("-pub const A"), "삭제된 줄이 안 보인다:\n{out}");
+        drop(dir);
     }
 }
