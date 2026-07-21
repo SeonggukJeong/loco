@@ -1,0 +1,23 @@
+ls: /var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T//.cargo: No such file or directory
+/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T//loco-eval-30335-18:
+Cargo.lock
+Cargo.toml
+inv-cli
+inv-core
+inv-parse
+inv-report
+inv-store
+
+/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T//loco-eval-35047-2:
+ci
+
+/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T//loco-eval-35047-3:
+plain.txt
+run.sh
+
+/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T//loco-eval-35047-5:
+a.rs
+
+/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T//loco-eval-35372-5:
+Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s5   926Gi   373Gi   532Gi    42%    3.0M  5.6G    0%   /System/Volumes/Data

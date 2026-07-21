@@ -1,0 +1,34 @@
+[rg-1390-no-context-sep] 1/3 실행 중… (시드 0)
+(심링크 건너뜀: tasks-real/rg-1390-no-context-sep/fixture/HomebrewFormula)
+[rg-1390-no-context-sep] 1/3 — 실패 (MaxTurns, 24턴, 480.8s)
+[rg-1390-no-context-sep] 2/3 실행 중… (시드 1)
+(심링크 건너뜀: tasks-real/rg-1390-no-context-sep/fixture/HomebrewFormula)
+[rg-1390-no-context-sep] 2/3 — 실패 (MaxTurns, 25턴, 555.6s)
+[rg-1390-no-context-sep] 3/3 실행 중… (시드 2)
+(심링크 건너뜀: tasks-real/rg-1390-no-context-sep/fixture/HomebrewFormula)
+[rg-1390-no-context-sep] 3/3 — 실패 (Timeout, 24턴, 605.0s)
+[rg-1420-no-ignore-exclude] 1/3 실행 중… (시드 0)
+(심링크 건너뜀: tasks-real/rg-1420-no-ignore-exclude/fixture/HomebrewFormula)
+[rg-1420-no-ignore-exclude] 1/3 — 실패 (MaxTurns, 24턴, 382.3s)
+[rg-1420-no-ignore-exclude] 2/3 실행 중… (시드 1)
+(심링크 건너뜀: tasks-real/rg-1420-no-ignore-exclude/fixture/HomebrewFormula)
+[rg-1420-no-ignore-exclude] 2/3 — 실패 (Timeout, 23턴, 605.0s)
+[rg-1420-no-ignore-exclude] 3/3 실행 중… (시드 2)
+(심링크 건너뜀: tasks-real/rg-1420-no-ignore-exclude/fixture/HomebrewFormula)
+[rg-1420-no-ignore-exclude] 3/3 — 실패 (MaxTurns, 25턴, 251.8s)
+[rg-1466-no-ignore-files] 1/3 실행 중… (시드 0)
+(심링크 건너뜀: tasks-real/rg-1466-no-ignore-files/fixture/HomebrewFormula)
+[rg-1466-no-ignore-files] 1/3 — 실패 (RepetitionStop, 17턴, 241.2s)
+[rg-1466-no-ignore-files] 2/3 실행 중… (시드 1)
+(심링크 건너뜀: tasks-real/rg-1466-no-ignore-files/fixture/HomebrewFormula)
+[rg-1466-no-ignore-files] 2/3 — 실패 (MaxTurns, 25턴, 393.3s)
+[rg-1466-no-ignore-files] 3/3 실행 중… (시드 2)
+(심링크 건너뜀: tasks-real/rg-1466-no-ignore-files/fixture/HomebrewFormula)
+[rg-1466-no-ignore-files] 3/3 — 실패 (MaxTurns, 24턴, 308.8s)
+과제                                통과      엄격      평균 턴      평균 시간
+rg-1390-no-context-sep           0/3     0/3      24.3     547.1s
+rg-1420-no-ignore-exclude        0/3     0/3      24.0     413.0s
+rg-1466-no-ignore-files          0/3     0/3      22.0     314.4s
+전체 통과율 0.0% (0/9) · 엄격 0.0% (0/9) · 거짓 성공 finish 0 · 평균 424.9s/런 (시드 0부터, timeout×1)
+
+리포트: /Users/sgj/develop/loco/.loco/eval/20260721T082907Z/report.json

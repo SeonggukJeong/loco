@@ -1,0 +1,32 @@
+[fd-1873-path-sep] 1/3 실행 중… (시드 0)
+[fd-1873-path-sep] 1/3 — 실패 (Timeout, 2턴, 605.0s)
+[fd-1873-path-sep] 2/3 실행 중… (시드 1)
+[fd-1873-path-sep] 2/3 — 실패 (Timeout, 16턴, 605.0s)
+[fd-1873-path-sep] 3/3 실행 중… (시드 2)
+[fd-1873-path-sep] 3/3 — 실패 (Timeout, 19턴, 605.0s)
+[fd-404-min-exact-depth] 1/3 실행 중… (시드 0)
+[fd-404-min-exact-depth] 1/3 — 실패 (RepetitionStop, 12턴, 87.2s)
+[fd-404-min-exact-depth] 2/3 실행 중… (시드 1)
+[fd-404-min-exact-depth] 2/3 — 실패 (MaxTurns, 25턴, 160.2s)
+[fd-404-min-exact-depth] 3/3 실행 중… (시드 2)
+[fd-404-min-exact-depth] 3/3 — 실패 (MaxTurns, 25턴, 266.1s)
+[fd-535-prune] 1/3 실행 중… (시드 0)
+[fd-535-prune] 1/3 — 실패 (MaxTurns, 25턴, 317.3s)
+[fd-535-prune] 2/3 실행 중… (시드 1)
+[fd-535-prune] 2/3 — 실패 (Timeout, 13턴, 605.0s)
+[fd-535-prune] 3/3 실행 중… (시드 2)
+[fd-535-prune] 3/3 — 실패 (MaxTurns, 25턴, 289.9s)
+[fd-615-hidden-dot-pattern] 1/3 실행 중… (시드 0)
+[fd-615-hidden-dot-pattern] 1/3 — 실패 (MaxTurns, 24턴, 474.9s)
+[fd-615-hidden-dot-pattern] 2/3 실행 중… (시드 1)
+[fd-615-hidden-dot-pattern] 2/3 — 실패 (Timeout, 12턴, 605.0s)
+[fd-615-hidden-dot-pattern] 3/3 실행 중… (시드 2)
+[fd-615-hidden-dot-pattern] 3/3 — 실패 (Timeout, 9턴, 605.0s)
+과제                                통과      엄격      평균 턴      평균 시간
+fd-1873-path-sep                 0/3     0/3      12.3     605.0s
+fd-404-min-exact-depth           0/3     0/3      20.7     171.2s
+fd-535-prune                     0/3     0/3      21.0     404.0s
+fd-615-hidden-dot-pattern        0/3     0/3      15.0     561.6s
+전체 통과율 0.0% (0/12) · 엄격 0.0% (0/12) · 거짓 성공 finish 0 · 평균 435.5s/런 (시드 0부터, timeout×1)
+
+리포트: /Users/sgj/develop/loco/.loco/eval/20260721T043543Z/report.json

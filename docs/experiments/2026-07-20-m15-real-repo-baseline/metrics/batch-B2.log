@@ -1,0 +1,25 @@
+[delta-1089-whole-file-commit] 1/3 실행 중… (시드 0)
+[delta-1089-whole-file-commit] 1/3 — 실패 (Timeout, 9턴, 605.0s)
+[delta-1089-whole-file-commit] 2/3 실행 중… (시드 1)
+[delta-1089-whole-file-commit] 2/3 — 실패 (Timeout, 21턴, 605.0s)
+[delta-1089-whole-file-commit] 3/3 실행 중… (시드 2)
+[delta-1089-whole-file-commit] 3/3 — 실패 (MaxTurns, 24턴, 491.3s)
+[fd-675-number-parse-error] 1/3 실행 중… (시드 0)
+[fd-675-number-parse-error] 1/3 — 실패 (MaxTurns, 24턴, 388.0s)
+[fd-675-number-parse-error] 2/3 실행 중… (시드 1)
+[fd-675-number-parse-error] 2/3 — 실패 (MaxTurns, 24턴, 331.3s)
+[fd-675-number-parse-error] 3/3 실행 중… (시드 2)
+[fd-675-number-parse-error] 3/3 — 실패 (Timeout, 10턴, 605.0s)
+[fd-898-strip-cwd-exec] 1/3 실행 중… (시드 0)
+[fd-898-strip-cwd-exec] 1/3 — 실패 (MaxTurns, 25턴, 458.5s)
+[fd-898-strip-cwd-exec] 2/3 실행 중… (시드 1)
+[fd-898-strip-cwd-exec] 2/3 — 실패 (Timeout, 14턴, 605.0s)
+[fd-898-strip-cwd-exec] 3/3 실행 중… (시드 2)
+[fd-898-strip-cwd-exec] 3/3 — 실패 (MaxTurns, 23턴, 546.2s)
+과제                                통과      엄격      평균 턴      평균 시간
+delta-1089-whole-file-commit     0/3     0/3      18.0     567.1s
+fd-675-number-parse-error        0/3     0/3      19.3     441.4s
+fd-898-strip-cwd-exec            0/3     0/3      20.7     536.6s
+전체 통과율 0.0% (0/9) · 엄격 0.0% (0/9) · 거짓 성공 finish 0 · 평균 515.0s/런 (시드 0부터, timeout×1)
+
+리포트: /Users/sgj/develop/loco/.loco/eval/20260721T060346Z/report.json

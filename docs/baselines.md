@@ -1245,8 +1245,14 @@ H9: 전 런 `effective_context_tokens=32768`.
   (트랙·프롬프트·채점·규모가 다름).
 - `n_ctx_slot(37632) ≠ context_tokens(32768)` — 분기 2 형태 첫 배치.
 
-### 다음
+### 다음 · closeout (2026-07-21)
 
-- M16 후보: 레포 온보딩 하네스 (`docs/m16-candidates.md`) — 스펙은 후속 세션.
-- main 병합: 인프라 Ready와 베이스라인 실격을 **구분** (사전등록 A5).
+- 게이트 재확인: `cargo test` 436 · clippy clean · `eval --verify` tasks 12/12 ·
+  tasks-large 3/3 · tasks-real **17/17** (closeout 로그: 실험 dir `metrics/closeout-verify-*.txt`).
+- 수치 교차검증: 5 stamp `report.json` 합 **0/51** · ff **1** · outcome
+  max_turns 27 / timeout 18 / repetition_stop 5 / finished 1 · 전패 17 ·
+  H9 `effective_context_tokens=32768` 전 런 — `report.md`/본 절과 일치.
+- metrics 산출물(배치 로그·프리플라이트·`serve-37601.log`·stamps) 실험 dir에 동결.
+- M16 후보: 레포 온보딩 하네스 (`docs/m16-candidates.md`) — 스펙은 후속.
+- main 병합: 인프라 Ready와 베이스라인 실격을 **구분** (사전등록 A5) — **사용자 판정**.
 
