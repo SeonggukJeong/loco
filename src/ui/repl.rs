@@ -91,7 +91,7 @@ pub async fn run_repl(
     ctx.command_timeout = std::time::Duration::from_secs(config.command_timeout_secs);
     let cancel = ctx.cancel.clone();
     let deny = compile_patterns(&config.auto_deny_patterns)?; // 셋업에서 1회 컴파일
-    let mut agent = Agent::new(client, Registry::guided(), ctx, model.to_string(), config);
+    let mut agent = Agent::new(client, Registry::guided(config.repo_notes), ctx, model.to_string(), config);
     // 셋업: 트랜스크립트 실패는 경고 후 비활성 (기록이 에이전트를 못 죽인다)
     let transcript = Transcript::create_under(&root).unwrap_or_else(|e| {
         println!("(세션 기록을 열지 못했습니다: {e} — 기록 없이 진행)");

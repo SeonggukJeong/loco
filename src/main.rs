@@ -127,7 +127,7 @@ async fn run_oneshot(
     let mut ctx = ToolCtx::new(root.clone());
     ctx.command_timeout = std::time::Duration::from_secs(config.command_timeout_secs);
     let cancel = ctx.cancel.clone();
-    let mut agent = Agent::new(client, Registry::guided(), ctx, model.to_string(), config);
+    let mut agent = Agent::new(client, Registry::guided(config.repo_notes), ctx, model.to_string(), config);
     let transcript = Transcript::create_under(&root).unwrap_or_else(|e| {
         eprintln!("(세션 기록을 열지 못했습니다: {e} — 기록 없이 진행)");
         Transcript::disabled()

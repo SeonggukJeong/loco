@@ -27,6 +27,8 @@ pub struct EffectiveConfig {
     pub max_turns: usize,
     pub command_timeout_secs: u64,
     pub loco_version: String,
+    /// Post-eval-policy `repo_notes` (M16). Forced false unless tasks_dir basename is `tasks-real`.
+    pub repo_notes: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -351,6 +353,7 @@ mod tests {
                 max_turns: 25,
                 command_timeout_secs: 60,
                 loco_version: "test".into(),
+                repo_notes: false,
             },
         }
     }
@@ -382,7 +385,16 @@ mod tests {
     fn report_json_snapshots_effective_config() {
         let v = serde_json::to_value(sample_report()).unwrap();
         let ec = v.get("effective_config").expect("유효 config 스냅샷 (스펙 M5 §4.3)");
-        for key in ["base_url", "temperature", "context_tokens", "max_output_tokens", "max_turns", "command_timeout_secs", "loco_version"] {
+        for key in [
+            "base_url",
+            "temperature",
+            "context_tokens",
+            "max_output_tokens",
+            "max_turns",
+            "command_timeout_secs",
+            "loco_version",
+            "repo_notes",
+        ] {
             assert!(ec.get(key).is_some(), "effective_config에 {key}");
         }
     }

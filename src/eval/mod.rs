@@ -42,6 +42,15 @@ pub struct EvalRun {
     pub report_path: PathBuf,
 }
 
+/// Eval force for M16 `repo_notes`: only basename `tasks-real` keeps the config
+/// value; every other tasks_dir (tasks, tasks-large, tempdirs, …) is forced off.
+pub fn apply_eval_repo_notes_policy(tasks_dir: &Path, cfg: &mut Config) {
+    let is_real = tasks_dir.file_name().and_then(|s| s.to_str()) == Some("tasks-real");
+    if !is_real {
+        cfg.repo_notes = false;
+    }
+}
+
 pub async fn run_eval<C: LlmClient>(
     client: &C,
     config: &Config,
@@ -49,6 +58,10 @@ pub async fn run_eval<C: LlmClient>(
     opts: &EvalOptions,
     project_root: &Path,
 ) -> anyhow::Result<EvalRun> {
+    // M16: one post-policy clone for Agent, registry, and EffectiveConfig (same cfg).
+    let mut cfg = config.clone();
+    apply_eval_repo_notes_policy(&opts.tasks_dir, &mut cfg);
+
     let tasks = task::filter_tasks(task::load_tasks(&opts.tasks_dir)?, &opts.filters)?;
     let started = Instant::now();
     let started_at = utc_stamp(now_secs());
@@ -95,7 +108,7 @@ pub async fn run_eval<C: LlmClient>(
                 }
                 let seed = opts.base_seed + repeat as u64;
                 eprintln!("[{}] {}/{} 실행 중… (시드 {seed})", t.name, repeat + 1, opts.repeats);
-                match run_once(client, config, model, t, seed, repeat, opts, &report_dir, &interrupt, &cargo_snapshot).await? {
+                match run_once(client, &cfg, model, t, seed, repeat, opts, &report_dir, &interrupt, &cargo_snapshot).await? {
                     Some(rec) => {
                         eprintln!(
                             "[{}] {}/{} — {} ({:?}, {}턴, {:.1}s)",
@@ -140,13 +153,14 @@ pub async fn run_eval<C: LlmClient>(
         avg_duration_secs: Report::avg_duration_of(&task_reports),
         tasks: task_reports,
         effective_config: EffectiveConfig {
-            base_url: config.base_url.clone(),
-            temperature: config.temperature,
-            context_tokens: config.context_tokens,
-            max_output_tokens: config.max_output_tokens,
-            max_turns: config.max_turns,
-            command_timeout_secs: config.command_timeout_secs,
+            base_url: cfg.base_url.clone(),
+            temperature: cfg.temperature,
+            context_tokens: cfg.context_tokens,
+            max_output_tokens: cfg.max_output_tokens,
+            max_turns: cfg.max_turns,
+            command_timeout_secs: cfg.command_timeout_secs,
             loco_version: env!("CARGO_PKG_VERSION").to_string(),
+            repo_notes: cfg.repo_notes,
         },
     };
     let report_path = report_dir.join("report.json");
@@ -187,7 +201,7 @@ async fn run_once<C: LlmClient>(
     let mut ctx = ToolCtx::new(sb.root.clone());
     ctx.command_timeout = Duration::from_secs(cfg.command_timeout_secs);
     let cancel = ctx.cancel.clone();
-    let mut agent = Agent::new(client, Registry::guided(), ctx, model.to_string(), &cfg);
+    let mut agent = Agent::new(client, Registry::guided(cfg.repo_notes), ctx, model.to_string(), &cfg);
     agent.set_seed(seed);
     let transcript_path = report_dir.join(format!("run-{}-{repeat}.jsonl", t.name));
     let transcript = Transcript::create_at(&transcript_path).unwrap_or_else(|e| {
@@ -449,6 +463,34 @@ mod unit_tests {
     }
 
     #[test]
+    fn eval_repo_notes_policy_forces_false_for_non_real_dirs() {
+        // Default is true; tempdir basename is not "tasks-real" → forced off
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = Config::default();
+        assert!(cfg.repo_notes);
+        apply_eval_repo_notes_policy(dir.path(), &mut cfg);
+        assert!(!cfg.repo_notes, "tempdir must force repo_notes=false");
+
+        let mut cfg2 = Config::default();
+        apply_eval_repo_notes_policy(Path::new("tasks"), &mut cfg2);
+        assert!(!cfg2.repo_notes);
+        let mut cfg3 = Config::default();
+        apply_eval_repo_notes_policy(Path::new("tasks-large"), &mut cfg3);
+        assert!(!cfg3.repo_notes);
+    }
+
+    #[test]
+    fn eval_repo_notes_policy_keeps_config_for_tasks_real() {
+        let mut cfg = Config { repo_notes: true, ..Default::default() };
+        apply_eval_repo_notes_policy(Path::new("/data/tasks-real"), &mut cfg);
+        assert!(cfg.repo_notes, "tasks-real must not force off");
+
+        let mut cfg_off = Config { repo_notes: false, ..Default::default() };
+        apply_eval_repo_notes_policy(Path::new("tasks-real"), &mut cfg_off);
+        assert!(!cfg_off.repo_notes, "explicit false still false on tasks-real");
+    }
+
+    #[test]
     fn judge_deletes_agent_created_dot_cargo() {
         // sync_protected에 .cargo가 암묵 합류하는지 — judge를 직접 부르지 않고
         // 합집합 헬퍼를 검증한다 (judge는 exec_shell 의존이라 unix 게이트 대상)
@@ -676,6 +718,41 @@ protected = ["data"]
         // M15 H7: 되돌리기 전에 센 변경 발자국 — data/expected.txt 수정 1 +
         // data/extra.txt 추가 1 = 2. 판정(pass_rate)에는 영향이 없다
         assert_eq!(t.runs[0].protected_edits, 2, "리워드 해킹 발자국이 기록돼야 한다");
+        // M16: tempdir basename ≠ tasks-real → EffectiveConfig.repo_notes forced false
+        // even though Config::default().repo_notes is true
+        assert!(
+            !run.report.effective_config.repo_notes,
+            "non-tasks-real eval must snapshot repo_notes=false"
+        );
+        assert_eq!(json["effective_config"]["repo_notes"], false);
+    }
+
+    /// M16: tasks_dir basename `tasks-real` does not force repo_notes off.
+    #[tokio::test]
+    async fn tasks_real_basename_keeps_repo_notes_in_effective_config() {
+        let outer = tempfile::tempdir().unwrap();
+        let tasks = outer.path().join("tasks-real");
+        std::fs::create_dir_all(&tasks).unwrap();
+        let proj = tempfile::tempdir().unwrap();
+        write_task(
+            &tasks,
+            "demo",
+            "prompt = \"x\"\ncheck = \"true\"\nprotected = [\"data\"]\n",
+            &[("data/keep.txt", "K\n")],
+        );
+        let script = Scripted::new(vec![ok(&finish("done"))]);
+        let config = Config { repo_notes: true, ..Default::default() };
+        let o = opts(tasks);
+        let run = run_eval(&script, &config, "test-model", &o, proj.path())
+            .await
+            .unwrap();
+        assert!(
+            run.report.effective_config.repo_notes,
+            "tasks-real keeps config.repo_notes=true in EffectiveConfig"
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&run.report_path).unwrap()).unwrap();
+        assert_eq!(json["effective_config"]["repo_notes"], true);
     }
 
     /// M13 스펙 §3-6-1: json_schema 폴백이 발동한 런은 report.json에 그렇게 기록돼야

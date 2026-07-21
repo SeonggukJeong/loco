@@ -7,6 +7,7 @@ pub mod diff;
 pub mod write_file;
 pub mod edit_file;
 pub mod run_command;
+pub mod update_repo_notes;
 pub(crate) mod exec;
 
 use std::path::PathBuf;
@@ -130,16 +131,21 @@ impl Registry {
         ])
     }
 
-    /// M3 가이드형 툴 세트 (스펙 §4의 7툴 중 finish 제외 6개 — finish는 루프 담당)
-    pub fn guided() -> Self {
-        Self::new(vec![
+    /// 가이드형 툴 세트 (finish는 루프 담당).
+    /// `repo_notes`가 true이면 `update_repo_notes`를 포함 (M16 §3-3 / §3-4).
+    pub fn guided(repo_notes: bool) -> Self {
+        let mut tools: Vec<Box<dyn Tool + Send + Sync>> = vec![
             Box::new(read_file::ReadFile),
             Box::new(list_files::ListFiles),
             Box::new(grep::Grep),
             Box::new(write_file::WriteFile),
             Box::new(edit_file::EditFile),
             Box::new(run_command::RunCommand),
-        ])
+        ];
+        if repo_notes {
+            tools.push(Box::new(update_repo_notes::UpdateRepoNotes));
+        }
+        Self::new(tools)
     }
 }
 
@@ -195,11 +201,29 @@ mod tests {
     }
 
     #[test]
-    fn guided_registry_has_all_six_tools() {
-        let reg = Registry::guided();
+    fn guided_false_has_six_tools_without_notes() {
+        let reg = Registry::guided(false);
         assert_eq!(
             reg.names(),
             vec!["read_file", "list_files", "grep", "write_file", "edit_file", "run_command"]
+        );
+        assert!(!reg.names().contains(&"update_repo_notes"));
+    }
+
+    #[test]
+    fn guided_true_has_seven_tools_including_notes() {
+        let reg = Registry::guided(true);
+        assert_eq!(
+            reg.names(),
+            vec![
+                "read_file",
+                "list_files",
+                "grep",
+                "write_file",
+                "edit_file",
+                "run_command",
+                "update_repo_notes",
+            ]
         );
     }
 
@@ -219,7 +243,7 @@ mod tests {
 
     #[test]
     fn serde_bad_args_echoes_schema_and_received_keys() {
-        let reg = Registry::guided();
+        let reg = Registry::guided(false);
         let err = reg
             .dispatch("edit_file", &serde_json::json!({"pattern": "median", "path": "src"}), &ctx())
             .unwrap_err();
@@ -234,7 +258,7 @@ mod tests {
         // read_file의 offset 초과는 이미 구체적 — 스키마 에코를 붙이지 않는다
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("f.txt"), "one line").unwrap();
-        let reg = Registry::guided();
+        let reg = Registry::guided(false);
         let c = ToolCtx::new(dir.path().to_path_buf());
         let err = reg.dispatch("read_file", &serde_json::json!({"path": "f.txt", "offset": 99}), &c).unwrap_err();
         assert!(!err.to_string().contains("Expected:"), "{err}");

@@ -15,6 +15,9 @@ pub struct Config {
     pub command_timeout_secs: u64,
     /// --auto 가드레일 차단 패턴 (스펙 §5). 기본값은 [`default_deny_patterns`] 참고
     pub auto_deny_patterns: Vec<String>,
+    /// Hierarchical repo notes onboarding (M16). Product default on; eval forces
+    /// off for non-`tasks-real` dirs (see `eval::apply_eval_repo_notes_policy`).
+    pub repo_notes: bool,
 }
 
 impl Default for Config {
@@ -29,6 +32,7 @@ impl Default for Config {
             max_turns: 25,
             command_timeout_secs: 60,
             auto_deny_patterns: default_deny_patterns(),
+            repo_notes: true,
         }
     }
 }
@@ -61,6 +65,7 @@ struct PartialConfig {
     max_turns: Option<usize>,
     command_timeout_secs: Option<u64>,
     auto_deny_patterns: Option<Vec<String>>,
+    repo_notes: Option<bool>,
 }
 
 impl Config {
@@ -91,6 +96,9 @@ impl Config {
         }
         if let Some(v) = p.auto_deny_patterns {
             self.auto_deny_patterns = v;
+        }
+        if let Some(v) = p.repo_notes {
+            self.repo_notes = v;
         }
     }
 
@@ -145,6 +153,19 @@ mod tests {
         assert!(c.auto_deny_patterns.iter().any(|p| p.contains("sudo")));
         assert!(c.auto_deny_patterns.iter().any(|p| p.contains("git")));
         assert!(c.auto_deny_patterns.len() >= 11);
+        // M16: product default on (eval forces off for non-tasks-real)
+        assert!(c.repo_notes);
+    }
+
+    #[test]
+    fn repo_notes_false_in_toml_applies() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("c.toml");
+        std::fs::write(&f, "repo_notes = false\n").unwrap();
+        let c = Config::load(&[f]).unwrap();
+        assert!(!c.repo_notes);
+        // other defaults preserved
+        assert_eq!(c.max_turns, 25);
     }
 
     #[test]

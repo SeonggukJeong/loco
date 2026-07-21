@@ -958,8 +958,9 @@ mod tests {
     }
 
     fn make_guided_agent(script: &Scripted, root: std::path::PathBuf, max_turns: usize) -> Agent<&Scripted> {
-        let config = Config { max_turns, ..Default::default() };
-        Agent::new(script, Registry::guided(), ToolCtx::new(root), "test-model".into(), &config)
+        // M16: legacy mut tests opt out of notes (gate lands in T3; keep false-paired)
+        let config = Config { max_turns, repo_notes: false, ..Default::default() };
+        Agent::new(script, Registry::guided(false), ToolCtx::new(root), "test-model".into(), &config)
     }
 
     fn session_contains(session: &Session, needle: &str) -> bool {
@@ -1390,11 +1391,12 @@ mod tests {
         let config = Config {
             context_tokens: 4096,
             max_output_tokens: 2048, // 예산 1843
+            repo_notes: false,
             ..Default::default()
         };
         let mut agent = Agent::new(
             &script,
-            Registry::guided(),
+            Registry::guided(false),
             ToolCtx::new(dir.path().to_path_buf()),
             "m".into(),
             &config,
@@ -1444,10 +1446,10 @@ mod tests {
             ok_with_reasoning("", "I was thinking about src/lib.rs", "length"),
             ok(&finish("done")),
         ]);
-        let config = Config::default();
+        let config = Config { repo_notes: false, ..Default::default() };
         let mut agent = Agent::new(
             &script,
-            Registry::guided(),
+            Registry::guided(false),
             ToolCtx::new(dir.path().to_path_buf()),
             "m".into(),
             &config,
@@ -1470,10 +1472,10 @@ mod tests {
         // 오버플로 Notice(M13에서 "0이 아니라 미측정"이던 바로 그 신호)
         let overflow = || Err(LlmError::Api { status: 400, body: "context length exceeded".into() });
         let script = Scripted::new(vec![overflow(), ok_with_reason("cut", "length"), ok(&finish("done"))]);
-        let config = Config::default();
+        let config = Config { repo_notes: false, ..Default::default() };
         let mut agent = Agent::new(
             &script,
-            Registry::guided(),
+            Registry::guided(false),
             ToolCtx::new(dir.path().to_path_buf()),
             "m".into(),
             &config,
@@ -1854,8 +1856,8 @@ mod tests {
         let write = ok(&turn("write_file", serde_json::json!({"path": "f.txt", "content": "CHANGED"})));
         // finish 2개: Task 15의 검증 넛지가 1차 finish를 반려한다 (Task 14 시점엔 2번째가 남아도 무해)
         let script = Scripted::new(vec![read(), read(), read(), read(), write, read(), ok(&finish("done")), ok(&finish("done"))]);
-        let config = Config { max_turns: 25, ..Default::default() };
-        let mut agent = Agent::new(&script, Registry::guided(), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
+        let config = Config { max_turns: 25, repo_notes: false, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(false), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
         let mut session = new_session(&agent);
         let outcome = agent.run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
@@ -1904,8 +1906,8 @@ mod tests {
         // 서로 다른 args의 edit_file이 같은 에러(첫 줄)를 3연속 수신
         let e = |s: &str| ok(&turn("edit_file", serde_json::json!({"path": "f.txt", "search": s, "replace": "y"})));
         let script = Scripted::new(vec![e("no1"), e("no2"), e("no3"), ok(&finish("giving up"))]);
-        let config = Config { max_turns: 25, ..Default::default() };
-        let mut agent = Agent::new(&script, Registry::guided(), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
+        let config = Config { max_turns: 25, repo_notes: false, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(false), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
         let mut session = new_session(&agent);
         let outcome = agent.run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
@@ -2166,8 +2168,8 @@ mod tests {
             ok(&finish("done without verify")),   // 1차 — 반려
             ok(&finish("done anyway")),           // 2차 — 통과
         ]);
-        let config = Config { max_turns: 25, ..Default::default() };
-        let mut agent = Agent::new(&script, Registry::guided(), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
+        let config = Config { max_turns: 25, repo_notes: false, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(false), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
         let mut session = new_session(&agent);
         let outcome = agent.run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await.unwrap();
         match outcome {
@@ -2186,8 +2188,8 @@ mod tests {
             ok(&turn("run_command", serde_json::json!({"command": "exit 3"}))), // 실패해도 "검증 실행"
             ok(&finish("verified")),
         ]);
-        let config = Config { max_turns: 25, ..Default::default() };
-        let mut agent = Agent::new(&script, Registry::guided(), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
+        let config = Config { max_turns: 25, repo_notes: false, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(false), ToolCtx::new(dir.path().to_path_buf()), "test-model".into(), &config);
         let mut session = new_session(&agent);
         let outcome = agent.run(&mut session, "x", &mut crate::agent::approval::AutoApprover::default(), &mut |_| {}).await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
@@ -2312,8 +2314,8 @@ mod tests {
                 ok(&turn("list_files", serde_json::json!({}))),
                 ok(&finish("done")),
             ]);
-            let config = Config { max_turns: 25, ..Default::default() };
-            let mut agent = Agent::new(&script, Registry::guided(), ctx, "test-model".into(), &config);
+            let config = Config { max_turns: 25, repo_notes: false, ..Default::default() };
+            let mut agent = Agent::new(&script, Registry::guided(false), ctx, "test-model".into(), &config);
             let mut session = new_session(&agent);
             run_quiet(&mut agent, &mut session, "x").await.unwrap();
             assert!(!session_contains(&session, "do not re-verify"), "타임아웃 검증은 무장하지 않음");
@@ -2491,8 +2493,8 @@ mod tests {
             ok(&finish("done")), // 타임아웃은 empty_verify가 아니므로 VERIFY_NUDGE를 해제한다
             ok(&finish("done2")), // 뮤테이션 시에만 소모됨(오탐 empty_verify로 1회 더 반려)
         ]);
-        let config = Config { max_turns: 25, ..Default::default() };
-        let mut agent = Agent::new(&script, Registry::guided(), ctx, "test-model".into(), &config);
+        let config = Config { max_turns: 25, repo_notes: false, ..Default::default() };
+        let mut agent = Agent::new(&script, Registry::guided(false), ctx, "test-model".into(), &config);
         let mut session = new_session(&agent);
         let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
@@ -3002,10 +3004,15 @@ mod tests {
         // pack()이 시스템 프롬프트와 마지막 메시지만 남기고 전부 지운다
         let dir = tempfile::tempdir().unwrap();
         let script = Scripted::new(vec![]);
-        let config = Config { context_tokens: 4096, max_output_tokens: 8192, ..Default::default() };
+        let config = Config {
+            context_tokens: 4096,
+            max_output_tokens: 8192,
+            repo_notes: false,
+            ..Default::default()
+        };
         let agent = Agent::new(
             &script,
-            Registry::guided(),
+            Registry::guided(false),
             ToolCtx::new(dir.path().to_path_buf()),
             "test-model".into(),
             &config,

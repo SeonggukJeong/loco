@@ -377,11 +377,11 @@ mod tests {
     fn badargs_key_prefix_matches_actual_missing_field_errors_only() {
         // 도구 오류문(tools/mod.rs의 스키마 에코 경로)과 BADARGS_KEY_PREFIX의 드리프트를
         // 고정하는 교차 핀 (M12 §3-1). sr_key_matches_actual_edit_file_error_first_sentence를
-        // 본떠, Registry::guided().dispatch로 실제 바디를 만들어 접두를 검증한다.
+        // 본떠, Registry::guided(false).dispatch로 실제 바디를 만들어 접두를 검증한다.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("f.rs"), "x\n").unwrap();
         let ctx = crate::tools::ToolCtx::new(dir.path().to_path_buf());
-        let reg = crate::tools::Registry::guided();
+        let reg = crate::tools::Registry::guided(false);
 
         // missing field — edit_file/write_file/run_command 전부 접두가 매치해야 한다
         for (tool, args) in [
