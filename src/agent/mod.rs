@@ -306,6 +306,32 @@ impl<C: LlmClient> Agent<C> {
                 }
             };
 
+            // M15 H13·§5-2 ②: 축 C의 원자료. 측정 지점 = **응답을 만들어낸
+            // 마지막 반복의 직렬화 직전 히스토리**. 세 사실이 이것을 보장한다:
+            // ① 오버플로 재시도는 위 loop 안에서 축소 예산으로 다시 pack하므로
+            //    루프 종료 후 읽어야 마지막 반복의 상태다
+            // ② chat_with_fallback은 inline_system을 켜기만 하고 끄지 못하므로
+            //    (:758-763) 호출 후 값이 곧 성공한 요청이 쓴 값이다 —
+            //    직렬화 메시지 집합을 바꾸므로 §5-3의 층화 키로 남긴다
+            // ③ 루프 종료와 이 지점 사이에 히스토리를 바꾸는 문장이 없다
+            //
+            // ⚠ 기록만 한다 — 히스토리·상태선·모델 대면 텍스트 어디에도 안 나간다(§5-6)
+            let est = session.total_tokens();
+            let n_msgs = session.messages().len();
+            session.record_extra(
+                "usage",
+                &serde_json::json!({
+                    "prompt_tokens": resp.prompt_tokens(),
+                    "completion_tokens": resp.completion_tokens(),
+                    "estimate_tokens": est,
+                    "messages": n_msgs,
+                    "budget": self.input_budget(),
+                    "inline_system": self.inline_system,
+                    "overflow_shrinks": overflow_shrinks,
+                })
+                .to_string(),
+            );
+
             // length 판정 **전**에 무조건 기록 — length 턴도 세야 하는 게 이 기록의
             // 목적이다(M14 C-2, M13이 "빈-content 턴"으로만 대리 추정하던 것)
             if let Some(fr) = resp.finish_reason() {
@@ -864,6 +890,24 @@ mod tests {
         ok_with_reason(text, "stop")
     }
 
+    /// M15 H13 — usage를 실은 응답. 기존 `ok()`는 `usage: None`이다
+    fn ok_with_usage(text: &str, prompt: u32, completion: u32) -> Result<ChatResponse, LlmError> {
+        Ok(ChatResponse {
+            choices: vec![Choice {
+                message: ResponseMessage {
+                    role: "assistant".into(),
+                    content: Some(text.into()),
+                    reasoning_content: None,
+                },
+                finish_reason: Some("stop".into()),
+            }],
+            usage: Some(crate::llm::types::Usage {
+                completion_tokens: Some(completion),
+                prompt_tokens: Some(prompt),
+            }),
+        })
+    }
+
     fn turn(tool: &str, args: serde_json::Value) -> String {
         serde_json::json!({"thought": "t", "action": {"tool": tool, "args": args}}).to_string()
     }
@@ -1413,6 +1457,61 @@ mod tests {
         // 오버플로 Notice: M13 스펙 리뷰 C1이 지적한 "배치는 끝났는데 흔적 0" 공백
         assert!(jsonl.contains("\"kind\":\"notice\""), "notice kind가 안 남았다:\n{jsonl}");
         assert!(jsonl.contains("컨텍스트 초과로 보임"), "오버플로 notice 본문이 안 남았다:\n{jsonl}");
+    }
+
+    /// M15 H13·§5-2 ② — 턴마다 서버 실측과 추정치를 나란히 남긴다.
+    /// 측정 지점은 **응답을 만들어낸 마지막 반복의 직렬화 직전 히스토리**다.
+    /// ⚠ `new_session`은 `Transcript::disabled()`라 이 테스트에 못 쓴다 —
+    /// 실 파일이어야 단언이 공허하지 않다(M14가 같은 함정을 겪었다)
+    #[tokio::test]
+    async fn each_turn_records_usage_next_to_the_estimate() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        let script = Scripted::new(vec![ok_with_usage(&finish("done"), 999, 11)]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let out = run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+        assert!(matches!(out, AgentOutcome::Finished(_)));
+
+        let text = std::fs::read_to_string(&tpath).unwrap();
+        let rec: serde_json::Value = text
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .find(|v| v["kind"] == "usage")
+            .expect("턴마다 usage 이벤트가 있어야 한다");
+        let body: serde_json::Value =
+            serde_json::from_str(rec["content"].as_str().unwrap()).unwrap();
+        assert_eq!(body["prompt_tokens"], 999);
+        assert_eq!(body["completion_tokens"], 11);
+        assert!(body["estimate_tokens"].as_u64().unwrap() > 0, "추정치가 나란히 있어야 한다");
+        assert!(body["budget"].as_u64().unwrap() > 0);
+        assert_eq!(body["inline_system"], false, "§5-3 층화 키");
+        assert_eq!(body["overflow_shrinks"], 0);
+    }
+
+    /// 짝 — 서버가 usage를 안 주면 `null`이어야 한다. 0으로 떨어지면 §5-3 회귀가
+    /// 원점을 지나는 거짓 관측을 얻는다(T10의 `missing_usage_is_none_not_zero`와 같은 규율)
+    #[tokio::test]
+    async fn missing_usage_records_null_not_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        let script = Scripted::new(vec![ok(&finish("done"))]); // usage: None
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+
+        let text = std::fs::read_to_string(&tpath).unwrap();
+        let rec: serde_json::Value = text
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .find(|v| v["kind"] == "usage")
+            .expect("usage 이벤트는 서버 응답과 무관하게 남아야 한다");
+        let body: serde_json::Value =
+            serde_json::from_str(rec["content"].as_str().unwrap()).unwrap();
+        assert!(body["prompt_tokens"].is_null(), "0이 아니라 null: {body}");
+        assert!(body["estimate_tokens"].as_u64().unwrap() > 0, "추정치는 서버와 무관하게 있다");
     }
 
     #[tokio::test]
