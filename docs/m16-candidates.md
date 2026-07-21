@@ -2,8 +2,11 @@
 
 **작성**: 2026-07-21 · **근거**: M15 `tasks-real` 베이스라인 배치(완주) +
 M13 실사용 파일럿 + 세션 논의(레포 온보딩·요약 컨텍스트)
-**상태**: 후보·설계 논의. 수치 원천 = `docs/baselines.md` M15 절 ·
-`docs/experiments/2026-07-20-m15-real-repo-baseline/report.md` (0/51 · 실격 확정).
+**상태**: **슈퍼시드됨** — 스펙·플랜 확정. 구현은 SDD 대기.
+  - 스펙: `docs/superpowers/specs/2026-07-21-m16-repo-onboarding-design.md` (개정 2, 2R Ready: Yes)
+  - 플랜: `docs/superpowers/plans/2026-07-21-m16-repo-onboarding.md`
+  - SDD 인수인계: `docs/superpowers/plans/2026-07-21-m16-sdd-handoff.md`
+  - 수치 원천: `docs/baselines.md` M15 · 실험 report (0/51 · 실격)
 
 ## 0. 이 문서를 읽는 법
 
@@ -249,3 +252,4 @@ M15 `rg-1293` finished 1건. 온보딩과 직교. 짧은 티켓으로 분리 가
 |---|---|
 | 2026-07-21 | 초안: 온보딩 하네스 A–E, B 권고 방향, 설계 질문, M15 부분 근거 |
 | 2026-07-21 | M15 closeout 반영: 0/51 확정 수치, §4-4 잔여 닫힘, 상태 문구 최종화 |
+| 2026-07-21 | 스펙·플랜 확정 후 본 문서는 **슈퍼시드** — SDD handoff로 포인터 |
