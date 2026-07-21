@@ -649,6 +649,37 @@ impl<C: LlmClient> Agent<C> {
                         tracker.record_mutation_ok(p);
                     }
                 }
+                // M15 H10·§5-4: 항해/수선 지표의 원자료. **툴별로 분리**한다 —
+                // 셋을 한 집합으로 합치면 §1-1 축의 근거인 M8 실패 분석의
+                // "미열람(grep만)" 구분이 사라져 축과 계측기가 어긋난다.
+                //
+                // 항해 지표를 read_file 집합만으로 정의하는 것은 **축의 정의에서
+                // 나오는 설계 결정**이지 기술적 제약이 아니다. §1-1이 이 트랙의
+                // 축을 세운 근거가 M8 실패 분석의 "monthly.rs 미열람(grep만)"이고,
+                // 그 구분은 "grep으로 스쳤는가"와 "열어서 읽었는가"를 **가르는 것이
+                // 목적**이다 — 그래서 grep으로 오라클을 지목한 런을 항해 성공에서
+                // 빼는 것은 부작용이 아니라 의도된 방향이다.
+                // ⚠ grep은 path로 **파일 하나를 지목할 수 있다**(grep.rs의
+                // `if base.is_file()` 분기). "grep은 경로를 못 준다"는 것은 사실이
+                // 아니다 — 스펙 개정 10이 이 근거를 정정했다. list_files는 참이다
+                // (walk_entries가 `if p == base { continue }`로 시작점을 버린다).
+                // 경로는 status_note::normalize로 정규화해 표기 변형을 합산한다
+                if matches!(
+                    turn.action.tool.as_str(),
+                    "read_file" | "edit_file" | "write_file" | "grep" | "list_files"
+                ) {
+                    let touched = matches!(
+                        turn.action.tool.as_str(),
+                        "read_file" | "edit_file" | "write_file"
+                    )
+                    .then(|| turn.action.args.get("path").and_then(|v| v.as_str()))
+                    .flatten()
+                    .map(status_note::normalize);
+                    session.record_extra(
+                        "touch",
+                        &serde_json::json!({"tool": turn.action.tool, "path": touched}).to_string(),
+                    );
+                }
             }
             finish_missing_streak = 0;
             let ev = match turn.action.tool.as_str() {
@@ -1554,6 +1585,79 @@ mod tests {
             1,
             "최종 포기도 기록돼야 한다 (M15 H14): {notices:?}"
         );
+    }
+
+    /// M15 H10·§5-4 — 툴별로 **분리**해 남긴다. 합치면 §1-1 축의 근거인
+    /// M8 실패 분석의 "미열람(grep만)" 구분이 사라진다
+    #[tokio::test]
+    async fn touched_files_are_recorded_per_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "fn main() {}\n").unwrap();
+
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "src/lib.rs"}))),
+            ok(&turn("grep", serde_json::json!({"pattern": "fn"}))),
+            ok(&turn("write_file", serde_json::json!({"path": "src/lib.rs", "content": "fn main() {}\n// x\n"}))),
+            ok(&turn("run_command", serde_json::json!({"command": "true"}))),
+            ok(&finish("done")),
+            ok(&finish("done")), // VERIFY_NUDGE가 1차 finish를 반려한다
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+
+        let touches: Vec<serde_json::Value> = std::fs::read_to_string(&tpath)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .filter(|v| v["kind"] == "touch")
+            .map(|v| serde_json::from_str(v["content"].as_str().unwrap()).unwrap())
+            .collect();
+
+        // read_file은 경로를 준다 — 항해 지표의 유일한 원천
+        let read = touches.iter().find(|t| t["tool"] == "read_file").expect("read_file 기록");
+        assert_eq!(read["path"], "src/lib.rs");
+        // grep의 args에는 path가 **선택적**이고 이 호출은 안 줬으므로 null이다.
+        // (grep은 path로 파일을 지목할 수도 있다 — 스펙 개정 10. 항해 지표에서
+        //  빼는 것은 축의 정의에서 나오는 설계 결정이지 기술적 제약이 아니다)
+        let grep = touches.iter().find(|t| t["tool"] == "grep").expect("grep 호출 계수");
+        assert!(grep["path"].is_null(), "path를 안 준 grep 호출은 null로 기록된다: {grep}");
+        // write_file은 수선 지표의 원천
+        let write = touches.iter().find(|t| t["tool"] == "write_file").expect("write_file 기록");
+        assert_eq!(write["path"], "src/lib.rs");
+        // finish·run_command는 기록 대상이 아니다
+        assert!(touches.iter().all(|t| t["tool"] != "run_command"));
+    }
+
+    /// 실패한 디스패치는 접촉이 아니다 — 기록은 `if dispatch_ok` **안**에 있어야 한다.
+    ///
+    /// ⚠ **이 테스트에 본문이 있어야 반증이 성립한다.** 초판은 이것을 주석 한 줄뿐인
+    /// **빈 함수**로 출하했고, 빈 테스트는 항상 통과하므로 Step 4의 "블록을
+    /// `dispatch_ok` 밖으로 옮기면 실패해야 한다"가 **절대 실패할 수 없었다**
+    /// (플랜 1R 실현 I3). 본문을 넣으면 실제로 `left: 1, right: 0`으로 실패한다
+    #[tokio::test]
+    async fn failed_dispatch_is_not_recorded_as_a_touch() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        // 존재하지 않는 파일 → read_file이 Error를 돌려준다 (dispatch_ok=false)
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "nope.rs"}))),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+
+        let n = std::fs::read_to_string(&tpath)
+            .unwrap()
+            .lines()
+            .filter(|l| l.contains("\"kind\":\"touch\""))
+            .count();
+        assert_eq!(n, 0, "실패한 디스패치는 접촉이 아니다 (기록이 dispatch_ok 밖으로 샜다)");
     }
 
     #[tokio::test]
