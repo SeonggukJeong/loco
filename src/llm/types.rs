@@ -59,6 +59,11 @@ pub struct Choice {
 pub struct Usage {
     #[serde(default)]
     pub completion_tokens: Option<u32>,
+    /// 서버가 센 **입력** 토큰 — 채팅 템플릿이 렌더한 전체(역할 태그·특수 토큰·BOS)를
+    /// 세므로 본문만 세는 `estimate_tokens`와 정의가 다르다. 그 차이를 절편/기울기로
+    /// 분해하는 것이 §5-3이다 (M15 H12)
+    #[serde(default)]
+    pub prompt_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -94,6 +99,13 @@ impl ChatResponse {
     /// 그 외에는 합산값이라 분리되지 않는다
     pub fn completion_tokens(&self) -> Option<u32> {
         self.usage.as_ref().and_then(|u| u.completion_tokens)
+    }
+
+    /// 입력 토큰 소비량. `estimate_tokens`(본문 len/4) 추정기의 **유일한 기준값**이며
+    /// 서버가 안 주면 `None`이다 — 0으로 대체하면 §5-3 회귀가 원점을 지나는
+    /// 거짓 관측을 얻는다 (M15 H12·§5-2 ①)
+    pub fn prompt_tokens(&self) -> Option<u32> {
+        self.usage.as_ref().and_then(|u| u.prompt_tokens)
     }
 }
 
@@ -272,5 +284,36 @@ mod tests {
         req.seed = Some(42);
         let v: serde_json::Value = serde_json::to_value(&req).unwrap();
         assert_eq!(v["seed"], 42);
+    }
+
+    #[test]
+    fn usage_parses_prompt_tokens() {
+        // M15 H12 — 축 C의 기준값. estimate_tokens(len/4)가 실측과 대조된 적이
+        // 없다는 것이 §5-1이 확인한 착수점이다
+        let json = r#"{"choices":[{"message":{"role":"assistant","content":"hi"},
+                        "finish_reason":"stop"}],
+                       "usage":{"prompt_tokens":1234,"completion_tokens":56}}"#;
+        let r: ChatResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(r.prompt_tokens(), Some(1234));
+        assert_eq!(r.completion_tokens(), Some(56));
+    }
+
+    #[test]
+    fn missing_usage_is_none_not_zero() {
+        // 0으로 떨어지면 추정기 오차 회귀가 원점을 지나는 거짓 관측을 얻는다
+        let json = r#"{"choices":[{"message":{"role":"assistant","content":"hi"},
+                        "finish_reason":"stop"}]}"#;
+        let r: ChatResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(r.prompt_tokens(), None);
+    }
+
+    #[test]
+    fn usage_with_only_completion_tokens_still_parses() {
+        // 서버가 prompt_tokens를 안 줄 수도 있다 — 그래도 파싱이 죽으면 안 된다
+        let json = r#"{"choices":[{"message":{"role":"assistant","content":"hi"},
+                        "finish_reason":"stop"}],"usage":{"completion_tokens":7}}"#;
+        let r: ChatResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(r.prompt_tokens(), None);
+        assert_eq!(r.completion_tokens(), Some(7));
     }
 }

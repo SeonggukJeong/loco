@@ -4,6 +4,13 @@
 usage:
   python3 scripts/exp_metrics.py .loco/eval/<stamp> [...]   # 런별 TSV + 요약
   python3 scripts/exp_metrics.py --selftest                  # 내장 샘플 자기검증
+  python3 scripts/exp_metrics.py --pool <stamp> [<stamp> ...] [--resamples N] [--seed N]
+                                                               # M15 H15 후반부 — §6-1의
+                                                               # --filter 분할을 배치 수준
+                                                               # 하나로 되돌리는 풀링 집계
+  python3 scripts/exp_metrics.py --session <session.jsonl>   # M15 H19 — 스모크 1세션
+                                                               # 트랜스크립트에서 r_obs 산출
+                                                               # (report.json 없이)
 
 assistant 이벤트는 마커 카운트에서 제외(모델이 교정문을 인용할 수 있음).
 섭동 유도 규칙은 스펙 §5 원복 핀과 동일해야 한다: 스트릭은 액션 결과 턴
@@ -64,12 +71,29 @@ MARKS = {
     "status_pipe_qual": "(via pipe",
     "status_no_summary": "no test summary in output",
     "model_diff": " lines, +",
+    # M15 — A-3 절단률(§6-3)의 분자. model_diff는 절단·비절단 양쪽 헤더에 매치해
+    # **분모** 역할이다(CLAUDE.md 명시). 문자열은 tools/diff.rs에서 문자 그대로
+    # 복사(수동 미러 — 자동 검출 없음, 위 length_retry·args_tool_key/switch와 같은 사정)
+    "model_diff_trunc": "[diff truncated]",
 }
 COLS = ["run", "outcome", "passed"] + list(MARKS) + [
     "sr_recovered", "sr_recovery_denom", "finish_missing_maxrun", "perturb_turns", "stop_cause",
     "first_mut_turn", "cargo_after_mut", "zero_mut_end", "status_in_args", "sr_files",
     "verify_failed", "sr_corr_total", "perturb_turns_ext", "parse_fail_first",
     "finish_nudge_total", "pipe_unreleased",
+    # M15 축 C (§5-2 ①~⑤). est_ratio_max가 §4-1-1의 r_obs이고, 그 정의는
+    # **턴별 비율의 최댓값**이다(평균이 아니다 — 오버플로를 결정하는 것은 최대 턴)
+    "max_prompt", "max_est", "est_ratio_max", "budget_ratio_max",
+    "pack_turns", "pack_elided", "pack_dropped",
+    "overflow_shrink", "overflow_giveup", "inline_sys_turns",
+    # M15 H7 — report.json에서 온다(트랜스크립트에 없다)
+    "protected_edits",
+    # M15 H15 후반부(§5-4·§6-4-19②) — 항해/수선 원자료. nav_hit/fix_hit은
+    # "1"|"0"|"-"("-"=오라클 없는 과제, 0이 아니다). reads는 **집합 크기**
+    # (고유 파일 수 — "몇 개를 열었나"), greps/lists는 **호출 수**
+    # ("몇 번 훑었나") — 단위가 다르다. 배치 집계는 reads/greps/lists 모두 합
+    # (est_ratio_max만 최대다)
+    "nav_hit", "fix_hit", "reads", "greps", "lists",
 ]
 
 # M12 §3-1 badargs_streak()이 세는 "missing field" BadArgs 접두 — tools/mod.rs
@@ -203,6 +227,27 @@ def run_metrics(events):
     sr_latched = set()      # 이미 교정을 발화한 파일 (파일별 래치)
     sr_correction_count = 0  # 런당 총 발화 수
     sr_corr_total = 0        # 파일별 누적 단독 귀속 발화 수 (신규 컬럼)
+    # M15 §5-2 ①~⑤ 축 C 누산기. MARKS와 달리 부분문자열 계수가 아니라
+    # 구조화 JSON(session.rs::pack / agent/mod.rs의 usage)을 읽는다 —
+    # 키 이름이 Rust의 serde_json::json! 리터럴과 문자 그대로 같아야 하고
+    # 자동 드리프트 검출이 없다(MARKS 문자열과 같은 사정)
+    max_prompt = 0        # 턴별 서버 실측 입력 토큰의 최댓값
+    max_est = 0           # 같은 턴들의 estimate_tokens 최댓값
+    est_ratio_max = 0.0   # r_obs = max(prompt/estimate) — §4-1-1의 정의(평균 아님)
+    budget_ratio_max = 0.0
+    last_budget = 0
+    pack_turns, pack_elided, pack_dropped = 0, 0, 0
+    inline_sys_turns = 0
+    overflow_shrink, overflow_giveup = 0, 0
+    usage_rows = []       # (prompt, est, messages, inline_system) — §5-3 회귀 입력
+    # ⚠ **아래 넷은 T15가 채우지만 선언은 여기다**. `tok`이 이들을 참조하므로
+    # T14만 적용한 상태에서도 정의돼 있어야 한다 — 선언을 T15로 미루고 참조만
+    # 여기 두면 T14 단독 적용 시 모든 run_metrics 호출이
+    # `NameError: name 'read_set' is not defined`로 죽는다(1R Critical 5와
+    # 같은 형태 — 튜플을 바꾸고 소비자를 전수로 안 갱신한 것 — 가 그 Critical을
+    # 고치는 자리에서 재발하지 않도록 여기서 함께 선언한다)
+    read_set, edit_set = set(), set()   # T15 Step 1이 touch 이벤트로 채운다
+    grep_calls, list_calls = 0, 0
     for e in events:
         kind, content = e.get("kind"), e.get("content") or ""
         if kind == "assistant":
@@ -211,6 +256,55 @@ def run_metrics(events):
         # 아니라 별도 user 이벤트로 남는다 (baselines.md 추출 레시피)
         for k, m in MARKS.items():
             counts[k] += content.count(m)
+        if kind == "usage":
+            u = json.loads(content)
+            p, est = u.get("prompt_tokens"), u.get("estimate_tokens")
+            last_budget = u.get("budget") or last_budget
+            if u.get("inline_system"):
+                inline_sys_turns += 1
+            # prompt_tokens는 서버가 안 주면 None이다 — 0으로 대체하면 §5-3
+            # 회귀가 원점을 지나는 거짓 관측을 얻는다(H12 주석과 같은 사정)
+            if p is not None and est:
+                usage_rows.append((p, est, u.get("messages") or 0, bool(u.get("inline_system"))))
+                max_prompt = max(max_prompt, p)
+                max_est = max(max_est, est)
+                # r_obs는 **턴별 비율의 최댓값**이지 최댓값끼리의 비가 아니다
+                est_ratio_max = max(est_ratio_max, p / est)
+                if last_budget:
+                    budget_ratio_max = max(budget_ratio_max, p / last_budget)
+            continue
+        if kind == "pack":
+            pk = json.loads(content)
+            pack_turns += 1
+            pack_elided += pk.get("elided") or 0
+            pack_dropped += pk.get("dropped") or 0
+            continue
+        if kind == "notice":
+            # 축소 재시도는 M14가, 최종 포기는 M15 H14가 기록한다 — 둘은
+            # 다른 사건이므로 절대 합산하지 않는다(전자는 회복, 후자는 사망)
+            if "히스토리 절삭 후 재시도" in content:
+                overflow_shrink += 1
+            elif "컨텍스트 초과 — context_tokens" in content:
+                overflow_giveup += 1
+            continue
+        if kind == "touch":
+            t = json.loads(content)
+            tool, p = t.get("tool"), t.get("path")
+            # ⚠ normalize_path를 여기서도 건다(§6-4-19②). oracle_index()가 정규화한
+            # 경로를 쓰므로, 원문 경로를 그대로 넣으면 `./src/x.rs`와 `src/x.rs`가
+            # 어긋나 진짜 히트가 nav_hit=0으로 조용히 누락된다. Rust 쪽(agent/mod.rs)이
+            # status_note::normalize를 이미 걸지만 두 정규화가 같다는 보장을 코드로
+            # 강제할 수단이 없어 여기서도 건다 — 멱등이다
+            p = normalize_path(p) if p else None
+            if tool == "read_file" and p:
+                read_set.add(p)
+            elif tool in ("edit_file", "write_file") and p:
+                edit_set.add(p)
+            elif tool == "grep":
+                grep_calls += 1
+            elif tool == "list_files":
+                list_calls += 1
+            continue
         last_body = content
         # finish 인자누락 연속 스트릭(스펙 §7-3): tool_result가 끼면 리셋
         if MARKS["finish_missing"] in content:
@@ -281,9 +375,19 @@ def run_metrics(events):
             pending.append(2)
             p = str(args.get("path") or "?")
             sr_files[p] = sr_files.get(p, 0) + 1
+    tok = {
+        "max_prompt": max_prompt, "max_est": max_est,
+        "est_ratio_max": est_ratio_max, "budget_ratio_max": budget_ratio_max,
+        "pack_turns": pack_turns, "pack_elided": pack_elided, "pack_dropped": pack_dropped,
+        "overflow_shrink": overflow_shrink, "overflow_giveup": overflow_giveup,
+        "inline_sys_turns": inline_sys_turns,
+        "usage_rows": usage_rows,          # §5-3 회귀 입력
+        "read_set": read_set, "edit_set": edit_set,   # T15가 채운다
+        "grep_calls": grep_calls, "list_calls": list_calls,
+    }
     return (counts, recovered, denom, fin_max, perturb_turns, last_body,
             first_mut_turn, cargo_after_mut, status_in_args, sr_files, perturb_ext,
-            sr_corr_total)
+            sr_corr_total, tok)
 
 
 def stop_cause(outcome, last_result):
@@ -300,6 +404,9 @@ def stop_cause(outcome, last_result):
 
 
 def report_index(stamp_dir):
+    """run 이름 → (outcome, passed, protected_edits, task_name). M15에서
+    protected_edits(H7)와 과제 이름이 추가됐다 — 후자는 §6-4-19①의 과제 단위
+    층화 집계에 필요하다(T15)."""
     idx = {}
     path = os.path.join(stamp_dir, "report.json")
     if not os.path.exists(path):
@@ -307,12 +414,35 @@ def report_index(stamp_dir):
     rep = json.load(open(path))
     for t in rep.get("tasks", []):
         for r in t.get("runs", []):
-            idx[f"run-{t['name']}-{r['repeat']}"] = (r.get("outcome", "?"), r.get("passed"))
+            idx[f"run-{t['name']}-{r['repeat']}"] = (
+                r.get("outcome", "?"), r.get("passed"),
+                r.get("protected_edits", 0), t["name"],
+            )
     return idx
+
+
+def oracle_index(stamp_dir):
+    """과제 이름 → 오라클 소스 파일 목록 (M15 H15 후반부·§5-4 입력 계약).
+
+    report.json에 **동결**된 것을 읽는다 — 별도 파일에서 읽으면 사후 변경이
+    가능해진다. 경로는 normalize_path로 정규화해 트랜스크립트의 표기 변형
+    (`./src/x.rs` vs `src/x.rs`)과 합산되게 한다. procure.toml이 없는 과제
+    (기존 두 트리 — tasks/, tasks-large/)는 procure 자체가 null이라 빈 목록을
+    준다 — 오라클 없음은 §6-4-19①이 "해당 없음"으로 다루는 그 상태다."""
+    out = {}
+    path = os.path.join(stamp_dir, "report.json")
+    if not os.path.exists(path):
+        return out
+    for t in json.load(open(path)).get("tasks", []):
+        pr = t.get("procure") or {}
+        out[t["name"]] = [normalize_path(f) for f in pr.get("oracle_files", [])]
+    return out
 
 
 def process(stamp_dir):
     idx = report_index(stamp_dir)
+    oracle_by_task = oracle_index(stamp_dir)
+    rows = []
     print(f"# {stamp_dir}")
     print("\t".join(COLS))
     totals = dict.fromkeys(MARKS, 0)
@@ -321,13 +451,18 @@ def process(stamp_dir):
     zero_mut = {"max_turns": 0, "finished": 0, "other": 0}
     mut_runs, cargo_runs = 0, 0
     parse_fail_total = 0
+    # M15 축 C 배치 수준 누산기. est_ratio_max/max_prompt는 런별 값의 최댓값
+    # (§4-1-1의 r_obs 정의 — 평균이 아니다), 나머지는 배치 총합이다
+    batch_max_prompt = 0
+    batch_ratio = 0.0
+    batch_pack, batch_shrink, batch_giveup, batch_prot = 0, 0, 0, 0
     for path in sorted(glob.glob(os.path.join(stamp_dir, "run-*.jsonl"))):
         events = [json.loads(l) for l in open(path)]
         (counts, rec, den, fin_max, perturb, last,
          first_mut, cargo_mut, st_args, sr_files, perturb_ext,
-         sr_corr_total) = run_metrics(events)
+         sr_corr_total, tok) = run_metrics(events)
         name = os.path.basename(path).removesuffix(".jsonl")
-        outcome, passed = idx.get(name, ("?", None))
+        outcome, passed, protected_edits, task_name = idx.get(name, ("?", None, 0, "?"))
         cause = stop_cause(outcome, last)
         if cause != "-":
             stops[cause] += 1
@@ -377,12 +512,48 @@ def process(stamp_dir):
         # 교집합만 이 프록시가 놓친다.
         finish_nudge_total = counts["finish_nudge"] + counts["finish_nudge_pipe"]
         pipe_unreleased = counts["pipe_note"]
+        # §6-4-19②: 교집합 판정은 §3-4-3과 **동일하게** `≠ ∅`다. 오라클이 없는
+        # 과제(기존 두 트리)는 "-" — 0이 아니다. 0으로 찍으면 "항해 실패"로
+        # 읽히는데 사실은 "해당 없음"이다(§6-4-19①이 같은 이유로 층 크기 0인
+        # 과제를 평균에서 제외한다)
+        oracle = set(oracle_by_task.get(task_name, []))
+        nav_hit = "-" if not oracle else ("1" if tok["read_set"] & oracle else "0")
+        fix_hit = "-" if not oracle else ("1" if tok["edit_set"] & oracle else "0")
         row = [name, outcome, str(passed)] + [str(counts[k]) for k in MARKS]
         row += [str(rec), str(den), str(fin_max), str(perturb), cause,
                 str(first_mut), str(cargo_mut), zme, str(st_args), files_col,
                 str(verify_failed), str(sr_corr_total), str(perturb_ext), str(pff),
                 str(finish_nudge_total), str(pipe_unreleased)]
+        row += [str(tok["max_prompt"]), str(tok["max_est"]),
+                f"{tok['est_ratio_max']:.4f}", f"{tok['budget_ratio_max']:.4f}",
+                str(tok["pack_turns"]), str(tok["pack_elided"]), str(tok["pack_dropped"]),
+                str(tok["overflow_shrink"]), str(tok["overflow_giveup"]),
+                str(tok["inline_sys_turns"]), str(protected_edits)]
+        # reads=집합 크기(고유 파일 수), greps/lists=호출 수 — 단위가 다르다(브리프 Step 2)
+        row += [nav_hit, fix_hit, str(len(tok["read_set"])),
+                str(tok["grep_calls"]), str(tok["list_calls"])]
         print("\t".join(row))
+        batch_max_prompt = max(batch_max_prompt, tok["max_prompt"])
+        batch_ratio = max(batch_ratio, tok["est_ratio_max"])
+        batch_pack += tok["pack_turns"]
+        batch_shrink += tok["overflow_shrink"]
+        batch_giveup += tok["overflow_giveup"]
+        batch_prot += protected_edits
+        # ⚠ 풀링 모드 계약(1R 실현 I5) — 타입이 살아 있는 딕셔너리라야 한다.
+        # dict(zip(COLS, row))로 만들면 passed 셀이 str(passed)라 "True"가 되고,
+        # stratified_rate의 r["passed"] is want가 예외 없이 전부 거짓이 되어
+        # 모든 과제가 excluded로 빠지고 mean=nan이 된다. passed는 여기서 bool
+        # 그대로(report_index가 json.load로 준 원본 — str()로 감싸지 말 것)
+        rows.append({
+            "run": name,
+            "task": task_name,
+            "passed": passed,
+            "outcome": outcome,
+            "nav_hit": nav_hit,
+            "fix_hit": fix_hit,
+            "tok": tok,
+            "counts": counts,
+        })
     marks = " ".join(f"{k}={totals[k]}" for k in MARKS)
     # M14 T10 Step 1 — 이전엔 "parse_fail_first(총): N  <- 0이 아니면 ..." 형태의
     # 한글 키+서술문이었다. 다른 전 필드처럼 key=value 한 항목으로: 의미(0이 아니면
@@ -394,6 +565,239 @@ def process(stamp_dir):
           f"zero_mut max_turns={zero_mut['max_turns']} finished={zero_mut['finished']} "
           f"other={zero_mut['other']} cargo_after_mut={cargo_runs}/{mut_runs} "
           f"parse_fail_first={parse_fail_total}")
+    # M15 축 C 배치 요약. ⚠ est_ratio_max는 런별 값의 최댓값이다(평균이
+    # 아니다) — §4-1-1이 r_obs를 그렇게 정의했고 T22의 분기 판정이 이 숫자를
+    # 그대로 쓴다
+    print(f"# tokens max_prompt={batch_max_prompt} est_ratio_max={batch_ratio:.4f} "
+          f"pack_turns={batch_pack} overflow_shrink={batch_shrink} "
+          f"overflow_giveup={batch_giveup} protected_edits={batch_prot}")
+    return rows
+
+
+def stratified_rate(rows, metric, stratum):
+    """§6-4-19① — 과제별 **층내** 비율을 먼저 구하고 과제 수준으로 평균한다.
+
+    stratum: "pass" | "fail". 층 크기가 0인 과제는 **그 층의 평균에서 제외**하고
+    제외 수를 함께 돌려준다 — 3/3 통과 과제를 항해 지표 0으로 넣으면 그것은
+    "항해 실패"가 아니라 "해당 없음"이라 지표가 거짓말을 한다(5R I3).
+
+    ⚠ 통과 층과 실패 층은 **절대 합산하지 않는다**(§5-4 제약 3, §6-4-19③ 공약).
+    이 함수는 한 층만 본다 — 합산 경로를 코드에 두지 않는 것이 그 공약의 형태다.
+
+    returns (per_task_rates: dict[task]->float, excluded: int)
+    """
+    want = (stratum == "pass")
+    per_task, excluded = {}, 0
+    tasks = sorted({r["task"] for r in rows})
+    for t in tasks:
+        cell = [r for r in rows
+                if r["task"] == t and r["passed"] is want and r[metric] in ("0", "1")]
+        if not cell:
+            excluded += 1
+            continue
+        per_task[t] = sum(1 for r in cell if r[metric] == "1") / len(cell)
+    return per_task, excluded
+
+
+def bootstrap_ci(values, resamples, seed):
+    """§6-4-7·§6-4-19④ — 재추출 단위는 **과제**다. 런 수준 구간은 어떤 형태로도
+    보고하지 않는다(사전등록 공약).
+
+    ⚠ §6-4-19①의 제외와 상호작용한다: 여기 들어오는 values는 **이미 제외된 뒤
+    남은 집합**이다. 전체에서 재추출하고 정의된 것만 집계하면 추정 대상이
+    달라진다(6R M3) — 호출자가 그 순서를 지킨다.
+
+    seed·resamples는 사전등록에 명시된 값을 쓴다(기본 10000·seed 0)."""
+    import random
+    if not values:
+        return (float("nan"), float("nan"))
+    rng = random.Random(seed)
+    n = len(values)
+    means = []
+    for _ in range(resamples):
+        means.append(sum(rng.choice(values) for _ in range(n)) / n)
+    means.sort()
+    lo = means[int(0.025 * resamples)]
+    hi = means[min(int(0.975 * resamples), resamples - 1)]
+    return (lo, hi)
+
+
+def estimator_fit(usage_rows):
+    """§5-3·§6-4-19⑤ — prompt_tokens ≈ 절편(메시지 수 × 상수) + 기울기 × estimate.
+
+    서버의 prompt_tokens는 채팅 템플릿이 렌더한 **전체** 토큰(역할 태그·특수
+    토큰·BOS)을 세고 estimate_tokens는 메시지 본문만 센다. pack()의 예산 판단에
+    위험한 것은 **기울기**다 — 절편은 메시지 수에 비례해 예측 가능하지만 기울기
+    오차는 본문이 길수록 커진다.
+
+    턴 단위 최소자승, `inline_system`으로 층화(직렬화 메시지 집합이 다르다).
+    stdlib만 쓰므로 2변수 정규방정식을 직접 푼다."""
+    out = {}
+    for key in (False, True):
+        pts = [(est, msgs, p) for (p, est, msgs, inl) in usage_rows if inl is key]
+        if len(pts) < 3:
+            out[key] = None
+            continue
+        # p ≈ a·est + b·msgs  (원점 통과 2변수 — 절편을 "메시지 수 × 상수"로
+        # 정의한 것이 §5-3의 분해이므로 상수항을 따로 두지 않는다)
+        s_ee = sum(e * e for e, _, _ in pts)
+        s_em = sum(e * m for e, m, _ in pts)
+        s_mm = sum(m * m for _, m, _ in pts)
+        s_ep = sum(e * p for e, _, p in pts)
+        s_mp = sum(m * p for _, m, p in pts)
+        det = s_ee * s_mm - s_em * s_em
+        if det == 0:
+            out[key] = None
+            continue
+        out[key] = {
+            "slope_per_est_token": (s_ep * s_mm - s_mp * s_em) / det,
+            "intercept_per_message": (s_mp * s_ee - s_ep * s_em) / det,
+            "n": len(pts),
+        }
+    return out
+
+
+def task_pass_rates(rows):
+    """§6-4-7 — 과제별 통과 비율(과제 수준 단위). 주 지표 `passed`의 분석 단위다.
+    ⚠ 런 수준이 아니다: 반복은 독립 3시행이 아니라 같은 픽스처·프롬프트를 공유한다."""
+    per_task = {}
+    for t in sorted({r["task"] for r in rows}):
+        cell = [r for r in rows if r["task"] == t]
+        per_task[t] = sum(1 for r in cell if r["passed"]) / len(cell)
+    return per_task
+
+
+def disqualification(per_task_rates):
+    """§6-4-6 실격 대역 — `N − 전승 과제 수 < 0.98·√N` (바닥 쪽 대칭).
+    A5의 판정 입력이다. ⚠ 정규근사로 **사전 고정**된 대역이며 부트스트랩 CI와
+    수치가 일치할 필요는 없다(5R M2)."""
+    n = len(per_task_rates)
+    if not n:
+        return None
+    sweep = sum(1 for v in per_task_rates.values() if v == 1.0)
+    zero = sum(1 for v in per_task_rates.values() if v == 0.0)
+    band = 0.98 * (n ** 0.5)
+    return {
+        "N": n, "all_pass": sweep, "all_fail": zero, "band": band,
+        "disqualified": (n - sweep) < band or (n - zero) < band,
+    }
+
+
+def pool(stamp_dirs, resamples=10000, seed=0):
+    """§6-1의 4~5분할을 배치 수준 하나로 되돌린다.
+
+    기존 동작(`for d in sys.argv[1:]: process(d)`)은 스탬프마다 **독립 표·요약**을
+    찍고 교차 풀링이 없었다 — 그러면 §6-2·§6-3·§6-4-6·§6-4-7·§6-4-19의
+    배치 수준 수치를 낼 수 없다(4R 실현 I1).
+
+    ⚠ **§6-1이 풀링 필요 근거로 든 다섯을 전부 낸다**(1R 측정 I1). 초판은
+    §6-4-19(항해/수선)만 구현해 **A5(실격 대역)와 A6(추정기 오차)의 산출 경로가
+    없었다** — 둘 다 §9의 **차단 기준**인데도 그랬다.
+    """
+    rows = []
+    for d in stamp_dirs:
+        rows.extend(process(d))
+    print(f"\n# pooled over {len(stamp_dirs)} stamp dir(s), {len(rows)} runs")
+
+    # ── §6-4-7 통과율 (주 지표) ─────────────────────────────────────
+    pr = task_pass_rates(rows)
+    vals = sorted(pr.values())
+    mean = sum(vals) / len(vals) if vals else float("nan")
+    lo, hi = bootstrap_ci(vals, resamples, seed)
+    print(f"# pass_rate tasks={len(vals)} mean={mean:.4f} ci95=[{lo:.4f},{hi:.4f}] "
+          f"resamples={resamples} seed={seed}")
+
+    # ── §6-4-6 실격 대역 (A5 입력) ──────────────────────────────────
+    dq = disqualification(pr)
+    if dq:
+        print(f"# disqualification N={dq['N']} all_pass={dq['all_pass']} "
+              f"all_fail={dq['all_fail']} band={dq['band']:.2f} "
+              f"disqualified={dq['disqualified']}")
+
+    # ── §6-4-19① 항해/수선 (층별, 비합산) ───────────────────────────
+    for metric in ("nav_hit", "fix_hit"):
+        for stratum in ("pass", "fail"):
+            per_task, excluded = stratified_rate(rows, metric, stratum)
+            v = sorted(per_task.values())
+            m = sum(v) / len(v) if v else float("nan")
+            l2, h2 = bootstrap_ci(v, resamples, seed)
+            print(f"# {metric}[{stratum}] tasks={len(v)} excluded={excluded} "
+                  f"mean={m:.4f} ci95=[{l2:.4f},{h2:.4f}] "
+                  f"resamples={resamples} seed={seed}")
+
+    # ── §6-4-19⑤ 추정기 오차 (A6 입력) ─────────────────────────────
+    # ⚠ 초판은 estimator_fit을 T16의 1세션 스모크에서만 불렀다. A6가 **배치**의
+    #   추정기 오차 보고를 차단 기준으로 걸므로 여기서 60런 전체를 합쳐 적합한다
+    all_usage = [u for r in rows for u in r["tok"]["usage_rows"]]
+    for inl, f in estimator_fit(all_usage).items():
+        print(f"# estimator inline_system={inl} {f}")
+    batch_ratio = max((r["tok"]["est_ratio_max"] for r in rows), default=0.0)
+    print(f"# tokens est_ratio_max={batch_ratio:.4f} "
+          f"max_prompt={max((r['tok']['max_prompt'] for r in rows), default=0)} "
+          f"pack_turns={sum(r['tok']['pack_turns'] for r in rows)} "
+          f"overflow_shrink={sum(r['tok']['overflow_shrink'] for r in rows)} "
+          f"overflow_giveup={sum(r['tok']['overflow_giveup'] for r in rows)}")
+
+    # ── §6-3 마커 계수와 **기회 분모** (B1 입력) ────────────────────
+    # ⚠ "0회도 답이다 — **기회 분모와 함께 볼 때만**"(§1-2 답 1). 분자만 찍으면
+    #   0이 "장치가 안 먹었다"인지 "기회가 없었다"인지 구별되지 않는다
+    piped = sum(r["counts"]["pipe_note"] for r in rows)
+    print(f"# pipe device fired={sum(r['counts']['verify_nudge_pipe'] + r['counts']['finish_nudge_pipe'] + r['counts']['status_pipe_qual'] for r in rows)} "
+          f"opportunities={piped}   # 분모 = 파이프 포함 run_command 수(pipe_note 프록시)")
+    print(f"# finish_nudge fired={sum(r['counts']['finish_nudge'] + r['counts']['finish_nudge_pipe'] for r in rows)} "
+          f"armed_runs~={sum(1 for r in rows if r['counts']['model_diff'] and r['counts']['verify_total'])}"
+          f"   # ⚠ APPROX 분모 — 무장 조건(뮤테이션 후 exit 0 검증)의 **근사치**다."
+          f" 정확한 값은 finish_nudge.rs 상태기계 재현이 필요하다(perturb_turns·sr_corr_total 선례)."
+          f" 리포트에 정확 분모로 인용하지 말 것 — §9-B1이 거짓이 된다")
+    diffs = sum(r["counts"]["model_diff"] for r in rows)
+    trunc = sum(r["counts"]["model_diff_trunc"] for r in rows)
+    print(f"# a3_diff attached={diffs} truncated={trunc} "
+          f"truncation_rate={(trunc / diffs if diffs else float('nan')):.4f}"
+          f"   # §1-2 답 1: A-3에서 새로 얻는 것은 절단률뿐이다(효과는 측정 불가)")
+
+    print("# NOTE 통과 층과 실패 층은 합산하지 않는다 (§5-4 제약 3·§6-4-19③ 공약)")
+    print("# NOTE 재추출 단위는 과제다 — 런 수준 구간은 보고하지 않는다 (§6-4-7)")
+
+
+def session_mode(path):
+    """단일 세션 트랜스크립트에서 §4-1-1 스모크 산출을 낸다 (M15 H19).
+
+    exp_metrics.py의 나머지는 eval 스탬프 디렉터리(report.json + run-*.jsonl)를
+    받는다 — 스모크는 `cargo run -- -p …` 1회라 .loco/sessions/*.jsonl 하나뿐이고
+    그 경로를 읽을 수단이 없었다.
+
+    산출 셋:
+      r_obs                      — 턴별 prompt_tokens/estimate_tokens의 **최댓값**
+                                   (평균이 아니다. 오버플로를 결정하는 것은 최대 턴)
+      first_turn_prompt_tokens   — §5-5의 의미 확정용. 세션 첫 턴은 **정의상 캐시
+                                   미적중**이므로 이 값이 "완전 프롬프트" 기준이다
+                                   (serve.sh에 캐시 차단 플래그가 없고 추가하면
+                                   핀 변경이라 비교가능성에 걸린다 — 7R I1)
+      pack_fired                 — §4-1-1의 도달 조건. **0이면 스모크가 예산점에
+                                   못 닿은 것이라 §5-3 회귀가 외삽이 된다**
+    """
+    events = [json.loads(l) for l in open(path)]
+    (counts, rec, den, fin_max, perturb, last, first_mut, cargo_mut, st_args,
+     sr_files, perturb_ext, sr_corr_total, tok) = run_metrics(events)
+    first = None
+    for e in events:
+        if e.get("kind") == "usage":
+            u = json.loads(e.get("content") or "{}")
+            if u.get("prompt_tokens") is not None:
+                first = u["prompt_tokens"]
+                break
+    print(f"# session {path}")
+    print(f"r_obs={tok['est_ratio_max']:.4f} max_prompt={tok['max_prompt']} "
+          f"max_est={tok['max_est']} first_turn_prompt_tokens={first} "
+          f"pack_fired={tok['pack_turns']} budget_ratio_max={tok['budget_ratio_max']:.4f} "
+          f"overflow_shrink={tok['overflow_shrink']} overflow_giveup={tok['overflow_giveup']}")
+    fit = estimator_fit(tok["usage_rows"])
+    for inl, f in fit.items():
+        print(f"# estimator inline_system={inl} {f}")
+    if not tok["pack_turns"]:
+        print("# WARN pack 미발동 — 예산점에 못 닿았다. §4-1-1 도달 조건 미충족이므로 "
+              "세션을 더 길게 돌릴 것 (§5-3 회귀가 3배 외삽이 된다)")
+    return tok
 
 
 def selftest():
@@ -414,8 +818,7 @@ def selftest():
         ev("tool_result", "wrote file", "write_file"),
         ev("tool_result", "exit code: 0\nok", "run_command"),
     ]
-    (counts, rec, den, fin_max, perturb, _,
-     _, _, _, _, _, _) = run_metrics(events)
+    (counts, rec, den, fin_max, perturb, *_) = run_metrics(events)
     assert counts["sr_error"] == 2, counts
     assert (rec, den) == (2, 2), (rec, den)  # 두 오류 모두 다음 시도(성공)로 회복
     assert fin_max == 0, fin_max
@@ -427,12 +830,12 @@ def selftest():
         ev("tool_result", "Denied: policy", "edit_file"),
         ev("tool_result", sr, "edit_file"),
     ]
-    _, _, _, _, perturb2, _, _, _, _, _, _, _ = run_metrics(events2)
+    _, _, _, _, perturb2, *_ = run_metrics(events2)
     assert perturb2 == 1, perturb2  # Denied 턴 1회만 섭동 하 — 리셋 후 재축적 전
     # finish 정지 분류 (리뷰 I-2): FINISH_ERR는 user 이벤트로 남는다
     fin = "Error: finish requires a string `summary` argument, e.g. ..."
     events3 = [ev("tool_result", sr, "edit_file"), ev("user", fin), ev("user", fin)]
-    _, _, _, fin_max3, _, last3, _, _, _, _, _, _ = run_metrics(events3)
+    _, _, _, fin_max3, _, last3, *_ = run_metrics(events3)
     assert fin_max3 == 2, fin_max3
     assert stop_cause("repetition_stop", last3) == "finish"
     assert stop_cause("repetition_stop", sr) == "sr"
@@ -448,7 +851,7 @@ def selftest():
         ev("tool_result", "Error: edit failed: something else", "edit_file",
            {"path": "b.rs", "search": "[status] files edited", "replace": "y"}),
     ]
-    (c4, _, _, _, _, _, fm4, cm4, sa4, sf4, _, _) = run_metrics(events4)
+    (c4, _, _, _, _, _, fm4, cm4, sa4, sf4, *_) = run_metrics(events4)
     assert c4["status_note"] == 1, c4
     assert c4["pipe_note"] == 1, c4
     assert fm4 == 2, fm4          # 첫 성공 뮤테이션은 두 번째 tool_result(write_file)
@@ -456,8 +859,24 @@ def selftest():
     assert sa4 == 1, sa4          # args 내 [status] 복사 오염 1건
     assert sf4 == {"src/a.rs": 1}, sf4  # S/R 오류 파일 귀속
     # 뮤테이션 0회 런: first_mut_turn == 0 (zero_mut 분류는 process가 outcome으로)
-    (_, _, _, _, _, _, fm5, cm5, _, _, _, _) = run_metrics([ev("tool_result", "x", "read_file")])
+    (_, _, _, _, _, _, fm5, cm5, *_) = run_metrics([ev("tool_result", "x", "read_file")])
     assert (fm5, cm5) == (0, 0), (fm5, cm5)
+
+    # ── 축 C ⑥ (툴별 접촉) — §9-A6의 "일곱 항목" 중 유일하게 단언이 없던 것 ──
+    # (2R 측정 I8) read/edit/grep 분기가 뒤바뀌어도 셀프테스트가 초록불이었다.
+    # §5-4 축 전체가 이 분리에 걸려 있는데도 그랬다
+    touch_ev = [
+        ev("touch", json.dumps({"tool": "read_file", "path": "./src/a.rs"})),
+        ev("touch", json.dumps({"tool": "read_file", "path": "src/a.rs"})),   # 정규화로 합쳐짐
+        ev("touch", json.dumps({"tool": "edit_file", "path": "src/b.rs"})),
+        ev("touch", json.dumps({"tool": "grep", "path": None})),
+        ev("touch", json.dumps({"tool": "list_files", "path": None})),
+    ]
+    tk = run_metrics(touch_ev)[12]
+    assert tk["read_set"] == {"src/a.rs"}, tk        # normalize_path로 표기 변형이 합산된다
+    assert tk["edit_set"] == {"src/b.rs"}, tk        # 수선이 항해에 안 섞인다
+    assert tk["grep_calls"] == 1 and tk["list_calls"] == 1, tk
+    assert "src/b.rs" not in tk["read_set"], "수선을 항해로 세면 §1-1 축이 무너진다"
 
     # M12 §4-1: perturb_turns_ext 확대 — 파일별 비연속 누적(cum>=2)이 섭동을
     # 유도하는데, 기존 perturb_turns(연속 전용 재구성)는 이 경로를 놓친다.
@@ -708,6 +1127,11 @@ def selftest():
            "         verification: last command exited 0 (via pipe, no test summary in output)\n"
            "         turns: 5 of 25 used"),
         ev("tool_result", "-0 lines, +3 lines\n+fn x() {}", "write_file", {"path": "b.rs", "content": "y"}),
+        # M15 — model_diff_trunc(절단률의 분자). 문자열은 tools/diff.rs에서 그대로
+        # 복사한 "[diff truncated]". model_diff(" lines, +")는 절단 헤더에도
+        # 매치하므로(위 MARKS 주석) 이 이벤트 하나가 둘 다 1씩 올린다.
+        ev("tool_result", "-5 lines, +20 lines in 3 hunks\n@@ -1,2 +1,3 @@\n+x\n[diff truncated]",
+           "edit_file", {"path": "c.rs", "search": "old", "replace": "new"}),
         ev("tool_result", "exit code: 0\nok\nnote: this command is a pipeline - the exit code reflects "
            "only the last command in the pipe", "run_command", {"command": "cargo test | tail -5"}),
     ]
@@ -717,7 +1141,8 @@ def selftest():
     assert counts10["finish_nudge_pipe"] == 1, counts10
     assert counts10["status_pipe_qual"] == 1, counts10
     assert counts10["status_no_summary"] == 1, counts10
-    assert counts10["model_diff"] == 1, counts10
+    assert counts10["model_diff"] == 2, counts10         # b.rs(비절단)+c.rs(절단) 헤더 둘 다 매치 — 분모
+    assert counts10["model_diff_trunc"] == 1, counts10   # c.rs만 절단 — 분자
     assert counts10["pipe_note"] == 1, counts10          # pipe_unreleased 파생값의 원천
 
     # M12 T9 수정(리뷰 Item 2): verify_failed·sr_corr_total은 이제 process()를
@@ -728,12 +1153,40 @@ def selftest():
     # M14 T10: 같은 이유로 finish_nudge_total·pipe_unreleased도 여기서 process()의
     # 실 출력으로 검증한다(events10을 같은 스탬프에 합친다 — verify_failed·
     # sr_corr_total이 보는 마커와 겹치지 않아 두 기존 단언에 영향 없음).
+    # M15 H15 — 축 C 이벤트 3종. 키 이름은 Rust의 serde_json::json! 리터럴과
+    # 문자 그대로 같아야 한다(session.rs::pack, agent/mod.rs의 usage/notice)
+    # ⚠ T14 리뷰 인계(carryover): 원래 이 픽스처는 turn1(1000/800=1.25)보다
+    #   turn2(2600/2000=1.30)의 프롬프트·estimate가 둘 다 더 커서, "턴별 비율의
+    #   최댓값"(max-of-ratios)과 "최댓값끼리의 비"(ratio-of-maxes = 2600/2000)가
+    #   **우연히 같은 값(1.30)**이 돼 두 정의를 구별하지 못했다. turn1의
+    #   estimate_tokens를 800→500으로 낮춰 turn1의 비율(1000/500=2.0)을 turn2의
+    #   비율(1.30)보다 **높게, 그러나 max_prompt·max_est 자체는 turn2가 그대로
+    #   갖도록**(max_prompt=2600, max_est=2000 불변) 만든다 — 이러면
+    #   ratio-of-maxes는 여전히 1.30인데 max-of-ratios는 2.0이라 두 해석이
+    #   갈린다. §4-1-1의 r_obs 정의(턴별 비율의 최댓값)가 맞다면 est_ratio_max는
+    #   2.0000이어야 한다(아래 단언이 그 정의를 핀한다).
+    events_tokens = [
+        ev("usage", json.dumps({"prompt_tokens": 1000, "completion_tokens": 20,
+                                "estimate_tokens": 500, "messages": 5,
+                                "budget": 25804, "inline_system": False,
+                                "overflow_shrinks": 0})),
+        ev("usage", json.dumps({"prompt_tokens": 2600, "completion_tokens": 30,
+                                "estimate_tokens": 2000, "messages": 9,
+                                "budget": 25804, "inline_system": True,
+                                "overflow_shrinks": 1})),
+        ev("pack", json.dumps({"budget": 25804, "before": 30000, "after": 25000,
+                               "elided": 2, "dropped": 0})),
+        ev("notice", "(컨텍스트 초과로 보임 — 히스토리 절삭 후 재시도 1/2)"),
+        ev("notice", "(컨텍스트 초과 — context_tokens 설정과 서버 로드 설정을 확인하세요)"),
+    ]
     with tempfile.TemporaryDirectory() as stamp_dir:
-        report = {"tasks": [{"name": "demo", "runs": [{"repeat": 0, "outcome": "finished", "passed": True}]}]}
+        report = {"tasks": [{"name": "demo", "runs": [
+            {"repeat": 0, "outcome": "finished", "passed": True, "protected_edits": 2},
+        ]}]}
         with open(os.path.join(stamp_dir, "report.json"), "w") as f:
             json.dump(report, f)
         with open(os.path.join(stamp_dir, "run-demo-0.jsonl"), "w") as f:
-            for e in events7 + events8b + events10:
+            for e in events7 + events8b + events10 + events_tokens:
                 f.write(json.dumps(e) + "\n")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -746,6 +1199,83 @@ def selftest():
         assert row[col["sr_corr_total"]] == "1", row        # process()가 run_metrics의 실 반환값을 그대로 쓰는지
         assert row[col["finish_nudge_total"]] == "2", row   # finish_nudge(1) + finish_nudge_pipe(1)의 합산식
         assert row[col["pipe_unreleased"]] == "1", row       # pipe_note를 그대로 미러하는 파생값
+        # M15 H15 — 축 C(§5-2 ①~⑤) 토큰 회계 컬럼.
+        # max_prompt=2600(turn2), max_est=2000(turn2) — 둘 다 turn2 값이라
+        # ratio-of-maxes는 2600/2000=1.30. 그러나 turn1의 비율(1000/500=2.0)이
+        # 더 크므로 max-of-ratios(§4-1-1의 r_obs 정의 = 턴별 비율의 **최댓값**,
+        # 평균도 최댓값끼리의 비도 아니다)는 2.0 — 두 해석이 갈리는 지점을
+        # 정확히 이 값이 핀한다(T14 리뷰 인계, 위 픽스처 주석 참조).
+        # ⚠ 기존 selftest는 `row`를 **리스트**로 두고 `row[col["verify_failed"]]`로
+        #    접근한다. 그 형태를 따를 것 — `row["max_prompt"]`는 리스트 첨자라 TypeError다
+        assert row[col["max_prompt"]] == "2600", row
+        assert row[col["max_est"]] == "2000", row
+        assert row[col["est_ratio_max"]] == "2.0000", row  # max-of-ratios(2.0) ≠ ratio-of-maxes(1.30)
+        assert row[col["budget_ratio_max"]] == "0.1008", row   # 2600/25804
+        assert row[col["pack_turns"]] == "1", row
+        assert row[col["pack_elided"]] == "2", row
+        assert row[col["overflow_shrink"]] == "1", row
+        assert row[col["overflow_giveup"]] == "1", row
+        assert row[col["inline_sys_turns"]] == "1", row
+        # ⚠ H7 — 축 C 일곱 항목의 ⑦. **셀프테스트 없이 두면 안 된다**:
+        #    report_index의 `r.get("protected_edits", 0)`이 필드 부재 시 조용히 0을
+        #    주고, 이 컬럼은 §5-2 ⑦이 "리워드 해킹의 **유일한** 기계 관측 발자국"으로
+        #    지정한 것이라 0이 "해킹 없음"으로 읽힌다 — 정확히 fail-open이다.
+        assert row[col["protected_edits"]] == "2", row
+        # M15 H15 후반부 — COLS/행이 5칸(nav_hit·fix_hit·reads·greps·lists) 자란
+        # 것을 확인한다(브리프 경고: 헤더/행 폭 불일치는 새 컬럼을 안 건드리면
+        # --selftest가 조용히 통과한다). 이 스탬프는 procure가 없는 "demo" 과제라
+        # nav_hit/fix_hit은 "-"(0이 아니다), touch 이벤트가 아예 없어 reads/greps/
+        # lists는 전부 0이다.
+        assert row[col["nav_hit"]] == "-", row
+        assert row[col["fix_hit"]] == "-", row
+        assert row[col["reads"]] == "0", row
+        assert row[col["greps"]] == "0", row
+        assert row[col["lists"]] == "0", row
+
+    # M15 H15 Trap 3 회귀: notice 분기에 continue가 빠지면 last_body가 notice
+    # 본문으로 덮여, 뒤이은 RepetitionStop의 stop_cause가 sr → other로
+    # 오분류된다(브리프 경고, 재현 확인) — notice가 마지막 이벤트여도 last_body는
+    # 그 직전 tool_result(SR 오류)여야 한다.
+    events_notice_last = [
+        ev("tool_result", sr, "edit_file"),
+        ev("notice", "(컨텍스트 초과 — context_tokens 설정과 서버 로드 설정을 확인하세요)"),
+    ]
+    last_notice = run_metrics(events_notice_last)[5]
+    assert last_notice == sr, last_notice
+    assert stop_cause("repetition_stop", last_notice) == "sr", last_notice
+
+    # M15 H15 후반부 — 브리프 Step 4b가 요구하는 나머지 두 continue(usage·pack)를
+    # 같은 방식으로 고정한다(2R 실현 I6: "notice·usage 어느 쪽 continue를 제거해도
+    # rc=0"). continue가 빠지면 last_body가 usage/pack 이벤트의 JSON 본문으로
+    # 덮여 뒤이은 RepetitionStop의 stop_cause가 sr → other로 오분류된다.
+    events_usage_last = [
+        ev("tool_result", sr, "edit_file"),
+        ev("usage", json.dumps({"prompt_tokens": 100, "estimate_tokens": 80,
+                                "messages": 1, "budget": 1000, "inline_system": False})),
+    ]
+    last_usage = run_metrics(events_usage_last)[5]
+    assert last_usage == sr, last_usage
+    assert stop_cause("repetition_stop", last_usage) == "sr", last_usage
+
+    events_pack_last = [
+        ev("tool_result", sr, "edit_file"),
+        ev("pack", json.dumps({"budget": 1000, "before": 2000, "after": 1000,
+                               "elided": 1, "dropped": 0})),
+    ]
+    last_pack = run_metrics(events_pack_last)[5]
+    assert last_pack == sr, last_pack
+    assert stop_cause("repetition_stop", last_pack) == "sr", last_pack
+
+    # 같은 함정의 4번째 자리(T15가 새로 추가한 touch 분기)도 대칭으로 고정한다
+    # — 브리프가 "세 continue"라 부른 것은 usage/pack/notice(위 3종)지만, touch도
+    # 같은 구조(마커 카운트 → 별도 continue)라 같은 버그 창이 열려 있다.
+    events_touch_last = [
+        ev("tool_result", sr, "edit_file"),
+        ev("touch", json.dumps({"tool": "read_file", "path": "a.rs"})),
+    ]
+    last_touch = run_metrics(events_touch_last)[5]
+    assert last_touch == sr, last_touch
+    assert stop_cause("repetition_stop", last_touch) == "sr", last_touch
 
     # M13 — parse_fail_first: 첫 assistant가 유효 턴이 아니면 1 (C1형 조용한 실패 포착)
     broken = [
@@ -798,12 +1328,135 @@ def selftest():
     ]
     assert parse_fail_first(second_ok) == 1, "첫 assistant만 보므로 두 번째가 정상이어도 1"
 
+    # ── §6-4-19 공약 (풀링 모드) ─────────────────────────────────────────
+    # ⚠ 2R 실현 I5·측정 m7: 이 자리를 주석 5줄로 두고 assert를 하나도 안 쓰면
+    # Step 6의 변조 (a)(b)(c)가 손으로 지어낸 단언 없이는 절대 실패하지 않는다.
+    # 합성 스탬프 디렉터리 **2개** — §6-1이 --filter로 쪼갠 하위 배치를 흉내낸다.
+    with tempfile.TemporaryDirectory() as stamp_a, tempfile.TemporaryDirectory() as stamp_b:
+        # nav-hit-task(stamp_a): 오라클(src/x.rs) 보유, 2런 모두 passed=False.
+        #   repeat0은 오라클을 읽어 nav_hit=1, repeat1은 다른 파일만 읽어 nav_hit=0
+        #   → 실패 층 내 비율 = 1/2 = 0.5 (§6-4-19① 과제별 층내 비율)
+        report_a = {"tasks": [{
+            "name": "nav-hit-task",
+            "procure": {"oracle_files": ["src/x.rs"]},
+            "runs": [
+                {"repeat": 0, "outcome": "finished", "passed": False, "protected_edits": 0},
+                {"repeat": 1, "outcome": "finished", "passed": False, "protected_edits": 0},
+            ],
+        }]}
+        with open(os.path.join(stamp_a, "report.json"), "w") as f:
+            json.dump(report_a, f)
+        with open(os.path.join(stamp_a, "run-nav-hit-task-0.jsonl"), "w") as f:
+            f.write(json.dumps(ev("touch", json.dumps({"tool": "read_file", "path": "src/x.rs"}))) + "\n")
+        with open(os.path.join(stamp_a, "run-nav-hit-task-1.jsonl"), "w") as f:
+            f.write(json.dumps(ev("touch", json.dumps({"tool": "read_file", "path": "other.rs"}))) + "\n")
+
+        # no-oracle-task(stamp_b): procure 없음(기존 두 트리 tasks/·tasks-large/와
+        # 동형) — nav_hit/fix_hit은 항상 "-"라 pass 층·fail 층 어디에도 안
+        # 들어간다("해당 없음"이지 "항해 실패"가 아니다 — §6-4-19①의 제외 사유).
+        report_b = {"tasks": [{"name": "no-oracle-task", "runs": [
+            {"repeat": 0, "outcome": "finished", "passed": True, "protected_edits": 0},
+        ]}]}
+        with open(os.path.join(stamp_b, "report.json"), "w") as f:
+            json.dump(report_b, f)
+        with open(os.path.join(stamp_b, "run-no-oracle-task-0.jsonl"), "w") as f:
+            f.write(json.dumps(ev("touch", json.dumps({"tool": "read_file", "path": "irrelevant.rs"}))) + "\n")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            pool([stamp_a, stamp_b])
+        out = buf.getvalue()
+
+        # ④' 시드 재현성 확인용 — 같은 인자로 한 번 더 돌린다(별개 성질, ④를 대체하지 않는다)
+        buf2 = io.StringIO()
+        with contextlib.redirect_stdout(buf2):
+            pool([stamp_a, stamp_b])
+        pool_output_second_call = buf2.getvalue()
+
+        lines = out.split("\n")
+        header = next(l for l in lines if l.split("\t") == COLS).split("\t")
+        col = {name: i for i, name in enumerate(header)}
+        no_oracle_row = next(l for l in lines if l.startswith("run-no-oracle-task-0\t")).split("\t")
+
+        # ① 층 크기 0인 과제는 **제외**되고 제외 수가 보고된다. no-oracle-task는
+        #    nav_hit이 항상 "-"라 fail 층 셀이 비어(층 크기 0) 제외된다.
+        assert "nav_hit[fail] tasks=1 excluded=1" in out, out
+        # ② 오라클 없는 과제의 nav_hit은 "-" — 0이 아니라 "해당 없음"이다.
+        #    ⚠ 컬럼을 지목해서 볼 것. `"\t-\t" in out`처럼 부분문자열로 쓰면
+        #    36/36행이 이미 그 패턴을 갖는 실배치(stop_cause·zero_mut_end·sr_files의
+        #    "-")에서 nav_hit이 "0"으로 잘못 찍혀도 통과하는 공허한 단언이 된다
+        #    (3R 실현 I1 실측) — 반드시 col[...]로 인덱싱한다.
+        assert no_oracle_row[col["nav_hit"]] == "-", no_oracle_row
+        assert no_oracle_row[col["fix_hit"]] == "-", no_oracle_row
+        # ③ **비합산** — 합산 라벨이 출력에 아예 없다(§5-4 제약 3·§6-4-19③ 공약)
+        assert "nav_hit[all]" not in out and "nav_hit[pooled]" not in out, out
+        # ④ **제외 후 남은 집합에서 재추출**한다(§6-4-19④). ⚠ 이 단언은 반드시
+        #    ci95의 **실값**을 봐야 한다 — tasks=/excluded=/mean=만 보면 변조 (b)가
+        #    부트스트랩 입력만 바꾸고(mean=0.5000은 그대로) 그 세 필드를 건드리지
+        #    않아 통과해 버린다(3R 실현 C2 실측과 같은 함정). 여기서는 남은 집합이
+        #    단일값([0.5])이라 재추출값이 항상 0.5 — ci95=[0.5000,0.5000]이
+        #    시드와 무관하게 결정적이다.
+        assert ("nav_hit[fail] tasks=1 excluded=1 mean=0.5000 ci95=[0.5000,0.5000]"
+                in out), out
+        # ④' 시드 재현성은 **별개 성질**이라 따로 건다(④를 대체하지 않는다)
+        assert out == pool_output_second_call, "seed 고정이 안 먹었다"
+        # ⑤ estimator_fit이 inline_system **층별**로 나온다
+        assert ("estimator inline_system=False" in out
+                and "estimator inline_system=True" in out), out
+        # ⑥ A5 판정 입력(§6-4-6)
+        assert "disqualification N=" in out and "disqualified=" in out, out
+        # ⑦ 주 지표의 불확실성(§6-4-7)
+        assert "pass_rate tasks=" in out and "ci95=[" in out, out
+
+    # M15 H19 — 1세션 트랜스크립트에서 r_obs를 낸다. report.json이 없다
+    # (스모크는 eval이 아니라 `cargo run -- -p …` 1회다). turn1은 ratio 1.0
+    # (1000/1000), turn2는 ratio 1.3(1300/1000) — r_obs는 **턴별 비율의
+    # 최댓값**(§4-1-1)이라 1.3000이어야 한다. first_turn_prompt_tokens는 turn1의
+    # 값(1000, §5-5 캐시-미스 기준)이고, pack 이벤트 1건으로 pack_fired=1.
+    session_events = [
+        ev("usage", json.dumps({"prompt_tokens": 1000, "completion_tokens": 20,
+                                "estimate_tokens": 1000, "messages": 5,
+                                "budget": 25804, "inline_system": False})),
+        ev("usage", json.dumps({"prompt_tokens": 1300, "completion_tokens": 20,
+                                "estimate_tokens": 1000, "messages": 9,
+                                "budget": 25804, "inline_system": False})),
+        ev("pack", json.dumps({"budget": 25804, "before": 30000, "after": 25000,
+                               "elided": 2, "dropped": 0})),
+    ]
+    with tempfile.TemporaryDirectory() as session_dir:
+        session_path = os.path.join(session_dir, "smoke.jsonl")
+        with open(session_path, "w") as f:
+            for e in session_events:
+                f.write(json.dumps(e) + "\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            session_mode(session_path)
+        session_out = buf.getvalue()
+    assert "r_obs=1.3000" in session_out, session_out
+    assert "first_turn_prompt_tokens=1000" in session_out, session_out
+    assert "pack_fired=1" in session_out, session_out
+
     print("selftest ok")
 
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "--selftest":
         selftest()
+    elif len(sys.argv) >= 3 and sys.argv[1] == "--pool":
+        # 재추출 횟수·시드는 사전등록이 등록한 값을 쓸 수 있어야 한다(§6-4-7).
+        # 기본값(10000·0) 외의 값을 쓰려면 코드를 고쳐야 하는 상태를 피한다
+        args, resamples, seed = [], 10000, 0
+        it = iter(sys.argv[2:])
+        for a in it:
+            if a == "--resamples":
+                resamples = int(next(it))
+            elif a == "--seed":
+                seed = int(next(it))
+            else:
+                args.append(a)
+        pool(args, resamples=resamples, seed=seed)
+    elif len(sys.argv) >= 3 and sys.argv[1] == "--session":
+        session_mode(sys.argv[2])
     elif len(sys.argv) >= 2:
         for d in sys.argv[1:]:
             process(d)

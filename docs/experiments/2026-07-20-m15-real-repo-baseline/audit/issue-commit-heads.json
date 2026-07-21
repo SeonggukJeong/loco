@@ -1,0 +1,98 @@
+[
+  {
+    "task": "fd-1873-path-sep",
+    "issue": 1873,
+    "title": "[BUG] The 'pattern contains path separator' error is only shown when pattern is an existing directory",
+    "commit_head": "fix: flag any pattern containing a path separator, not just ones that name a directory\nWithout --full-path, fd matches patterns against file names, so any pattern\ncontaining a path separator can never match. The previous implementation\nin main.rs fired the path-separator diagnostic only when the pattern also\nnamed an existing directory on disk, so the most common Linux/macOS typo\n- pasting a full path as the pattern - silently returned zero matches.\n\nRestructure ensure_search_pattern_is_not_a_path so that any '/' in the\npattern triggers the diagnostic unconditionally, and keep the existing\n'directory must exist on disk' guard only for the native '\\' separator\non Windows, which is also the regex escape character. The Windows check\nis short-circuited via '||' so the is_dir syscall never runs when the\npattern already contains '/'. The #[cfg_attr(not(windows), allow(unused_mut))]\nattribute keeps the mut binding warning-free on non-Windows targets.\n\nUpdate the error message to drop the now-ambiguous parenthetical that\nshowed the platform-specific separator character, and widen the\nintegration test assertions to cover the full first line so the\nassert_failure_with_error helper (which trims lines on both sides) cannot\nearly-accept on a partial prefix.\n\nCloses #1873\n\nSigned-off-by: SAY-5 <SAY-5@users.noreply.github.com>\n"
+  },
+  {
+    "task": "fd-1727-ignore-contain",
+    "issue": 1727,
+    "title": "feature request: add `--prune-parent` flag",
+    "commit_head": "`--ignore-contain`: ignore directories containing a named entry (e.g. [`CACHEDIR.TAG`](https://bford.info/cachedir/)).\nFixes #1727.\n\n\n CHANGELOG.md   |  2 +-\n src/cli.rs     | 10 ++++++++++\n src/config.rs  |  3 +++\n src/main.rs    |  1 +\n src/walk.rs    |  8 ++++++++\n tests/tests.rs | 18 ++++++++++++++++++\n 6 files changed, 41 insertions(+), 1 deletion(-)"
+  },
+  {
+    "task": "fd-615-hidden-dot-pattern",
+    "issue": 615,
+    "title": "Print warning if --hidden is not set and search pattern starts with a dot",
+    "commit_head": "Show error if pattern matches leading dot but --hidden is not given, closes #615\n\n\n src/main.rs         | 13 ++++++++++++-\n src/regex_helper.rs | 48 ++++++++++++++++++++++++++++++++++++++++++++++++\n tests/tests.rs      | 15 +++++++++++++++\n 3 files changed, 75 insertions(+), 1 deletion(-)"
+  },
+  {
+    "task": "fd-535-prune",
+    "issue": 535,
+    "title": "`-prune` options",
+    "commit_head": "Add --prune flag\ncloses #535 \n\n CHANGELOG.md           |  1 +\n contrib/completion/_fd |  3 +++\n doc/fd.1               |  3 +++\n src/app.rs             |  7 +++++++\n src/main.rs            |  1 +\n src/options.rs         |  3 +++\n src/walk.rs            |  5 +++++\n tests/tests.rs         | 34 ++++++++++++++++++++++++++++++++++\n 8 files changed, 57 insertions(+)"
+  },
+  {
+    "task": "fd-404-min-exact-depth",
+    "issue": 404,
+    "title": "Add --min-depth option",
+    "commit_head": "Add --min-depth and --exact-depth\nAdd new `--min-depth <depth>` and `--exact-depth <depth>` options in addition to the existing\noption to limit the maximum depth.\n\ncloses #404\n\n\n CHANGELOG.md   |  2 ++\n doc/fd.1       |  6 ++++++\n src/app.rs     | 26 +++++++++++++++++++++++++-\n src/main.rs    |  7 ++++++-\n src/options.rs |  3 +++\n src/walk.rs    | 13 +++++++++++++\n tests/tests.rs | 34 ++++++++++++++++++++++++++++++++++\n 7 files changed, 89 insertions(+), 2 deletions(-)"
+  },
+  {
+    "task": "fd-250-invalid-utf8",
+    "issue": 250,
+    "title": "Invalid utf8 filenames displayed when '-e' is used",
+    "commit_head": "Skip invalid utf8 filenames, closes #250\n\n\n src/walk.rs    |  2 ++\n tests/tests.rs | 23 +++++++++++++++++++++++\n 2 files changed, 25 insertions(+)"
+  },
+  {
+    "task": "fd-89-excludes",
+    "issue": 89,
+    "title": "Add --exclude option.",
+    "commit_head": "Add support for exclude-patterns\n* Add `--exclude`/`-E` option.\n* Support for multiple exclude patterns\n\nExample:\n``` bash\n> fd --exclude 'tests/**/*.rs' mod\nsrc/exec/mod.rs\nsrc/fshelper/mod.rs\nsrc/lscolors/mod.rs\n```\n\nCloses #89\n\n\n src/app.rs      | 35 ++++++++++++++++++++++++-----------\n src/internal.rs |  3 +++\n src/main.rs     |  4 ++++\n src/walk.rs     | 14 ++++++++++++++\n tests/tests.rs  | 47 +++++++++++++++++++++++++++++++++++++++++++++++\n 5 files changed, 92 insertions(+), 11 deletions(-)"
+  },
+  {
+    "task": "fd-675-number-parse-error",
+    "issue": 675,
+    "title": "Invalid option values are silently ignored",
+    "commit_head": "Fail with error message if numeric arguments can not be parsed\ncloses #675\n\n .travis.yml          |  10 +-\n CHANGELOG.md         |   1 +\n Cargo.lock           | 374 +++++++++++++++++++++++++--------------------------\n src/main.rs          |  41 ++++--\n tests/testenv/mod.rs |  38 ++++--\n tests/tests.rs       |  19 +++\n 6 files changed, 266 insertions(+), 217 deletions(-)"
+  },
+  {
+    "task": "rg-2664-sortr-path",
+    "issue": 2664,
+    "title": "Using `--sortr path` gives error \"thread 'main' panicked\"/\"not yet implemented\"",
+    "commit_head": "core: actually implement --sortr=path\nThis is an embarrassing oversight. A `todo!()` actually made its way\ninto a release! Oof.\n\nThis was working in ripgrep 13, but I had redone some aspects of sorting\nand this just got left undone.\n\nFixes #2664\n\n\n CHANGELOG.md                | 10 ++++++++++\n crates/core/flags/hiargs.rs |  8 +++++++-\n tests/feature.rs            | 11 +++++++++++\n 3 files changed, 28 insertions(+), 1 deletion(-)"
+  },
+  {
+    "task": "rg-1868-passthru-context",
+    "issue": 1868,
+    "title": "Context output options (-A, -B, and -C) do not override the \"--passthru\" option",
+    "commit_head": "args: make --passthru and -A/-B/-C override each other\nFixes #1868\n\n\n CHANGELOG.md        |  2 ++\n crates/core/app.rs  | 17 +++++++++++++----\n tests/regression.rs | 25 +++++++++++++++++++++++++\n 3 files changed, 40 insertions(+), 4 deletions(-)"
+  },
+  {
+    "task": "rg-1176-fixed-strings-file",
+    "issue": 1176,
+    "title": "rg does not respect -F when used with -f",
+    "commit_head": "search: fix -F and -f interaction bug\nThis fixes what appears to be a pretty egregious regression where the\n`-F/--fixed-strings` flag wasn't be applied to patterns supplied via\nthe `-f/--file` flag. The same bug existed for the `-x/--line-regexp`\nflag as well, which we fix here.\n\nFixes #1176\n\n\n CHANGELOG.md        |  2 ++\n src/args.rs         | 22 ++++++++++++++++------\n tests/regression.rs | 22 ++++++++++++++++++++++\n 3 files changed, 40 insertions(+), 6 deletions(-)"
+  },
+  {
+    "task": "rg-1159-exit-status",
+    "issue": 1159,
+    "title": "Should use exit code to distinguish between no results and an invocation error",
+    "commit_head": "exit: tweak exit status logic\nThis changes how ripgrep emit exit status codes. In particular, any error\nthat occurs while searching will now cause ripgrep to emit a `2` exit\ncode, where as it previously would emit either a `0` or a `1` code based\non whether it matched or not. That is, ripgrep would only emit a `2` exit\ncode for a catastrophic error.\n\nThis tweak includes additional logic that GNU grep adheres to, which seems\nlike good sense. Namely, if -q/--quiet is given, and an error occurs and\na match occurs, then ripgrep will emit a `0` exit code.\n\nCloses #1159\n\n\n CHANGELOG.md        |  9 +++++++++\n doc/rg.1.txt.tpl    | 10 +++++++++-\n src/args.rs         |  5 +++++\n src/main.rs         | 50 +++++++++++++++++++++++++++-----------------------\n src/messages.rs     | 24 ++++++++++++++++++++++++\n src/subject.rs      | 16 +++++++++++++---\n tests/regression.rs | 39 ++++++++++++++++++++++++++++++++++++++-\n 7 files changed, 125 insertions(+), 28 deletions(-)"
+  },
+  {
+    "task": "rg-693-contextless-sep",
+    "issue": 693,
+    "title": "Don't display context separators when only listing files",
+    "commit_head": "Omit context separators when using a contextless option like -c or -l\nFixes #693\n\n\n src/args.rs    | 14 ++++++++------\n tests/tests.rs | 19 +++++++++++++++++++\n 2 files changed, 27 insertions(+), 6 deletions(-)"
+  },
+  {
+    "task": "rg-568-leading-hyphen",
+    "issue": 568,
+    "title": "Combined options",
+    "commit_head": "Allow options with non-numeric arguments to accept leading hyphens in arguments (fixes #568)\n\n\n src/app.rs     |  8 +++++++-\n tests/tests.rs | 13 +++++++++++++\n 2 files changed, 20 insertions(+), 1 deletion(-)"
+  },
+  {
+    "task": "rg-483-quiet-files",
+    "issue": 483,
+    "title": "--files --quiet should be quiet",
+    "commit_head": "Make --quiet flag apply when using --files option\nFixes #483.\n\n\n src/main.rs    |  8 ++++++--\n tests/tests.rs | 29 +++++++++++++++++++++++++++++\n 2 files changed, 35 insertions(+), 2 deletions(-)"
+  },
+  {
+    "task": "rg-740-passthru",
+    "issue": 740,
+    "title": "Add support for `--passthr{u,ough}` flag",
+    "commit_head": "printer: add --passthru flag\nThe --passthru flag causes ripgrep to print every line,\neven if the line does not contain a match. This is a\nresponse to the common pattern of `^|foo` to match every\nline, while still highlighting things like `foo`.\n\nFixes #740 \n\n complete/_rg   |  8 +++++---\n doc/rg.1       |  8 ++++++++\n doc/rg.1.md    |  4 ++++\n src/app.rs     |  4 ++++\n src/args.rs    | 10 ++++++++--\n tests/tests.rs | 55 +++++++++++++++++++++++++++++++++++++++++++++++++++++++\n 6 files changed, 84 insertions(+), 5 deletions(-)"
+  }
+]

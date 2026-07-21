@@ -1,0 +1,7 @@
+prompt = "### Checks\n\n- [x] I have read the troubleshooting section and still think this is a bug.\n\n### Describe the bug you encountered:\n\nIf invoked with `fd /`, fd fails with the following error \n```\n[fd error]: The search pattern '/' contains a path-separation character ('/') and will not lead to any search results.\n\nIf you want to search for all files inside the 'Programs/' directory, use a match-all pattern:\n\n  fd . '/'\n\nInstead, if you want your pattern to match the full file path, use:\n\n  fd --full-path '/'\n```\n\nHowever, this behavior is inconsistent. The error message is only printed when the pattern also happens to be an existing directory. Otherwise, `fd` returns no error, and silently finds no files. \n\n\n### Describe what you expected to happen:\n\nI would expect the error about how a pattern with a '/' in it will not lead to any search results to be displayed regardless of the pattern possibly being a directory path.  \n\n### What version of `fd` are you using?\n\nfd 10.3.0\n\n### Which operating system / distribution are you on?\n\n```shell\nLinux 6.18.4-arch1-1 x86_64\n\nLSB Version:    n/a\nDistributor ID: Arch\nDescription:    Arch Linux\nRelease:        rolling\nCodename:       n/a\n```"
+check = "cargo test --test tests test_pattern_with_forward_slash_is_rejected"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/tests.rs"]

@@ -1,0 +1,4 @@
+bfcb1b6b4c750412f3bc6b1de0fb6f6057bc48d0	396	zsh: expand leading named directory when CDABLE_VARS is set
+628f8542a01813e36edde2fba42bf0eafb9dfb05	995	Fixes #995: Wildcard expansion for PowerShell (#1001)
+b193a84eb0991728ebaf2b4b03c7bd27c2189bb2	539	docs: Update minimum supported fzf version (#1034)
+d49a2c14959a5df5cad022466e9efef0a573efb2	80	Add _ZO_RESOLVE_SYMLINKS to resolve or not symlinks (#85)

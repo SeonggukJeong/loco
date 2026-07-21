@@ -1,0 +1,5 @@
+repo = "delta"
+issue_url = "https://github.com/dandavison/delta/issues/1089"
+fix_sha = "bd54a51205beb2aa71f8d4efb9b0749f425fb1da"
+parent_sha = "e28e97de7aa02969bcf939f20269ea5c0ff5269b"
+oracle_files = ["src/handlers/commit_meta.rs"]

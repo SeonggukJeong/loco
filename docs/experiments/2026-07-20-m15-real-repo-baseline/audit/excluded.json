@@ -1,0 +1,37 @@
+[
+  {
+    "task": "rg-99-empty-lines",
+    "reason": "convention4_compile_fail",
+    "detail": "rustc-serialize E0310/E0642 on current rustc; ancient ripgrep parent unbuildable"
+  },
+  {
+    "task": "fd-1727-ignore-contain",
+    "reason": "issue_commit_misalign",
+    "detail": "issue asked --prune-parent for repo-finding; commit implements unrelated --ignore-contain (CACHEDIR.TAG). Issue author later said it does not solve original request."
+  },
+  {
+    "task": "rg-2664-sortr-path",
+    "reason": "convention6_named",
+    "detail": "panic at crates/core/flags/hiargs.rs:todo! — oracle path in failure report"
+  },
+  {
+    "task": "rg-693-contextless-sep",
+    "reason": "discriminability_fail",
+    "detail": "check passed on parent+overlay without solution (rc=0)"
+  },
+  {
+    "task": "fd-250-invalid-utf8",
+    "reason": "solvability_platform",
+    "detail": "macOS rejects invalid UTF-8 path creation (errno 92)"
+  },
+  {
+    "task": "fd-89-excludes",
+    "reason": "solvability_toolchain",
+    "detail": "old ignore crate panics on modern rustc (uninit Message)"
+  },
+  {
+    "task": "rg-483-quiet-files",
+    "reason": "solvability_toolchain",
+    "detail": "old ignore crate panics on modern rustc (uninit Message)"
+  }
+]

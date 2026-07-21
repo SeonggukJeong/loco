@@ -1,0 +1,146 @@
+
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded cfg-if v0.1.10
+  Downloaded ctrlc v3.1.7
+  Downloaded dirs-sys-next v0.1.1
+  Downloaded filetime v0.2.13
+  Downloaded diff v0.1.12
+  Downloaded num_cpus v1.13.0
+  Downloaded strsim v0.8.0
+  Downloaded version_check v0.9.2
+  Downloaded remove_dir_all v0.5.3
+  Downloaded autocfg v1.0.1
+  Downloaded humantime v2.0.1
+  Downloaded memchr v2.3.4
+  Downloaded tempdir v0.3.7
+  Downloaded term_size v0.3.2
+  Downloaded thread_local v1.0.1
+  Downloaded ansi_term v0.11.0
+  Downloaded ansi_term v0.12.1
+  Downloaded bitflags v1.2.1
+  Downloaded globset v0.4.6
+  Downloaded lscolors v0.7.1
+  Downloaded unicode-width v0.1.8
+  Downloaded users v0.11.0
+  Downloaded walkdir v2.3.1
+  Downloaded crossbeam-utils v0.8.1
+  Downloaded clap v2.33.3
+  Downloaded log v0.4.11
+  Downloaded rand v0.4.6
+  Downloaded aho-corasick v0.7.15
+  Downloaded regex-syntax v0.6.21
+  Downloaded bstr v0.2.14
+  Downloaded libc v0.2.80
+  Downloaded ignore v0.4.17
+  Downloaded nix v0.18.0
+  Downloaded regex v1.4.2
+  Downloaded anyhow v1.0.35
+   Compiling libc v0.2.80
+   Compiling bitflags v1.2.1
+   Compiling memchr v2.3.4
+   Compiling cfg-if v0.1.10
+   Compiling log v0.4.11
+   Compiling lazy_static v1.4.0
+   Compiling cfg-if v1.0.0
+   Compiling unicode-width v0.1.8
+   Compiling autocfg v1.0.1
+   Compiling ansi_term v0.11.0
+   Compiling vec_map v0.8.2
+   Compiling regex-syntax v0.6.21
+   Compiling thread_local v1.0.1
+   Compiling nix v0.18.0
+   Compiling strsim v0.8.0
+   Compiling version_check v0.9.2
+   Compiling fnv v1.0.7
+   Compiling same-file v1.0.6
+   Compiling anyhow v1.0.35
+   Compiling crossbeam-utils v0.8.1
+   Compiling walkdir v2.3.1
+   Compiling ansi_term v0.12.1
+   Compiling humantime v2.0.1
+   Compiling remove_dir_all v0.5.3
+   Compiling diff v0.1.12
+   Compiling lscolors v0.7.1
+   Compiling aho-corasick v0.7.15
+   Compiling bstr v0.2.14
+   Compiling regex v1.4.2
+   Compiling globset v0.4.6
+   Compiling term_size v0.3.2
+   Compiling atty v0.2.14
+   Compiling dirs-sys-next v0.1.1
+   Compiling textwrap v0.11.0
+   Compiling dirs-next v2.0.0
+   Compiling users v0.11.0
+   Compiling rand v0.4.6
+   Compiling num_cpus v1.13.0
+   Compiling filetime v0.2.13
+   Compiling clap v2.33.3
+   Compiling tempdir v0.3.7
+   Compiling ctrlc v3.1.7
+   Compiling fd-find v8.2.0 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-fd-615-hidden-dot-pattern-8mi3a0s_/src)
+   Compiling ignore v0.4.17
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:200:20
+    |
+200 |             panic!(format_exit_error(args, &output));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: `#[warn(non_fmt_panics)]` (part of `#[warn(rust_2021_compatibility)]`) on by default
+help: add a "{}" format string to `Display` the message
+    |
+200 |             panic!("{}", format_exit_error(args, &output));
+    |                    +++++
+
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:239:20
+    |
+239 |             panic!(format_output_error(args, &expected, &actual));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+help: add a "{}" format string to `Display` the message
+    |
+239 |             panic!("{}", format_output_error(args, &expected, &actual));
+    |                    +++++
+
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:292:24
+    |
+292 |                 panic!(format_output_error(args, &expected_error, &actual_err));
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+help: add a "{}" format string to `Display` the message
+    |
+292 |                 panic!("{}", format_output_error(args, &expected_error, &actual_err));
+    |                        +++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> src/filesystem.rs:91:30
+   |
+91 | pub fn osstr_to_bytes(input: &OsStr) -> Cow<[u8]> {
+   |                              ^^^^^^     ^^^^^^^^^ the same lifetime is hidden here
+   |                              |
+   |                              the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+91 | pub fn osstr_to_bytes(input: &OsStr) -> Cow<'_, [u8]> {
+   |                                             +++
+
+warning: `fd-find` (test "tests") generated 3 warnings (run `cargo fix --test "tests" -p fd-find` to apply 3 suggestions)
+warning: `fd-find` (bin "fd" test) generated 1 warning (1 duplicate)
+warning: `fd-find` (bin "fd") generated 1 warning (run `cargo fix --bin "fd" -p fd-find` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.54s
+  Executable unittests src/main.rs (target/debug/deps/fd-d98ea1b28d90a1de)
+  Executable tests/tests.rs (target/debug/deps/tests-2e5eacce2c9a5814)

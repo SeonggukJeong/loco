@@ -1,0 +1,2 @@
+3bd38f275e4d3cb35794e3869e35d6947cbbf182	tests/integration_tests.rs,
+4564977b7ac4fc9131feaecbfbf1a7567897e629	doc/hyperfine.1,src/cli.rs,src/options.rs,src/output/format.rs,src/util/units.rs,tests/integration_tests.rs,

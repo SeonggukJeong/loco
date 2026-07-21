@@ -1,0 +1,349 @@
+[
+  {
+    "task": "fd-1873-path-sep",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.55s"
+    ],
+    "n_rs_nonprot": 1,
+    "rs": [
+      "tests/testenv/mod.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "fd-615-hidden-dot-pattern",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 56 filtered out; finished in 0.46s"
+    ],
+    "n_rs_nonprot": 2,
+    "rs": [
+      "src/filesystem.rs",
+      "tests/testenv/mod.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "fd-535-prune",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.48s"
+    ],
+    "n_rs_nonprot": 2,
+    "rs": [
+      "src/filesystem.rs",
+      "tests/testenv/mod.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "fd-404-min-exact-depth",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.48s"
+    ],
+    "n_rs_nonprot": 3,
+    "rs": [
+      "src/filesystem.rs",
+      "src/filter/size.rs",
+      "tests/testenv/mod.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "fd-250-invalid-utf8",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.00s"
+    ],
+    "n_rs_nonprot": 3,
+    "rs": [
+      "src/exec/mod.rs",
+      "src/main.rs",
+      "tests/testenv/mod.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "fd-89-excludes",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.44s"
+    ],
+    "n_rs_nonprot": 5,
+    "rs": [
+      "src/exec/input.rs",
+      "src/exec/ticket.rs",
+      "src/internal.rs",
+      "src/main.rs",
+      "tests/testenv/mod.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "fd-675-number-parse-error",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 54 filtered out; finished in 0.47s"
+    ],
+    "n_rs_nonprot": 1,
+    "rs": [
+      "src/filesystem.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "rg-2664-sortr-path",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 297 filtered out; finished in 0.53s"
+    ],
+    "n_rs_nonprot": 4,
+    "rs": [
+      "crates/core/flags/hiargs.rs",
+      "crates/ignore/src/dir.rs",
+      "crates/ignore/src/overrides.rs",
+      "tests/util.rs"
+    ],
+    "leak_rc": 1,
+    "named": true,
+    "status": "NAMED",
+    "valid_fail": true
+  },
+  {
+    "task": "rg-1868-passthru-context",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 256 filtered out; finished in 0.54s"
+    ],
+    "n_rs_nonprot": 10,
+    "rs": [
+      "crates/core/app.rs",
+      "crates/core/args.rs",
+      "crates/ignore/src/dir.rs",
+      "crates/ignore/src/overrides.rs",
+      "crates/ignore/src/types.rs",
+      "crates/matcher/src/interpolate.rs",
+      "crates/printer/src/json.rs",
+      "crates/printer/src/jsont.rs",
+      "crates/searcher/src/searcher/glue.rs",
+      "crates/searcher/src/sink.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "rg-1176-fixed-strings-file",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 200 filtered out; finished in 0.52s"
+    ],
+    "n_rs_nonprot": 22,
+    "rs": [
+      "globset/src/glob.rs",
+      "globset/src/pathutil.rs",
+      "grep-cli/src/escape.rs",
+      "grep-matcher/src/interpolate.rs",
+      "grep-printer/src/json.rs",
+      "grep-printer/src/jsont.rs",
+      "grep-printer/src/standard.rs",
+      "grep-printer/src/stats.rs",
+      "grep-searcher/src/searcher/glue.rs",
+      "grep-searcher/src/sink.rs",
+      "ignore/src/dir.rs",
+      "ignore/src/lib.rs",
+      "ignore/src/overrides.rs",
+      "ignore/src/types.rs",
+      "ignore/src/walk.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "rg-1159-exit-status",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 198 filtered out; finished in 0.55s"
+    ],
+    "n_rs_nonprot": 22,
+    "rs": [
+      "globset/src/glob.rs",
+      "globset/src/pathutil.rs",
+      "grep-cli/src/escape.rs",
+      "grep-matcher/src/interpolate.rs",
+      "grep-printer/src/json.rs",
+      "grep-printer/src/jsont.rs",
+      "grep-printer/src/standard.rs",
+      "grep-printer/src/stats.rs",
+      "grep-searcher/src/searcher/glue.rs",
+      "grep-searcher/src/sink.rs",
+      "ignore/src/dir.rs",
+      "ignore/src/lib.rs",
+      "ignore/src/overrides.rs",
+      "ignore/src/types.rs",
+      "ignore/src/walk.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "rg-693-contextless-sep",
+    "check_rc": 0,
+    "test_results": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 141 filtered out; finished in 0.48s"
+    ],
+    "n_rs_nonprot": 23,
+    "rs": [
+      "globset/src/glob.rs",
+      "globset/src/lib.rs",
+      "globset/src/pathutil.rs",
+      "grep/src/lib.rs",
+      "grep/src/nonl.rs",
+      "grep/src/search.rs",
+      "ignore/src/dir.rs",
+      "ignore/src/gitignore.rs",
+      "ignore/src/lib.rs",
+      "ignore/src/overrides.rs",
+      "ignore/src/types.rs",
+      "ignore/src/walk.rs",
+      "src/app.rs",
+      "src/args.rs",
+      "src/decoder.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "FAIL0",
+    "valid_fail": false
+  },
+  {
+    "task": "rg-568-leading-hyphen",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 137 filtered out; finished in 0.47s"
+    ],
+    "n_rs_nonprot": 23,
+    "rs": [
+      "globset/src/glob.rs",
+      "globset/src/lib.rs",
+      "globset/src/pathutil.rs",
+      "grep/src/lib.rs",
+      "grep/src/nonl.rs",
+      "grep/src/search.rs",
+      "ignore/src/dir.rs",
+      "ignore/src/gitignore.rs",
+      "ignore/src/lib.rs",
+      "ignore/src/overrides.rs",
+      "ignore/src/types.rs",
+      "ignore/src/walk.rs",
+      "src/app.rs",
+      "src/args.rs",
+      "src/decoder.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "rg-483-quiet-files",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 131 filtered out; finished in 0.49s"
+    ],
+    "n_rs_nonprot": 24,
+    "rs": [
+      "/rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs",
+      "globset/src/glob.rs",
+      "globset/src/lib.rs",
+      "globset/src/pathutil.rs",
+      "grep/src/lib.rs",
+      "grep/src/nonl.rs",
+      "grep/src/search.rs",
+      "ignore/src/dir.rs",
+      "ignore/src/gitignore.rs",
+      "ignore/src/lib.rs",
+      "ignore/src/overrides.rs",
+      "ignore/src/types.rs",
+      "ignore/src/walk.rs",
+      "src/app.rs",
+      "src/args.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "rg-740-passthru",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 145 filtered out; finished in 0.47s"
+    ],
+    "n_rs_nonprot": 18,
+    "rs": [
+      "globset/src/glob.rs",
+      "globset/src/pathutil.rs",
+      "grep/src/lib.rs",
+      "ignore/src/dir.rs",
+      "ignore/src/gitignore.rs",
+      "ignore/src/lib.rs",
+      "ignore/src/overrides.rs",
+      "ignore/src/types.rs",
+      "ignore/src/walk.rs",
+      "src/app.rs",
+      "src/args.rs",
+      "src/main.rs",
+      "src/printer.rs",
+      "src/search_stream.rs",
+      "src/unescape.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  },
+  {
+    "task": "fd-898-strip-cwd-exec",
+    "check_rc": 101,
+    "test_results": [
+      "test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 68 filtered out; finished in 0.65s"
+    ],
+    "n_rs_nonprot": 2,
+    "rs": [
+      "src/filesystem.rs",
+      "tests/testenv/mod.rs"
+    ],
+    "leak_rc": 0,
+    "named": false,
+    "status": "OK",
+    "valid_fail": true
+  }
+]

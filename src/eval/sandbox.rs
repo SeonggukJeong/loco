@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 
 /// 프로세스 내 샌드박스 일련번호 — pid와 조합해 고유 이름을 만든다
 static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -58,6 +58,13 @@ impl Sandbox {
                 }
                 let bytes = std::fs::read(&src)?;
                 std::fs::write(&dst, bytes)?;
+                // M15 H17 — **세 번째 read+write 사이트**. tasks-real의 protected는
+                // 단일 파일(`tests/<x>.rs`)이라 배치의 모든 런이 여기를 탄다
+                // M15 H5 후속: 링크를 따라가야 한다 — 위 fs::read가 이미 링크를
+                // 따라가므로(대상 내용을 읽음) 메타데이터도 같은 대상 기준이어야
+                // 링크 자체의 mode(예: 0o777)가 새 나가지 않는다
+                let meta = std::fs::metadata(&src)?;
+                restore_mode(&meta, &dst)?;
             }
         }
         Ok(())
@@ -76,15 +83,46 @@ fn copy_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
         let to = dst.join(entry.file_name());
         let meta = std::fs::symlink_metadata(&from)?;
         if meta.is_symlink() {
-            bail!("fixture에 심링크가 있음 (지원 안 함): {}", from.display());
+            // M15 H5: 스킵 + 경고. 대상 레포의 심링크는 전부 문서·패키징용이고
+            // (ripgrep HomebrewFormula, just www/man/{en,zh} — 후자 둘은 dangling)
+            // 탈출 위험은 confine(path.rs:43-51)이 canonicalize 후 루트 검사로 이미
+            // 닫는다. 스킵 항목은 조달 로그(scripts/procure_real.sh)가 함께 남긴다
+            eprintln!("(심링크 건너뜀: {})", from.display());
+            continue;
         }
         if meta.is_dir() {
             std::fs::create_dir_all(&to)?;
             copy_tree(&from, &to)?;
         } else {
-            std::fs::copy(&from, &to)?;
+            // read+write — fs::copy는 macOS에서 clonefile로 원본 mtime을 보존해
+            // 스테일 빌드 캐시 판정 벡터가 된다. M6가 overlay_tree에서만 막았고
+            // copy_tree에는 남아 있던 잔여 결함 (M15 H6)
+            let bytes = std::fs::read(&from)
+                .with_context(|| format!("픽스처 읽기 실패: {}", from.display()))?;
+            std::fs::write(&to, bytes)
+                .with_context(|| format!("픽스처 복사 실패: {}", to.display()))?;
+            restore_mode(&meta, &to)
+                .with_context(|| format!("퍼미션 복원 실패: {}", to.display()))?;
         }
     }
+    Ok(())
+}
+
+/// read+write 복사가 잃는 원본 퍼미션을 복원한다 (M15 H17).
+/// `| 0o200`으로 소유자 쓰기 비트를 강제하는 것은 읽기 전용 픽스처 파일이
+/// `sync_protected`의 덮어쓰기(remove 후 write)나 에이전트 편집을 막지 않게 하기
+/// 위함 — 원본 트리의 읽기 전용은 판정 자산 보호 수단이 아니고(그 역할은
+/// protected 동기화가 한다) 하네스를 죽이는 실패 모드만 만든다
+#[cfg(unix)]
+fn restore_mode(meta: &std::fs::Metadata, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = meta.permissions().mode() | 0o200;
+    std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode))
+}
+
+/// Windows에는 유닉스 mode가 없다 — read+write가 잃는 것도 없다
+#[cfg(not(unix))]
+fn restore_mode(_meta: &std::fs::Metadata, _to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
@@ -98,7 +136,10 @@ pub(crate) fn overlay_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
         let to = dst.join(entry.file_name());
         let meta = std::fs::symlink_metadata(&from)?;
         if meta.is_symlink() {
-            bail!("오버레이 원본에 심링크가 있음 (지원 안 함): {}", from.display());
+            // copy_tree와 같은 정책 (M15 H5). 소비자 둘 — solution/ 오버레이,
+            // sync_protected 디렉터리 분기 — 이 전부가 여기를 탄다
+            eprintln!("(심링크 건너뜀: {})", from.display());
+            continue;
         }
         if meta.is_dir() {
             std::fs::create_dir_all(&to)?;
@@ -107,6 +148,10 @@ pub(crate) fn overlay_tree(src: &Path, dst: &Path) -> anyhow::Result<()> {
             let bytes = std::fs::read(&from)?;
             std::fs::write(&to, bytes)
                 .with_context(|| format!("오버레이 쓰기 실패: {}", to.display()))?;
+            // M15 H17: copy_tree와 같은 이유 — read+write는 퍼미션을 잃는다.
+            // 이 함수는 sync_protected를 통해 **모든 eval 런에서 check 직전**에 돈다
+            restore_mode(&meta, &to)
+                .with_context(|| format!("퍼미션 복원 실패: {}", to.display()))?;
         }
     }
     Ok(())
@@ -155,10 +200,34 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn symlink_in_fixture_is_an_error() {
+    fn symlinks_are_skipped_not_an_error() {
+        // M15 H5: 정책 = 스킵 + 경고. ripgrep의 HomebrewFormula(정상 심링크)와
+        // just의 www/man/{en,zh}(dangling) 둘 다 이 경로를 탄다. 대상은 전부
+        // 문서·패키징용이라 판정에 영향이 없고, 탈출 위험은 confine이 이미 닫는다
         let fx = fixture_with(&[("real.txt", "x")]);
         std::os::unix::fs::symlink(fx.path().join("real.txt"), fx.path().join("link.txt")).unwrap();
-        assert!(Sandbox::create(fx.path()).unwrap_err().to_string().contains("심링크"));
+        // dangling — 대상이 없어도 bail이 아니라 스킵이어야 한다
+        std::os::unix::fs::symlink(fx.path().join("nope.txt"), fx.path().join("dangling")).unwrap();
+
+        let sb = Sandbox::create(fx.path()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(sb.root.join("real.txt")).unwrap(), "x", "실파일은 복사");
+        assert!(sb.root.join("link.txt").symlink_metadata().is_err(), "심링크는 스킵");
+        assert!(sb.root.join("dangling").symlink_metadata().is_err(), "dangling도 스킵");
+        sb.cleanup();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn overlay_tree_skips_symlinks() {
+        // 소비자 둘(solution/ 오버레이·sync_protected 디렉터리 분기)이 이 함수를 탄다
+        // — copy_tree만 고치면 solution/ 오버레이가 여기서 죽는다
+        let src = fixture_with(&[("a.rs", "new")]);
+        std::os::unix::fs::symlink(src.path().join("a.rs"), src.path().join("alias.rs")).unwrap();
+        let dst = fixture_with(&[("a.rs", "stale")]);
+        overlay_tree(src.path(), dst.path()).unwrap();
+        assert_eq!(std::fs::read_to_string(dst.path().join("a.rs")).unwrap(), "new");
+        assert!(dst.path().join("alias.rs").symlink_metadata().is_err(), "심링크는 스킵");
     }
 
     #[cfg(unix)]
@@ -254,6 +323,193 @@ mod tests {
         let restored = std::fs::metadata(sb.root.join("tests/t.rs")).unwrap().modified().unwrap();
         assert!(restored > old + std::time::Duration::from_secs(1800), "protected 복원도 mtime 갱신 (M6 §4)");
         assert_eq!(std::fs::read_to_string(sb.root.join("tests/t.rs")).unwrap(), "ORIGINAL");
+        sb.cleanup();
+    }
+
+    #[test]
+    fn copy_tree_refreshes_mtime() {
+        // M6는 overlay_tree에서만 fs::copy를 막았다. copy_tree에는 같은 벡터가
+        // 남아 있었다 — macOS의 fs::copy는 clonefile로 원본 mtime을 보존하므로
+        // 픽스처가 과거 mtime을 가지면 샌드박스의 소스가 빌드 산출물보다
+        // 과거가 되고 cargo가 재빌드를 건너뛴다 (M15 H6)
+        let src = fixture_with(&[("a.rs", "new")]);
+        let old = age_file(&src.path().join("a.rs"));
+        let sb = Sandbox::create(src.path()).unwrap();
+        let copied = std::fs::metadata(sb.root.join("a.rs")).unwrap().modified().unwrap();
+        assert!(
+            copied > old + std::time::Duration::from_secs(1800),
+            "샌드박스 복사도 mtime을 갱신해야 함 (M15 H6)"
+        );
+        assert_eq!(std::fs::read_to_string(sb.root.join("a.rs")).unwrap(), "new");
+        sb.cleanup();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_preserves_the_executable_bit() {
+        // read+write는 퍼미션을 잃는다(3R 실측 755→644). 실레포 픽스처는
+        // ci/*.sh 같은 실행 파일을 갖고, mode 회귀를 잡을 기존 테스트가
+        // 하나도 없었다 (M15 H17)
+        use std::os::unix::fs::PermissionsExt;
+        let fx = fixture_with(&[("run.sh", "#!/bin/sh\nexit 0\n"), ("plain.txt", "x")]);
+        std::fs::set_permissions(
+            fx.path().join("run.sh"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        // 읽기 전용 픽스처 파일도 샌드박스에서는 덮어쓸 수 있어야 한다
+        std::fs::set_permissions(
+            fx.path().join("plain.txt"),
+            std::fs::Permissions::from_mode(0o444),
+        )
+        .unwrap();
+
+        let sb = Sandbox::create(fx.path()).unwrap();
+
+        let exec = std::fs::metadata(sb.root.join("run.sh")).unwrap().permissions().mode();
+        assert_eq!(exec & 0o777, 0o755, "실행 비트 보존 (M15 H17)");
+        let plain = std::fs::metadata(sb.root.join("plain.txt")).unwrap().permissions().mode();
+        assert_eq!(plain & 0o200, 0o200, "소유자 쓰기 비트 강제 — sync_protected 덮어쓰기 경로");
+        sb.cleanup();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_protected_preserves_the_executable_bit() {
+        // M15 H17 후반부 — overlay_tree는 M6 때부터 read+write라 **이미** 실행
+        // 비트를 잃고 있었다. copy_tree만 고치면 절반만 닫힌다(플랜 1R 실현 I1).
+        // 이 경로는 sync_protected를 통해 **모든 eval 런에서 check 직전**에 돈다
+        use std::os::unix::fs::PermissionsExt;
+        let fx = fixture_with(&[("ci/run.sh", "#!/bin/sh\nexit 0\n")]);
+        std::fs::set_permissions(
+            fx.path().join("ci/run.sh"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        let sb = Sandbox::create(fx.path()).unwrap();
+        // 에이전트가 protected를 건드렸다고 가정 → 동기화가 overlay_tree를 탄다
+        std::fs::write(sb.root.join("ci/run.sh"), "#!/bin/sh\nexit 1\n").unwrap();
+        sb.sync_protected(fx.path(), &["ci".to_string()]).unwrap();
+
+        let m = std::fs::metadata(sb.root.join("ci/run.sh")).unwrap().permissions().mode();
+        assert_eq!(m & 0o777, 0o755, "protected 복원도 실행 비트를 보존해야 한다 (M15 H17)");
+        sb.cleanup();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_protected_single_file_preserves_the_executable_bit() {
+        // M15 H17 **세 번째 사이트** (2R 실현 I4·측정 A-3).
+        // ⚠ 위 테스트는 protected가 **디렉터리**라 overlay_tree로 라우팅된다.
+        // 그런데 tasks-real의 protected는 `tests/<x>.rs` — **단일 파일**이라
+        // sync_protected의 :55-61 분기를 탄다. 즉 **배치의 모든 런이 타는 경로가
+        // 이쪽인데 개정 2의 테스트는 그 경로를 시험하지 않았다.**
+        // 실측(2R): 복원 없이는 create=755 → sync=644
+        use std::os::unix::fs::PermissionsExt;
+        let fx = fixture_with(&[("run.sh", "#!/bin/sh\nexit 0\n")]);
+        std::fs::set_permissions(
+            fx.path().join("run.sh"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        let sb = Sandbox::create(fx.path()).unwrap();
+        std::fs::write(sb.root.join("run.sh"), "#!/bin/sh\nexit 1\n").unwrap();
+        // protected를 **단일 파일**로 준다 — tasks-real과 같은 형태
+        sb.sync_protected(fx.path(), &["run.sh".to_string()]).unwrap();
+
+        let m = std::fs::metadata(sb.root.join("run.sh")).unwrap().permissions().mode();
+        assert_eq!(m & 0o777, 0o755, "단일 파일 protected 복원도 실행 비트 보존 (M15 H17)");
+        sb.cleanup();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_protected_single_symlink_restores_target_mode_not_link_mode() {
+        // M15 H5 후속·H17 회귀 테스트. Task 3가 copy_tree의 심링크 bail을 스킵+경고로
+        // 바꾸면서(H5) protected 단일 파일이 심링크인 경우가 처음으로 도달 가능해졌다:
+        // copy_tree가 그 심링크를 건너뛰므로 sync_protected가 처음부터 채워야 한다.
+        // sync_protected의 단일 파일 분기(:59)는 fs::read(&src)로 링크를 따라가
+        // 대상 내용을 읽는데, 메타데이터(:66)가 symlink_metadata였다면 링크 자체의
+        // mode를 복원해 버려 조용한 퍼미션 확대가 된다. metadata(&src)로 대상을
+        // 따라가야 이 줄이 실제로 올바르다.
+        use std::os::unix::fs::PermissionsExt;
+        let fx = fixture_with(&[("real.txt", "TARGET")]);
+        let target_mode: u32 = 0o750; // 대상 파일의 "구별되는" mode
+        std::fs::set_permissions(fx.path().join("real.txt"), std::fs::Permissions::from_mode(target_mode))
+            .unwrap();
+        std::os::unix::fs::symlink(fx.path().join("real.txt"), fx.path().join("link.txt")).unwrap();
+
+        // 심링크 자체의 mode는 OS/umask가 정한다(예: 이 macOS 환경은 0o777이 아니라
+        // umask 반영값인 0o755) — 대상 mode와 우연히 같으면 이 테스트가 판별력을
+        // 잃으므로, 실제 환경에서 서로 다름을 사전조건으로 확인해 둔다
+        let link_own_mode =
+            std::fs::symlink_metadata(fx.path().join("link.txt")).unwrap().permissions().mode() & 0o777;
+        assert_ne!(
+            link_own_mode, target_mode,
+            "테스트 전제 실패: 이 환경의 심링크 자체 mode가 우연히 대상 mode와 같음 — target_mode를 바꿔야 판별력이 생김"
+        );
+
+        // Sandbox::create는 copy_tree를 거치므로(H5) link.txt는 스킵된 채로 생성된다 —
+        // sync_protected가 그 자리를 처음부터 채우는, 배치가 실제로 타는 경로
+        let sb = Sandbox::create(fx.path()).unwrap();
+        assert!(
+            sb.root.join("link.txt").symlink_metadata().is_err(),
+            "생성 시점엔 copy_tree가 심링크를 스킵해야 함 (H5)"
+        );
+
+        sb.sync_protected(fx.path(), &["link.txt".to_string()]).unwrap();
+
+        let restored = sb.root.join("link.txt");
+        assert_eq!(std::fs::read_to_string(&restored).unwrap(), "TARGET", "대상 내용이 복원돼야 함");
+        let mode = std::fs::metadata(&restored).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, target_mode,
+            "심링크 protected 복원은 대상의 실제 mode를 써야 한다 — 링크 자체의 mode가 아니라 (M15 H5·H17)"
+        );
+        sb.cleanup();
+    }
+
+    #[test]
+    fn fixture_provided_dot_cargo_is_restored_not_deleted() {
+        // M15 H18 — fd·ripgrep·zoxide는 .cargo/config.toml을 추적한다.
+        // 픽스처가 .cargo를 갖는 경로는 이 프로젝트 역사상 처음이다(§3-2 규약 5).
+        // 암묵 protected 정책은 "삭제"가 아니라 "원본 복원"이어야 한다 —
+        // 삭제하면 실레포 픽스처가 자기 빌드 설정을 잃은 채 check를 받는다
+        use crate::eval::with_implicit_protected;
+        let fx = fixture_with(&[(".cargo/config.toml", "[build]\nrustflags = []\n"), ("src/lib.rs", "x")]);
+        let sb = Sandbox::create(fx.path()).unwrap();
+        // 리워드 해킹 시뮬레이션: 가짜 러너 설정 + 추가 파일
+        std::fs::write(
+            sb.root.join(".cargo/config.toml"),
+            "[target.'cfg(all())']\nrunner = 'true'\n",
+        )
+        .unwrap();
+        std::fs::write(sb.root.join(".cargo/extra.toml"), "sneak").unwrap();
+
+        sb.sync_protected(fx.path(), &with_implicit_protected(&["src".to_string()])).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(sb.root.join(".cargo/config.toml")).unwrap(),
+            "[build]\nrustflags = []\n",
+            "픽스처 원본으로 복원 (M15 H18)"
+        );
+        assert!(!sb.root.join(".cargo/extra.toml").exists(), "에이전트 추가분은 삭제");
+        sb.cleanup();
+    }
+
+    #[test]
+    fn agent_created_dot_cargo_is_deleted_when_the_fixture_has_none() {
+        // 짝 테스트 — 기존 15개 과제가 타는 경로. 이것 없이 위 테스트만 있으면
+        // "항상 복원"이라는 반대 방향의 회귀를 못 잡는다 (M5 §4.1 벡터)
+        use crate::eval::with_implicit_protected;
+        let fx = fixture_with(&[("src/lib.rs", "x")]);
+        let sb = Sandbox::create(fx.path()).unwrap();
+        std::fs::create_dir_all(sb.root.join(".cargo")).unwrap();
+        std::fs::write(sb.root.join(".cargo/config.toml"), "runner = 'true'\n").unwrap();
+
+        sb.sync_protected(fx.path(), &with_implicit_protected(&["src".to_string()])).unwrap();
+
+        assert!(!sb.root.join(".cargo").exists(), "픽스처에 없으면 통째로 삭제");
         sb.cleanup();
     }
 }

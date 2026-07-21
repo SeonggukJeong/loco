@@ -1,0 +1,7 @@
+prompt = "I doon't know if this is a correct idea considering the double meaning the dot represent: both \"any character\" for its regex meaning and the fact it's an hidden file/folder.\r\n\r\nHowever, searching today after for example `.gitlab-ci.yml` files in a whole tree, it didn't found anything at first, well because hidden file, so `-H` flag is needed.\r\n\r\nI considered it could be a nice addition, if string start exactly by a dot to enable the flag, or not exclude hidden files with exact matching. This can however conflict with the \"any character\" meaning of the dot, so I'll let you decide whether this is a good idea or not."
+check = "cargo test --test tests test_error_if_hidden_not_set_and_pattern_starts_with_dot"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/tests.rs"]

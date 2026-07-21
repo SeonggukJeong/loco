@@ -126,18 +126,45 @@ impl Session {
         self.messages = snap.messages;
     }
 
-    fn total_tokens(&self) -> usize {
+    /// 저장 히스토리의 추정 토큰 합. `estimate_tokens`(본문 len/4) 기준이므로
+    /// 서버의 `prompt_tokens`와 정의가 다르다 — 그 차이가 §5-3의 측정 대상이다
+    pub fn total_tokens(&self) -> usize {
         self.messages.iter().map(|m| estimate_tokens(&m.content)).sum()
     }
 
     /// §6 절삭: ① 오래된 툴 결과 본문 생략 → ② 오래된 user+assistant 쌍 원자 제거.
     /// 시스템 프롬프트(0)와 마지막 메시지(현재 요청/결과)는 보존.
-    /// 저장 히스토리 자체를 변형한다 — 원문은 트랜스크립트에 이미 있음
+    /// 저장 히스토리 자체를 변형한다 — 원문은 트랜스크립트에 이미 있음.
+    ///
+    /// M15 H13: **실제로 축약이 일어난 경우에만** 트랜스크립트에 기록한다.
+    /// no-op까지 기록하면 "pack 발동 수"가 매 턴 1이 되어 지표가 죽는다
     pub fn pack(&mut self, input_budget_tokens: usize) {
+        let before = self.total_tokens();
+        let (elided, dropped) = self.pack_inner(input_budget_tokens);
+        if elided == 0 && dropped == 0 {
+            return;
+        }
+        let after = self.total_tokens();
+        self.transcript.record(
+            "pack",
+            &serde_json::json!({
+                "budget": input_budget_tokens,
+                "before": before,
+                "after": after,
+                "elided": elided,
+                "dropped": dropped,
+            })
+            .to_string(),
+        );
+    }
+
+    /// (생략한 툴 결과 수, 제거한 메시지 수)
+    fn pack_inner(&mut self, input_budget_tokens: usize) -> (usize, usize) {
+        let (mut elided, mut dropped) = (0usize, 0usize);
         let last = self.messages.len().saturating_sub(1);
         for i in 1..last {
             if self.total_tokens() <= input_budget_tokens {
-                return;
+                return (elided, dropped);
             }
             let m = &mut self.messages[i];
             if m.role == "user" && m.content.starts_with("<tool_result") && !m.content.contains(ELIDED) {
@@ -146,16 +173,20 @@ impl Session {
                 // 노트, push_user_request의 후속 요청)은 보존한다 — 없으면 빈 문자열
                 let suffix = m.content.split_once("</tool_result>").map(|(_, s)| s).unwrap_or("");
                 m.content = format!("{first_line}\n{ELIDED}\n</tool_result>{suffix}");
+                elided += 1;
             }
         }
         while self.total_tokens() > input_budget_tokens && self.messages.len() > 3 {
             if self.messages[1].role == "user" && self.messages[2].role == "assistant" {
                 self.messages.drain(1..=2);
+                dropped += 2;
             } else {
                 self.messages.remove(1); // 교대가 어긋난 히스토리 — 하나씩 걷어내고 병합으로 복구
+                dropped += 1;
             }
             merge_adjacent_same_role(&mut self.messages);
         }
+        (elided, dropped)
     }
 
     /// M11 §4 최신만 유지 — 저장 히스토리에서 기존 상태선 블록을 제거한다.
@@ -556,5 +587,50 @@ mod tests {
         s.push_recovery_notice("CUT OFF");
         assert_eq!(s.messages().len(), 3);
         assert_eq!(s.messages()[2].role, "user");
+    }
+
+    #[test]
+    fn pack_records_what_it_actually_elided_and_dropped() {
+        // §5-1: pack()은 매 턴 무조건 호출되고 예산 미만이면 no-op인데
+        // **실제 축약 턴이 어디에도 기록되지 않았다** (M15 H13·§5-2 ③)
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let mut s = Session::new(
+            vec![
+                ChatMessage::system("sys"),
+                ChatMessage::user("u1"),
+                ChatMessage::assistant("a1"),
+                tool_msg(&"X".repeat(4000)),
+                ChatMessage::assistant("a2"),
+                ChatMessage::user("last"),
+            ],
+            Transcript::create_at(&path).unwrap(),
+        );
+        s.pack(100);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let rec: serde_json::Value = text
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .find(|v| v["kind"] == "pack")
+            .expect("축약이 일어났으면 pack 이벤트가 있어야 한다");
+        let body: serde_json::Value = serde_json::from_str(rec["content"].as_str().unwrap()).unwrap();
+        assert_eq!(body["budget"], 100);
+        assert!(body["elided"].as_u64().unwrap() >= 1, "툴 결과 생략이 먼저: {body}");
+        assert!(body["after"].as_u64().unwrap() < body["before"].as_u64().unwrap());
+    }
+
+    #[test]
+    fn pack_noop_records_nothing() {
+        // 예산 미만이면 no-op — 이벤트를 남기면 "pack 발동 수" 컬럼이
+        // 매 턴 1이 되어 지표가 무의미해진다
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let mut s = Session::new(
+            vec![ChatMessage::system("sys"), ChatMessage::user("u"), ChatMessage::assistant("a")],
+            Transcript::create_at(&path).unwrap(),
+        );
+        s.pack(100_000);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("\"kind\":\"pack\""), "no-op은 기록하지 않는다: {text}");
     }
 }

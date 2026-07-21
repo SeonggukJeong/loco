@@ -1,0 +1,103 @@
+
+running 2 tests
+test test_pattern_with_forward_slash_allowed_with_full_path ... FAILED
+test test_pattern_with_forward_slash_is_rejected ... FAILED
+
+failures:
+
+---- test_pattern_with_forward_slash_allowed_with_full_path stdout ----
+
+thread 'test_pattern_with_forward_slash_allowed_with_full_path' (15761845) panicked at tests/testenv/mod.rs:274:13:
+`fd --full-path one/two/c` did not produce the expected output.
+Showing diff between expected and actual:
++one/two/C.Foo2
+ one/two/c.foo
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- test_pattern_with_forward_slash_is_rejected stdout ----
+
+thread 'test_pattern_with_forward_slash_is_rejected' (15761929) panicked at tests/testenv/mod.rs:335:17:
+`fd nonexistent/path` did not produce the expected output.
+Showing diff between expected and actual:
+-[fd error]: The search pattern 'nonexistent/path' contains a path-separation character and will not lead to any search results.
+-
+
+
+
+failures:
+    test_pattern_with_forward_slash_allowed_with_full_path
+    test_pattern_with_forward_slash_is_rejected
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.55s
+
+
+   Compiling libc v0.2.183
+   Compiling cfg-if v1.0.4
+   Compiling bitflags v2.11.0
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling cfg_aliases v0.2.1
+   Compiling rustix v1.1.4
+   Compiling memchr v2.8.0
+   Compiling crossbeam-utils v0.8.21
+   Compiling objc2 v0.6.4
+   Compiling utf8parse v0.2.2
+   Compiling colorchoice v1.0.4
+   Compiling anstyle-parse v1.0.0
+   Compiling regex-syntax v0.8.10
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstyle-query v1.1.5
+   Compiling objc2-encode v4.1.0
+   Compiling anstyle v1.0.13
+   Compiling nix v0.30.1
+   Compiling nix v0.31.2
+   Compiling aho-corasick v1.1.4
+   Compiling anstream v1.0.0
+   Compiling strsim v0.11.1
+   Compiling clap_lex v1.0.0
+   Compiling heck v0.5.0
+   Compiling bstr v1.12.1
+   Compiling anyhow v1.0.102
+   Compiling log v0.4.29
+   Compiling once_cell v1.21.3
+   Compiling same-file v1.0.6
+   Compiling getrandom v0.4.2
+   Compiling walkdir v2.5.0
+   Compiling regex-automata v0.4.14
+   Compiling crossbeam-epoch v0.9.18
+   Compiling crossbeam-deque v0.8.6
+   Compiling nu-ansi-term v0.50.3
+   Compiling bitflags v1.3.2
+   Compiling crossbeam-channel v0.5.15
+   Compiling lscolors v0.21.0
+   Compiling etcetera v0.11.0
+   Compiling normpath v1.5.0
+   Compiling jiff v0.2.23
+   Compiling fastrand v2.3.0
+   Compiling diff v0.1.13
+   Compiling block2 v0.6.2
+   Compiling globset v0.4.18
+   Compiling regex v1.12.3
+   Compiling ignore v0.4.25
+   Compiling syn v2.0.117
+   Compiling errno v0.3.14
+   Compiling dispatch2 v0.3.1
+   Compiling faccess v0.2.4
+   Compiling filetime v0.2.27
+   Compiling argmax v0.4.0
+   Compiling test-case-core v3.3.1
+   Compiling clap_derive v4.6.0
+   Compiling test-case-macros v3.3.1
+   Compiling terminal_size v0.4.3
+   Compiling clap_builder v4.6.0
+   Compiling ctrlc v3.5.2
+   Compiling test-case v3.3.1
+   Compiling tempfile v3.27.0
+   Compiling clap v4.6.0
+   Compiling clap_complete v4.6.0
+   Compiling fd-find v10.4.2 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-fd-1873-path-sep-50wqf_3m/f)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.20s
+     Running tests/tests.rs (target/debug/deps/tests-09e5a7c6a61d1a04)
+error: test failed, to rerun pass `--test tests`

@@ -1,0 +1,5 @@
+repo = "fd"
+issue_url = "https://github.com/sharkdp/fd/issues/898"
+fix_sha = "4ffc34956f9a00d3d5279758feabb5862f5dc9c4"
+parent_sha = "5039d2db99149dfe44380dbb8e3cc8f4ddd3e25f"
+oracle_files = ["src/app.rs", "src/dir_entry.rs", "src/exec/job.rs", "src/main.rs", "src/output.rs", "src/walk.rs"]

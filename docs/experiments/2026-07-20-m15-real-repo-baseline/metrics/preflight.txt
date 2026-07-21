@@ -1,0 +1,19 @@
+=== HEAD ===
+66a3c7e70a027dbd51960feaa8959c6f2c5728e3
+=== LOCO_CTX requested ===
+37632
+=== L_req (formula, not remeasured) ===
+37601
+=== alignment ===
+ceil(37601/256)*256 = 37632
+=== n_ctx_slot from log ===
+0.00.876.386 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 37632, kv_unified = 'false'
+=== /v1/models id + n_ctx ===
+id ornith
+n_ctx 37632
+=== json_schema ===
+200
+=== 4③ ===
+n_ctx_slot 37632
+frozen_load 37632
+PASS

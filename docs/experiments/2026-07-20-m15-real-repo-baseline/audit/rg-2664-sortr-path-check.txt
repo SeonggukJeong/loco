@@ -1,0 +1,169 @@
+
+running 1 test
+test feature::f263_sort_files_reverse ... FAILED
+
+failures:
+
+---- feature::f263_sort_files_reverse stdout ----
+
+thread 'feature::f263_sort_files_reverse' (15798652) panicked at tests/util.rs:406:13:
+
+
+==========
+command failed but expected success!
+
+command: cd "/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/f263_sort_files_reverse/0" && env -u RIPGREP_CONFIG_PATH "/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f/target/debug/deps/../rg" "--path-separator" "/" "--sortr=path" "test"
+
+cwd: /var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/f263_sort_files_reverse/0
+
+dir list: ["/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/f263_sort_files_reverse/0", "/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/f263_sort_files_reverse/0/abc", "/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/f263_sort_files_reverse/0/zoo", "/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/f263_sort_files_reverse/0/foo", "/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/f263_sort_files_reverse/0/bar"]
+
+status: exit status: 101
+
+stdout: 
+
+stderr: 
+thread 'main' (15798653) panicked at crates/core/flags/hiargs.rs:774:35:
+not yet implemented
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+==========
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    feature::f263_sort_files_reverse
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 297 filtered out; finished in 0.53s
+
+
+   Compiling memchr v2.6.4
+   Compiling cfg-if v1.0.0
+   Compiling regex-syntax v0.8.2
+   Compiling autocfg v1.1.0
+   Compiling log v0.4.20
+   Compiling libc v0.2.150
+   Compiling crossbeam-utils v0.8.16
+   Compiling serde v1.0.193
+   Compiling serde_json v1.0.108
+   Compiling proc-macro2 v1.0.70
+   Compiling termcolor v1.4.0
+   Compiling scopeguard v1.2.0
+   Compiling encoding_rs v0.8.33
+   Compiling unicode-ident v1.0.12
+   Compiling itoa v1.0.9
+   Compiling ryu v1.0.15
+   Compiling memoffset v0.9.0
+   Compiling crossbeam-epoch v0.9.15
+   Compiling same-file v1.0.6
+   Compiling aho-corasick v1.1.2
+   Compiling grep-matcher v0.1.7 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f/crates/matcher)
+   Compiling anyhow v1.0.75
+   Compiling walkdir v2.4.0
+   Compiling ripgrep v14.0.2 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f)
+   Compiling encoding_rs_io v0.1.7
+   Compiling regex-automata v0.4.3
+   Compiling textwrap v0.16.0
+   Compiling lexopt v0.3.0
+   Compiling quote v1.0.33
+   Compiling syn v2.0.39
+   Compiling serde_derive v1.0.193
+   Compiling bstr v1.8.0
+   Compiling memmap2 v0.9.0
+   Compiling globset v0.4.14 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f/crates/globset)
+   Compiling grep-searcher v0.1.13 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f/crates/searcher)
+   Compiling grep-regex v0.1.12 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f/crates/regex)
+   Compiling grep-cli v0.1.10 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f/crates/cli)
+   Compiling grep-printer v0.2.1 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f/crates/printer)
+   Compiling grep v0.3.1 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f/crates/grep)
+   Compiling crossbeam-deque v0.8.3
+   Compiling ignore v0.4.21 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-2664-sortr-path-7so68qzz/f/crates/ignore)
+warning: field `0` is never read
+  --> crates/ignore/src/dir.rs:37:35
+   |
+37 | pub(crate) struct IgnoreMatch<'a>(IgnoreMatchInner<'a>);
+   |                   -----------     ^^^^^^^^^^^^^^^^^^^^
+   |                   |
+   |                   field in this struct
+   |
+   = help: consider removing this field
+   = note: `IgnoreMatch` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `0` is never read
+  --> crates/ignore/src/dir.rs:43:14
+   |
+43 |     Override(overrides::Glob<'a>),
+   |     -------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+43 -     Override(overrides::Glob<'a>),
+43 +     Override(()),
+   |
+
+warning: field `0` is never read
+  --> crates/ignore/src/dir.rs:44:15
+   |
+44 |     Gitignore(&'a gitignore::Glob),
+   |     --------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+44 -     Gitignore(&'a gitignore::Glob),
+44 +     Gitignore(()),
+   |
+
+warning: field `0` is never read
+  --> crates/ignore/src/dir.rs:45:11
+   |
+45 |     Types(types::Glob<'a>),
+   |     ----- ^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+45 -     Types(types::Glob<'a>),
+45 +     Types(()),
+   |
+
+warning: field `0` is never read
+  --> crates/ignore/src/overrides.rs:26:21
+   |
+26 | pub struct Glob<'a>(GlobInner<'a>);
+   |            ----     ^^^^^^^^^^^^^
+   |            |
+   |            field in this struct
+   |
+   = help: consider removing this field
+   = note: `Glob` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `0` is never read
+  --> crates/ignore/src/overrides.rs:33:13
+   |
+33 |     Matched(&'a gitignore::Glob),
+   |     ------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `GlobInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+33 -     Matched(&'a gitignore::Glob),
+33 +     Matched(()),
+   |
+
+warning: `ignore` (lib) generated 6 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.55s
+     Running tests/tests.rs (target/debug/deps/integration-c637374dbf034441)
+error: test failed, to rerun pass `--test integration`

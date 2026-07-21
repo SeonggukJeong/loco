@@ -1,0 +1,17 @@
+87d1ba5b3401329a07c1874e49a822026e1cbf3f	325	Upgrade assert_cmd
+fee9c587a547a94bf9616779c39da1cf884944a7	326	Merge pull request #327 from chmln/retain-ownership
+f0e396157b75890e57a47985b434aeec731ff80b	94	Merge pull request #115 from SimplyDanny/follow-symlink-when-writing
+39e8b8f4dacbd02a37dfa3b12b98372074439f41	94	Fix #94: Do not replace symlink with output file
+9aa93896ee4318ef9cd0e57b283eb27441e815b4	73	docs: Add Void Linux installation instructions.
+1014135f0ed7d209c555d402a0d0c73b73367b8d	76	Add empty-file check for memmep use in stdout
+39c29b20cb6c6aae602622ba7eaa4fb23fb08b35	74	Ensure memmap source is not empty
+c8022e292f3ab2686843312f9c0a76987c3f1130	68	Fix #68: Do not write empty content to file (#71)
+87491b4dc9640c572e70bbc8409fb49576538810	60	Let ^$ match lines by default
+bff7b17392ffbbe19d111c3d7cf31ae221306e66	56	Add musl target resolves #56
+3e0a8e1747203a2df29542d4d3659f6ba20f6f88	41,42	Fix stdin replacement with no matches + memmap size resolves #41, resolves #42
+4982a6645c9be2b5c243f0c0a87770736e757e79	37	Fix crash on Windows | resolves #37
+4e9aa7ddf297c2328f360e92e7e3b2978613e0a3	39	Convert str to bytes to call replacer.replace
+ab457f7c70384722a3d77c228fe291d98f7b59c1	38	Pre-allocate proper buffer size for memmap.
+3609d743c3f9fa0edc7278869e49e9ca522d99f3	14	Preserve permissions; minor refactor
+00793888e58a2d225d2673c9aead0ed36c389aee	3	Add atomic writes fixes #3
+3776cb9959534e876057b87b7b86159ba3e848ce	6	Fix unescape warning closes #6

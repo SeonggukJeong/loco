@@ -1,0 +1,14 @@
+[
+  {
+    "task": "fd-1873-path-sep",
+    "path": "tasks-real/fd-1873-path-sep/solution/src/main.rs",
+    "before": true,
+    "after_age": true
+  },
+  {
+    "task": "rg-1868-passthru-context",
+    "path": "tasks-real/rg-1868-passthru-context/solution/crates/core/app.rs",
+    "before": true,
+    "after_age": true
+  }
+]

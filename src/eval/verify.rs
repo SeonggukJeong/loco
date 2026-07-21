@@ -314,4 +314,53 @@ mod tests {
         let recs = run_verify(&opts(dir.path())).await.unwrap();
         assert!(recs[0].error.as_deref().unwrap().contains(".cargo"), "{recs:?}");
     }
+
+    /// M15 H16 — 1단계→2단계 창의 스테일 판정 벡터를 고의로 겨눈다.
+    ///
+    /// `check`가 1단계에서 `build.stamp`(빌드 산출물 대역)를 만든다. 2단계의
+    /// `solution/` 소스는 **1시간 과거 mtime**으로 준비돼 있으므로, 오버레이가
+    /// `fs::copy`라면 새 소스가 산출물보다 과거가 되어 `check`가 STALE로 죽는다
+    /// (cargo라면 재빌드를 건너뛰어 조용히 1단계 바이너리로 판정할 자리다).
+    /// read+write(mtime=now)면 소스가 산출물보다 미래라 통과한다.
+    ///
+    /// ⚠ **비교 방향이 계약이다** — `[ build.stamp -nt src/lib.rs ]`(스탬프가 소스보다
+    /// **엄격히** 최신이면 STALE)이지 그 부정형이 아니다. macOS `/bin/sh`는 bash 3.2이고
+    /// `-nt`가 mtime을 **초 단위로 절삭**해 비교한다(APFS는 나노초를 기록하지만 비교는
+    /// 초로 한다). 1단계 `touch`와 2단계 오버레이 쓰기는 같은 초에 떨어지므로
+    /// `! [ src/lib.rs -nt build.stamp ]`로 쓰면 **정상 동작에서도 참**이 되어
+    /// 테스트가 영영 실패한다(1R 실측). 스테일 케이스는 1시간 격차라 초 절삭에
+    /// 걸리지 않는다 — 그래서 이 방향만 양방향 변별력을 갖는다.
+    ///
+    /// 1시간 격차를 쓰는 것이 핵심이다 — "같은 초에 쓴 두 파일"에 의존하면
+    /// 파일시스템 타임스탬프 해상도에 따라 흔들린다.
+    #[tokio::test]
+    async fn verify_stage2_overlay_is_newer_than_stage1_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml = concat!(
+            "prompt = \"p\"\n",
+            "check = \"if [ -e build.stamp ] && [ build.stamp -nt src/lib.rs ]; ",
+            "then echo STALE >&2; exit 3; fi; touch build.stamp; grep -q FIXED src/lib.rs\"\n",
+            "protected = [\"keep.txt\"]\n",
+        );
+        write_task(
+            dir.path(),
+            "stale-window",
+            toml,
+            &[("keep.txt", "k"), ("src/lib.rs", "// BROKEN\n")],
+            Some(&[("src/lib.rs", "// FIXED\n")]),
+        );
+        // solution/ 소스를 1시간 과거로 — fs::copy였다면 이 mtime이 보존된다
+        let sol = dir.path().join("stale-window/solution/src/lib.rs");
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&sol).unwrap().set_modified(old).unwrap();
+
+        let recs = run_verify(&opts(dir.path())).await.unwrap();
+
+        assert_eq!(recs.len(), 1);
+        assert!(recs[0].discriminates, "1단계는 BROKEN이라 실패해야 한다: {recs:?}");
+        assert!(
+            recs[0].solvable,
+            "2단계가 STALE(exit 3)로 죽으면 오버레이가 mtime을 보존한 것이다 (M15 H16): {recs:?}"
+        );
+    }
 }

@@ -1,0 +1,7 @@
+prompt = "After reading [this comment](https://news.ycombinator.com/item?id=16097948) on HN, I thought it'd be neat to add support for the `--passthrough` / `--passthru` flag in ripgrep as well.\r\n\r\nThoughts?\r\n  "
+check = "cargo test --test integration feature_740_passthru"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/tests.rs"]

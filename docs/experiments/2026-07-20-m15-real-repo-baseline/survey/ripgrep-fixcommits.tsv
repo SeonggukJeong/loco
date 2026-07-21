@@ -1,0 +1,588 @@
+fc3dd04b7ca18ec8be97704dc098bbd062bad244	3471	doc: update OpenSubtitles benchmark corpus URL in README
+0d7054d8e466d6aa0a6bb6cf121e87225d26df44	3009	ignore: fix deadlock when visitor panics
+241b87b3377136659ef0f57948b8e0739e9a691b	3275,3276	ignore: support `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` for `core.excludesFile`
+b6849daee84a67b42b0844b2f6a91e47c24705b1	1761,3261	ignore/walk: add `WalkBuilder::empty` and `WalkBuilder::from_iter`
+8bca2ebfed844bcbbb649a836783c08da110f2e9	3216	doc: fix typo in man page
+61a9fd82294c155ca00febc948d8d23c9b678367	3227	doc: fix typo
+e7b0f89e81811b295446404f02ca133fe8434054	3230	lint: use `cloned()` or `copied()` when we can
+767086db4ccb6abc3e4ce5125da614ea62f7346b	3246	searcher: hint at sequential memory map reading
+9548e86b14f1aa853911239f439e27a20c10fb69	3299	ignore/types: add PKGBUILD type
+3b62573e9523f347d6b36f97d5068db5dd60d973	3308	deps: upgrade the lower bound for termcolor from 1.1.0 to 1.4.0
+bc3ad92b345eeddc48afff3194a5e2385e3d6a3b	3357	ignore/types: add Rocq `.v` files
+93acfe2d47d46bc2f92a78f1e64098ad0a7b34b5	3445	ignore/types: add `proto` for filtering to protobuf files
+77d27e82fabfd80de83960a73c2357ac1a03827a	3440	ignore/types: add Mojo type
+f55548ba9f24dda192880d4a3da2b52e90f6e194	3290,3302	globset: fix `matches_all` false positives
+68b3c9e0d95950cfc835fb07924457919a4ec07d	3293,3410	ignore: fetch directory entry metadata in batches
+653d7f5bd13762b97cf0bd6b7c5890cf3f54db4d	3320,3376,3451	ignore: add multi-root parent matcher regression tests
+068a63ea251871b07d29434e8a6a9ba59dd0df06	3454	globset: reduce owned path copying in globset
+c10f151e4436da7c37d34359cdfe10d6f5aa0bb4	3453	ignore: always include depth in errors
+43e2f08edef8c00e5d7719212c3e6a869bca1151	3419	ignore: fix parent gitignore matching across multiple roots
+48a6ad93f152dc848f1883ceb3bf2c7baab6738c	2739	ci: add support for `aarch64-unknown-linux-musl`
+5748f81bb107ce65f32cff330fe90dc639af262c	3202	printer: use `doc_cfg` instead of `doc_auto_cfg`
+d47663b1b4548e4fa02d6e4b575718d0f5f5e7d6	3194	searcher: fix regression with `--line-buffered` flag
+63209ae0b95d31f28d14be5125fba3f61f5835e6	3178	printer: fix `--stats` for `--json`
+b610d1cb1506feab33459c5853e4c0d0cb16a6e2	3179	ignore: fix global gitignore bug that arises with absolute paths
+8c6595c215d1e24bed5b7b86e2b18f3c871439ef	3184	searcher: fix performance bug with `-A/--after-context` when searching `stdin`
+de2567a4c76fa671005538d6cd841abc44932b9a	3180	printer: fix panic in replacements in look-around corner case
+916415857f084e63efda03cf25a67fe7f6d24244	2111	core: don't build decompression reader unless we intend to use it
+5c42c8c48f4163ba7c0662cb70dbf61f9d670d9a	2094	test: add regression test for fixed bug
+f0faa91c68c0d2f8c4b93a5e8546b4d3554f637e	2777	doc: clarify `--ignore-file` precedence
+a5d9e03c687c14618d9224e0cbea3061860ba8de	2794	test: attempt to fix flaky time-reliant test
+293ef80eaf0641bcfa0206e1fc142017296bac8c	2770	test: add another regression test for gitignore matching bug
+fa80aab6b0f854f7a88e7d982d27aec0a9402002	3067	test: add regression test for fixed gitignore bug
+096f79ab9824753cedd989da92076be12f0904ea	2750,3135	deps: update everything
+0407e104f611d623547897ca99d172673b31779f	3173	ignore: fix problem with searching whitelisted hidden files
+2924d0c4c0c87a147623d9254fbdbe7b28e7f872	3158	ignore: add `min_depth` option
+9d8016d10c94a5af2768eb6dd0440386a7d317a0	3076	printer: finish removal of `max_matches`
+fdea9723cac34b6e93e259c2366c94e8319de0ca	2843	doc: clarify a case where -m/--max-count is not strictly respected
+c45ec16360870bba60505489fb745ad245075a86	2852	doc: clarify `--multiline --count`
+e42432cc5dc32820d025e28287bba70a3751f8ca	2913	ignore: clarify `WalkBuilder::filter_entry`
+6e77339f30bd4eeaa3980a3256f57e81ec579302	2928	cli: tweak docs for `resolve_binary`
+1b07c6616a5b06bd6c00f2a7d3418b9096f601f9	3131	cli: document that `-c/--count` can be inconsistent with `-l/--files-with-matches`
+c1fc6a5eb8c971fc43041d3df34cf8bd49f31032	3155	release: build aarch64 artifacts for macos on GitHub Actions
+8b5d3d1c1e3b0e32f22aa634d000b314f6d4d465	3139	printer: hack in a fix for `-l/--files-with-matches` when using `--pcre2 --multiline` with look-around
+64174b8e68b59e560ad459f3c11cc9c4f00964bd	3100	printer: preserve line terminator when using `--crlf` and `--replace`
+f596a5d8750a6a6db1b87ad95a78667322c06cbd	3127,3145	globset: add `allow_unclosed_class` toggle
+556623684e99fade287f265c5f513321487dd35a	3142	ignore/types: add GDScript files (*.gd) for the Godot Engine
+a6e0be3c909c5c09e5fb402c907f3beb88cfb4c4	3076,3094	searcher: move "max matches" from printer to searcher
+3f565b58cc85a655b552ddcfad1e31b60bdc374f	3141	ignore/types: add Qt types for resource files and ui declaration
+74959a14cbcce19e2471b0d281ea5cdbd248527d	3140	man: escape all hyphens in flag names
+78383de9b29a67c64bc21047caf57559f7061e26	3102	complete/zsh: improve --hyperlink-format completion
+519c1bd5cfd569bed29f1b3114a872329883983a	3096	complete: improvements for the `--hyperlink-format` flag
+66aa4a63bb52468aa789cfa00c0643111ff03239	3103	printer: deduplicate hyperlink alias names
+c03731005020a4fef8016e46c1ba9fdab8d7df4c	2924,2981,3124	doc: update installation instructions for RHEL/CentOS/Rocky Linux 9
+99fe884536e18bcd9f3c57ce598791d5baa975b1	3024,3107	colors: add `highlight` type support for matching lines
+126bbeab8c1cbbc1d6cb36b4c2d560574233856d	3108	printer: fix handling of `has_match` for summary printer
+859d54270ec19f8ffc98343d9af886c10728d680	3066	globset: make `GlobSet::new` public
+33b44812c0a01f4f2a316bac04d4a7477cf41444	3098	globset: make `GlobSet::empty` const
+c007d8914510e799c72a72b99980554cb673414a	3121,3122	doc: clarify that `.git` is covered by `--hidden` and not `--ignore-vcs`
+60aa9f17276409257ad612fccefba13c26ed0d74	3071,3072	tests: increase sleep duration for sort file metadata tests on Windows AArch64
+56d03a1e2f8f12a2a5fe8fcc3b1a4c5039291c9a	3117	ignore/types: include missing files for the tf type
+e166f271dff589ec39d21235ef38f792545be37d	3105	ignore/types: add gleam
+83d94672ae09a5deb6d4d795b105b3b18d34508a	3079	ignore/types: add LLVM to default types
+6887122e5bcef8d4b7a2c70ea04ef9d87d80faff	3090	ignore/types: add ColdFusion and BoxLang
+06210b382a4628258680cfdda07d5ed73a88b046	3063	ignore/types: add `.env` to `sh` file type
+00e501b529fc709806a413a88c2f32487e7958cb	3057	build: emit warning if git is missing during build
+2ebd768d404952b5412997555b84b6ca2e20f8b8	2981,3124	doc: remove CentOS/RHEL installation instructions
+4df1298127695ed1e76937f16de1a0135677ccf5	2990	globset: fix bug where trailing `.` in file name was incorrectly handled
+ba23ced8178496263af013117b70c09ce39c18e5	3007	ignore/types: add scdoc
+28cce895ffb8b34f3378b96b5a6b7aafe01694da	3006	doc: fix nixpkgs link
+7339bdf4b5f18ec9555e1a5bb69ef388b681ef79	3002	test: check binary file detection when using memory maps
+79f5a5a66e68aa50ef9f63ded777e640d345df5e	2954,2955	globset: add `Candidate::from_bytes` constructor
+4ab1862dc04783b6615807d4b4511388c6b30364	2944	stats: fix case where "bytes searched" could be wrong
+6244e635a1a5aa4d401826b1e970d59a3f6cbf7c	2942	ignore/types: add Kconfig
+5e2d32fe7f3b7dcf768ffc1264dabe83e00ccaec	2941	printer: slightly simplify code
+75e17fcabe14dd9a773e4e8dc5b2fc837f238a90	2938	ignore/types: add `*.dtso` to `devicetree` type
+99b7957122454185dc5ea9e99bb1b56c8966f1a2	2937	ignore/doc: explain that `require_git(false)` will ascend above git roots
+5f5da483079c61966ea34565387867609d4e22f2	3048,3112	globset: support nested alternates
+b0c6d4c34afed68cfdc9dde98046716b1e773651	2874,2909	ignore/types: add `*.svelte.ts` to Svelte file type glob
+d199058e77cbea419f072015373ab1beb0e508ee	1332,3001,3041	cli: make `rg -vf file` behave sensibly
+bb0cbae3121f19e5319b28519b4c287dd49cb941	2943,3038	ci: add aarch64 Windows
+8fca3cdca63c9e1305e88a27cee206d73fd9a71e	3027	doc: fix typo in FAQ
+6f39f830cb9bc7b31c330d2c019c216477374371	3026	globset: compact Debug impl for `GlobSetBuilder` and `Glob`
+e83828fc8c30d5d5e0672641d8ffc64bb58081d8	2921	ignore/types: add `*.rake` extension to list of Ruby file types
+72a130323813d0486861403a8aaf9b778276e6e5	2914	ignore/types: add typst
+861f6d374fa3d599dca86111e9b513772ca3de1a	2912	style: simplify string formatting
+624bbf7dcee8d69949a447b4e4393e23d3e25b38	2869,2900	globset: add matches_all method
+53279db4143f4307c2b1b27f2cd32a43b0496205	2889	deps: switch to tikv-jemallocator
+292bc54e64e55b69fec806bf3ee6481958e2946f	1872,2883	printer: support `-r/--replace` with `--json`
+5be67c1244f494414629f71be859e0e1552dd6fd	2871	ignore/types: include msbuild solution filters
+119407d0a918ca54da1e0a5e8806dbb8cd7e2be0	2865	printer: use std::path::absolute on Windows
+d869038cf610f10a8b7aca24284719e65a477e1a	2854,2856	ignore: improve multithreading heuristic
+75970fd16b4d5f8ff9fb1d9c157467eb166acf23	2849	ignore: don't process command line arguments in reverse order
+380809f1e250035808170db2e9a2cbd09395f450	2846	ignore/types: add Makefile.*
+94ea38da3029347006ad0dcae4886c76b04d8d88	2842	ignore: support `.jj` as well as `.git`
+da672f87e853d239b2f562d70c0b34d3afea6dfc	2841	color: add italic to style attributes
+edafb612d2b93b0dc28531abf155bdd7e3bcfe63	2797	core: add "total" to --stats output
+483628469a2580e4eab0edfbe7a7f3f8b1951848	2177,2782	ignore/gitignore: skip BOM at start of ignore file
+c93fc793a08f3a97e02457d5132b4cc346768014	2729	searcher: add more tests for `replace_bytes`
+7c004f224eb2c7b7a04ac246b456f0e4d6d36c9d	2726	ignore/types: detect `WORKSPACE.bzlmod` for bazel file type
+52115ab633cf04a60a43f2d3727cec729cda5c13	2720	globset: add opt-in `Arbitrary` trait implementations
+bfe2def12183f66689f23f52d85100fbc4b42d1a	2711	tests: add test for filtering hidden files
+14f4957b3d605f14ad58bc67e54197a3084fef5a	829,2731,2747,2778,2836,2933,3144	ignore: fix filtering searching subdir or .ignore in parent dir
+f722268814e878b133d926143f3019c164ef4bc1	2708	complete/fish: Take RIPGREP_CONFIG_PATH into account
+90a680ab45a7eaaffcccb22c4946771d6b424f02	2706	impl: switch most atomic ops to `Relaxed` ordering
+e2362d4d5185d02fa857bf381e7bd52e66fafc73	2979	searcher: add log message noting detected encoding
+94305125ef33b86151b6cd2ce2b33d641f6b6ac3	2956	zsh: support sourcing zsh completion dynamically
+79cbe89deb1151e703f4d91b19af9cdcc128b765	2906	doc: tweak wording for stdin detection
+9d738ad0c009e6632d75fa3d36051e5ae7f7cce6	2884	regex: fix inner literal extraction that resulted in false negatives
+b6ef99ee554346a0870245c92112aad3838c8edd	2801	doc: remove unused man page template
+3ad0e83471588d8802d5747d0cc9accec76f7ccf	2767	ignore/walk: correct build_parallel() documentation
+e9abbc1a02de29dbe60e1b625d540c58759b23a6	2748	cargo: nuke 'simd-accel' from orbit
+4a30819302810a8772bd205970d41fe9b4e97333	2736	cli: tweak how "is one file" predicate works
+c8e4a84519ede79b330f9a9e2b072110d5bd0c8c	2694	cli: prefix all non-fatal error messages with 'rg: '
+b9c774937fc285e6668be9823c4bf231a61fc4a8	2690	ignore: fix reference cycle for compiled matchers
+daa157b5f99c064eac7cd4593e4ec07bb8fd9bef	2664	core: actually implement --sortr=path
+805fa32d184f9b163e7355dd335abc96440f0d2b	2658	searcher: work around NUL line terminator bug
+2d518dd1f96147690c1eadf58023cec3eb0e108a	2654	release: tweak how sha256sum is invoked
+8575d261790fe393d1768d12b3336cbb4cf0a9fc	2655,2659	complete/fish: Fix syntax for negated options
+2e81a7adfeeb9a213786b8331b244f97e7b66657	2662	doc: fix typo that was preventing interpolation
+2d31af38a2b764c446b2f949cb308a7310b251c0	2653	cargo: include pkg/windows in crate package
+30d06b3b4c39500fc99ffdc27aa6c476eaf18f3d	1376	changelog: note that --no-ignore --ignore-vcs works as expected
+6a055d922cb0899efe48d76defad3ff56ab7395d	1622	doc: clarify errors for -z/--search-zip
+e0075232291bd4043202844719e755f5980a4cc8	1635	doc: note the precedence of -t/--type
+88353c80da5cb9b08112fb5faa512ac511cefd52	1709	doc: be more explicit about ripgrep's behavior when printing to a tty
+cd3bcce42d1443a342cd113f904a3767ce835441	1737	changelog: mention M2 binaries for releases
+1ea3552f2d85f2a0b369042af7269645971bd2fc	1746	changelog: mention perf improvement for inner literals
+9ed7565fcb47d02e76398d41f24ba0817f6b9c2f	1838	cli: error when searching for NUL
+7bb9f35d2d0b02952e20c082b17be856788e5f44	2046	doc: clarify that --pre can accept any kind of path
+b138d5740a0e723a84014ce41614a30c44866baa	2122	log: add message about number of threads used
+3f0c8c29004c9e18cc6330d35b81aa6bf0982ffc	2201	doc: improve -r/--replace docs
+0e6e9417f1b16bde7ad4db009611f3923f1412e5	2246	log: add message when a binary file is skipped
+fded2a5fe1273ccef1d0ee36e00e052fca247d44	2298	doc: add cargo-binstall instructions
+e14eeb288fa4bce14fb0075a6a57da10c0446ffc	2337	doc: mention that --stats is always implied by --json
+1cbcefddc9cfe1a9acbcc71adef7d9c0591fcb1d	2505	doc: add more warnings about --vimgrep
+4fec9ffca82fb02824d889876c802b1ec54bf403	2401	doc: make the opening line a bit more descriptive
+00225a035baa62fbbbcb8373d0ad5e45472f56bc	2418	doc: improve --sort=path
+286de9564e511f01f13756c207e9b26ec781591d	2645	cli: rejigger --version to include PCRE2 info
+038524a580072e9346ee9f782679618e380f4f2e	2458	printer: trim before applying max column windowing
+8f9557d183d91aca8f72ce8c8401bcfb221e76c6	2425	changelog: mention shell completion generation feature
+58e7d2ea6375860fa09a043d6a1ba20518dfb462	2479	doc: add docs about .ignore/.rgignore in parent directories
+b7df9f8caa842b4904aa086b52485e63758621e6	2519	changelog: mention --field-match-separator bug fix
+ebb986e767655f8c9c05a7a7e99b09236a6e8be5	2524	logging: show heuristic information and decision
+6d7550d58e88583deeb142b56e0dbe52f5102cbf	2642	ignore: Avoid contention on num_pending
+af55fc2b38cc5d31e24f3392ec2d03ab5f6428c4	2643,2644	cli: make -d a short flag for --max-depth
+3d2f49f6fe70a61fa501c3ed95d208ef10d3b94d	2381,2637	changelog: --pretty now behaves more sensibly
+50b247243800d3ad683fb0a0839ed0364d0a6f55	2636	ci: strip release binaries on macOS
+082245dadb3854238e62b91aa95a46018cf16ef1	884,1648,1701,1814,1966	cli: replace clap with lexopt and supporting code
+824778c009165d5b56f97aad1b824a2bca039c08	2635	globset: add GlobSet::builder
+922bad2b92a564ac442368e9e2522f11d61f593f	2392,2629	ignore: improve 'excludesFile' parsing
+53679e4c43e472b2f51d9568455caa10ad399fc4	2624	ignore: simplify the work-stealing strategy
+dd810779d40911f8481175c06e4ff6d3165201c7	2623	changelog: add another note about -w/--word-regexp bugs
+5011f6e9f1da44ffd923d612e75e70411d63a0ea	1760	changelog: add perf bug fix for \b
+a2799ccb41078c75a0a0420299a80ca4b1361632	1275	changelog: add bug fix for \b
+c3e85f2b44a05da44cea164adf14c3c39d769132	2612	printer: fix a few issues in the hyperlink docs
+f608d4d9b3ab210b7e6964ca7d1d7dc9c077329e	665,2483	hyperlink: rejigger how hyperlinks work
+d938e955af7a39ac0245b1ce84924f7f4a2141ac	1823,2591	ignore: use work-stealing stack instead of Arc<Mutex<Vec<_>>>
+cad1f5fae2e4b48d8942add9dc4c950a170b5d2e	1757,2295	ignore: fix filtering when searching subdirectories
+341a19e0d05bc6f0cabeb2dc756b37cfc047f8f0	2574	regex: fix fast path for -w/--word-regexp flag (#2576)
+8d464e5c78510502cd1cf1d205c82df5de183825	1924,2168	ci/release: add sha256 sums to release artifacts
+6abb962f0d655a186972462d88d2de4e5caf4a33	2243,2361	cli: fix non-path sorting behavior
+6d95c130d5fb56a8641092a4808f33640bfa935c	1790,1930	cli: add --stop-on-nonmatch flag
+4782ebd5e0773465ba2c32a328250253c2b55779	1941,1968	core: lock stdout before printing an error message to stderr
+4993d29a16b26b016b498765cc5636e73b479367	2060,2061	globset: add 'escape' routine
+23adbd6795d4b0a7fbbb606d58fa82e3df0dabc2	1946	cli: force binary existance check
+9df8ab42b1ebdb11562b6413e25e63f6d410a4a5	1940	cargo: reduce the size of the .crate file published to crates.io
+cb7501ff111d32f636138cfc8975289fc5001f50	2039	doc: clarify the comment on `Worker.work_done`
+3b66f37a31d4fcc2aedc0737692c820d26452be4	2108,2123	doc: improve -r/--replace flag syntax docs
+3eccb7c363d23d3b5e936721ed3e4358fe0acc7c	2103	readme: add 'yum-utils' to RHEL/Centos instructions
+f30a30867e2ad79ca7b556e5c0dbbe8c58a89267	1857,1895	ignore/types: name aliases for file types
+7313dca47286f5c71bf720172656cf2c14d8f756	2009	ignore/types: add 'typescript' alias for 'ts'
+99bf2b01dc261bccc6912ad733fc5f353ac411d5	2013	ignore/types: add Ada filetypes, including gprbuild and alire
+ee1360cc07beacbd89cc75affc855e74d76831df	2117	ignore/types: add raku extensions to ignore types
+db6bb21a629d5b1ec1bfe89c693b280497c9eedc	364,2049	windows: attempt to enable long path support for MSVC targets
+da7c81fb960a2f5d0e3e3abd4bb86d7bb223ea57	2142	ignore/types: add MDX format to Markdown types
+a4e3d56de1fcf8c5d8e7c304585733c6f9853886	2148	ignore/types: add DITA (Darwin Information Typing Architecture)
+7c83b90f95663d4215b4709f00fd0975277f0755	2153	doc: fix typo
+97b5b7769c717078515eb2f461a9ed2b3befaf6c	2195	doc: fix some typos
+2708f9e81d790b42783fbe6ee4f2dd6b5d091eb7	2195	complete: add extra-verbose support to _rg_types
+f3241fd657c83284f0ec17854e41cab9fe3ce446	2198,2202	cli: '--no-ignore-dot' should also '.rgignore'
+792451e3315e86fc66b1fd4eaeddf8433b6b32ac	2302	ignore/types: added V type
+b92550b67baf99d08b291101af5ba19667f81f34	2330	readme: add install command for ALT Linux
+383d3b336b02263a06f0488898c98aff85a083cb	2356	doc: add '--hidden' to example configuration
+fc7e634395f144491e6d2dc08cb5059adbb4b1fc	2358	ci/release: Use GITHUB_REF_NAME instead of GITHUB_REF
+c9584b035b19244e370a50fd872a3ae2039e2931	2360	ci/release: use GitHub CLI
+f34fd5c4b68480f5969b94709f54d493e79b3257	2369	globset: introduce option to keep empty alternates
+d51c6c005aaac90329f61baa20821fafc96b841a	2386,2388	globset: permit deserializing Glob from String
+ea058813196dcdf53a51b0a689da0f4170b6ed75	2402	readme: fix awkward grammar
+1d4e3df19c0ce77c58ade35fbb30c216b48e2fba	2409	readme: add winget installation section
+0f6181d309d42061ed5be528503b93560c805f3c	2432	ignore/types: add USD to the default file types
+e902e2fef40b926bdf093c6a3939be8cc6f3778a	2437	ignore/types: add Gentoo eclass type
+07cbfee2259d7194585a76773b45ed57f51e9fc3	2450	ignore/types: improve Elixir globs
+d6758445109ae0f52fc3dd09ccb88a95263217cb	2288,2451	core: don't let context flags override eachother
+54e609d65725ac6683714d365b65d3cf7832dd97	2453	doc: add another example for the config file
+43bbcca06f0aab493b5f8c85ea2f7caf4fa3f7c4	2460	doc: note '-n' and '-N' override each other
+ad9bfdd98189ebeab3df945771a1a88e9b37c19a	2482	ignore/gitignore: expose `gitconfig_excludes_path`
+36194c27427a6df76963da472b13c36f47410824	2480,2488	test: test that regex inline flags work as intended
+0c1cbd99f36e4b97cbb915e9c5a7c0c091522105	2502	ignore: tweak regex crate features
+96cfc0ed133d4e4614c49463e8cae65afa65c55c	2439,2508	ignore/types: add 'graphql' type
+da8ecddce926bcf616f62c947058fe5487fd2a3b	2523	cli: make resolve_binary take COM executables into account
+545a7dc7598a20e8ef82076177164b7e3ccb15e4	2529	ignore/types: add cml to the default types list
+16f783832e3860ffb5f96f03348dc2e31fb0204a	2539	doc: update rust-version in Cargo.toml
+a7f1276021df2217dead1481b2c2b38595ed8fb3	2531	readme: update Debian instructions
+fc0d9b90a9dbc1ba8d93a3f58da4ddbac0c40a7f	2518	deps: bump regex to 1.8.3
+6b19be24776db74dd2df0bdbd5f199a8cd9964ce	2516	crates/grep: remove 'deny(missing_docs)'
+041544853c86dde91c49983e5ddd0aa799bd2831	1962	doc: fix --quiet docs
+a928ca42211f872b486be422abc71d7846b9c871	2315	ci: enable Dependabot for the Actions workflows
+d1570defbf7a069cf9d60e57f51c17b82edcceb8	2316	ci: remove `fetch-depth` parameter from the checkout action
+8e57989cd20379acfca28a341da61df177daca1c	2260	regex: fix matching bug when text anchors are used
+9f0e88bcb14e02da1b88872435b17d74786640b5	2236	ignore: fix gitignore parsing bug for trailing \/
+985394a19edbe878449bff0086c831a46c79e7af	2230	deps: update to packed_simd_2 0.3.8
+91afd4214a9ada15e475bba02694f4fb50079cbc	2095,2208	printer: fix duplicative replacement in multiline mode
+7822b8069ed3190d76335b99c41c67e7ac31f76d	2095,2208	printer: fix duplicative replacement in multiline mode
+b6189c659e2cf6ff70c5fd7bbc31a9a8fdb44d94	2130,2132	ci: fix failing nightly-arm build on ci workflow
+7e05cde008c25940fb777ab1ae0c26c181692764	1990	cli: improve configuration failure mode
+0ff5dd23606ee1e006a38ac7d18afcc4c368d9a4	1939	doc: --field-match-separator's default value is ':'
+9eddb71b8e86a04d7048b920b9b50a2e97068d03	1918	ignore/types: add CUDA
+fdfc418be55ff91e0c2efad6a3e27db054cb5534	1911	searcher: disable mmap searching on non-64 bit
+478da4f27183c28302e8f4fd63b282453d8fe19c	1896	pkg: fix version number for 13.0.0 release
+bc76a30c23317526441a76f99ff397f65acea607	1891	regex: fix -w when regex can match empty string
+5e81c60b35ce1481cdce5aa933b808faa71bc90e	1890	ci: use musl to build debian artifact
+df83b8b44426b3f2179abe632eb183e8c8270524	1675,1820	ci: re-work github actions release
+fbb2cfed28d68b220e51c0fe8db9d89a4516aab6	1739	printer: trim line terminator before doing replacements
+af8b27ffae5440feae4632fcda2a20c4cbeea7d2	1577	changelog: fish completions are staying
+8a4071eea942c157f5f89bde2885981060a03ab5	1882,1883	globset: expand docs and impl Default for GlobSet
+ee23ab51736d35028c7f3eee23295429377742b4	1401	printer: trim line terminator before finding submatches
+efd9cfb2fc1f0233de9eda4c03416d32ef2c3ce8	1412	grep: fix bugs in handling multi-line look-around
+656aa126492b04f1ac8b0406f589b6de4c4b7d60	1311	printer: fix multi-line replacement bug
+fc31aedcf3cae7a773c94a79775396759af10dd8	1866	printer: vimgrep now only prints one line
+578e1992fa21d3612d3e613d8869dbbb16e33cbe	1842,1871	cli: add --field-{context,match}-separator flags
+46d0130597a8340c19fdd41b107c209653451698	1613	cargo: statically link binary on Windows/MSVC
+7534d5144f5c5e89d67c791e663cdc0bee069b0e	1756	globset: fix recursive suffix over matching
+a28e664abd0d8912e4a2d85039fe282b9d37b994	1657,1660	ignore: check ignore rules before issuing stat calls
+0ca96e004c539e44242607fee5c4661edf27a5cd	1380,1642	printer: fix context bug when --max-count is used
+2295061e8079b146e656526ce1b264bf8f217585	1638,1697	searcher: do UTF-8 BOM sniffing like UTF-16
+53c4855517ff3d6ef0cb612579ede1f6e281a506	1663	ignore/types: add red
+121e0135c1f9cb7c950e60e8ef1ae32c775c7263	1683	ignore/types: replace duplicate glob with *.aspx.vb
+c53c4c0ade23f639cd00c22b2e4fcba89f4f8039	1600	doc: explain ignore rules a bit more
+4566882521b880274c510ef65d58995d0b049b6a	1680	cli: add -. as short option for --hidden
+12dd455ee9aa731acfeb0d2dfed568a0103cae73	1765,1803	printer: fix \r\n line terminator handling
+e6cac8b119d0d50646b3ba1aaf53e648c779901a	1404,1762	cli: print warning if nothing was searched
+0f502a9439822df41b3140d944f5d03c36144ecd	1770	cargo: remove "readme" field
+51d2db7f19c2855f8d83901a04425335a036325c	1816	doc: document '{a,b}' glob syntax
+b3a6a69f9d6eb00f4ce8fa5dfc4f2ac2327e75e1	1848	ci: check docs for all crates
+26a29c750ee962100ed5abf97a43feffcf3fe984	1869	doc: clarify --files-with-matches and --files-without-match
+beda5f70dc12ffba383f2861461820de24816ef3	1881	doc: improve wording
+5af7707a350d96066c47965075b09050bc1cf33c	1766,1767	cli: fix process leak
+a77b914e7ac9fe83602d7e43f8c2187cb5b03dc1	1868	args: make --passthru and -A/-B/-C override each other
+2e2af50a4df0bd424c3a06eabf42fa0ea0aad1bc	1773	doc: add vulnerability report docs
+581a35e568c3acd32461d276a4cfe746524e17cd	1878,1879	impl: fix --multiline anchored match bug
+ba965962fe2fc3513aeeaa99665f09099d92045d	1875	ignore/types: add po files to supported types
+2af77242c5b5186ea5ad6d05fa9aaef3d93c1603	1862	doc: fix typo in --engine flag docs
+3f4c4188c1150ae21bec2afd11fcc48bce1c1447	1860	deps: update to regex 1.5.2
+92286ad4d2a9c8b054de8aaea05c23a7220d20b3	1847	doc: clarify --hidden definition
+3a1780d8417e24eb7031ddd07c353e89c3f4d958	1785,1786	deps: replace memmap with memmap2
+020c5453a5880257c87949030550d24c596f5c8d	1741,1742	cli: fix stdin detection for Powershell on Unix
+d97fb72d84a8dff95ecc1f7ce7736a0b0673b712	1732	doc: update CI links in crate READMEs
+d6365117e2e5be90397b65ed6f4c20f98a504f22	1730	doc: sync --help output with man page
+f32e90601291f18559c376d2e51e214b58f7980b	1730	doc: clarify that CLI invocation must always be valid
+3ef63dacbed48e9c569722059922f37964a9494e	1705,1721	deps: targeted update of some dependencies
+86c843a44bc70b377c724a2bf9a6251da1f5f5b9	1710	ignore/types: add a type for minified files
+2b1637d1db5f8d20f417db11e3ef157b02556429	1708	doc: clarify how -S/--smart-case works
+145cef2eff6e10f3a5dbe1cab4ff0f7f2bc5a2a7	1703	doc: elaborate on the function of -u/--unrestricted
+b0066274cbb36e2cf4a76aded5f8a98d1f79e61a	1257	benchsuite: update subtitle URLs
+e6e50054b05dc59c8b0830410f1080a48f2c270c	1277	doc: document cygwin path translation behavior
+a700b758436548560aab16609e998c32180c824a	1591	doc: clarify capture group indices
+b72ad8f8aa897191cef8e7ebacd8d4eb5f4b9065	1586	ignore/types: add meson filetype
+1980630f1770da3d7d392dc3b743d04018217e34	1581	doc: fix egregious markup output
+16a1221fc70d586a07bd0421722635c61df525be	1544	doc: use asciidoctor instead of a2x
+793c1179ccd7e755d635beee8be5c1e2202d404b	1555,1557	ignore: allow filtering with predicate
+df7a3bfc7fe30f3e9e89d8775748b1239c5b5fc4	1547	grep-cli: support files compressed by compress(1)
+0eb2501b6e89bf83360eb70afbf1b5d221c92142	1252	doc: add a section about --pre to the GUIDE
+64a4dee4956e9d362eb071bfbd5ed8ad9a608f5c	1339	cli: improve invalid UTF-8 pattern error message
+50840ea43b65dfa7e51b695a7798f6c43808ccc2	1524	doc: note how to escape a '$' in --replace
+9a858e490980d886d94ce0c316a71af3369e8808	1571	doc: add config file note for --type-{add,clear}
+7ed9a31819aa4f1c1b25f1fa95bdf602232ddbb0	1573	printer: fix --count-matches output
+a2e6aec7a4d9382941932245e8854f0ae5703a5e	1559	tests: add new regression test for fixed inner literal bug
+139f186e5721e74542604fad8a3c5907c4911faa	1550	crates/ignore: switch to depth first traversal
+a75b4d122a479bedf01b571c42c864e199e57ed2	1551	doc: fix newline escape
+1c4b5adb7b4a239e433d4a1dc2aa4b09ee30573d	1537	regex: fix another inner literal bug
+34edb8123a0b7bd69a61cd237fec8c1b26a3f786	1520	ignore: squash noisy error message
+a38913b63a104d779f7870be5cc92d6523449177	1474	readme: update benchmarks
+e772a95b58b77604e9a4657e949431539ec15b08	1087	regex: avoid using literal optimizations when whitespace is detected
+c4c43c733ee9a44d3a48aa7f22284a6db6f0f9c6	1466	cli: add --no-ignore-files flag
+447506ebe02f1475734b66137feb02ae0fd9decf	1442,1478	doc: clarify globing behavior
+12e41809850a4ac14ed200101ef8b033d2a20c38	1441	doc: remove CPU features from man pages
+daa831939873a50cd7e193a7211b5e3d37ad631c	1439	doc: note ripgrep's stdin behavior
+3a6a24a52ad43d55554240b43e8be989c78e4efe	1488,1502	cli: add engine flag
+3d59bd98aaea776092168f8feaf5daeeaf743cbf	1337	ignore: rework inter-thread messaging
+52d7f474206eb517c7284448777ed839c0cae8bb	1389,1397	ignore: treat symbolic links to directories as directories
+711426a632aee0affb7009cd8e3492c4ff7273e8	1414,1416	cli: add --no-require-git flag
+01eeec56bb0a67dd402aed0f5650525076b26657	1485	deb: fix fish completion install location
+322fc75a3da11242c3e23a60bc4cddbc688552b0	1346,1365	ignore: make walker visit untraversable directories
+b435eaafc805b1edb12b04d72de0e0ce113059f9	1319,1367	grep-regex: fix inner literal extraction bug
+f8e70294d5741391521f638b80ba786888896b94	469,1430	ignore: allow post-processing at end-of-thread
+9f7c2ebc09caec2282065974725f9cd2326b2355	1410,1432	ignore: allow parallel walker to borrow data
+6f2b79f5847f941aec44ed5813c0dae16c2b2946	1445,1446	ignore: use git commondir for sourcing .git/info/exclude
+0c3b673e4c64c6e9c580b15ff8cf9c2a21c29cbd	1291,1400	cli: make ripgrep work in non-existent directories
+297b428c8c92dca2c62d57dd41ad085aa94c4aa4	1420	cli: add --no-ignore-exclude flag
+804b43ecd8bd37fde4fc81f49d1f9bb659aeac1c	1447	globset: implement FromStr for Glob
+2263b8ac9293073dbf7bf29691889ade53042650	1454	globset: add GlobMatcher::glob
+24f8a3e5ec4729c8e485547ca40157920ae64b9c	1344,1472	doc: document `all` file type
+1bdb767851d10acc9bf5b9306b7cc62cadbfe121	1434	doc: improve docs for `--sort` and `--sortr` flags
+a4897eca23fef8deee3a49cef826213b81055aac	1436	readme: simplify openSUSE instructions
+a070722ff27c7d57d47b1766de9d253fbfe5bef9	1370,1405	cli: add --include-zero flag
+4628d778089d0bf609462af7d5b38997fd9a014f	946,1449	ignore/types: add spec file type
+f8418c6a5271349d37f9e8217923c57b9613d4ab	1435	explicitly declare lazy_static dependency
+040ca45ba0c84a1af24a96f40b1143713f361bf0	1426	ignore/types: add xhtml to xml file type
+027adbf4858f8fc96e17e9484b5ce4a0481bfc1c	1418,1419	ignore/types: add 'diff' file type
+e71eedf0eb802c27541292f06676aa782be9bd21	1390	cli: add --no-context-separator flag
+a18cf6ec39cd1d8fc7b4061858bb9263b6e5e073	1381	ignore: add existence check for ignore files
+5a6e17fcc133f70f922a123483d0d5a158c041b0	1186	deps: various updates
+837fb5e21f0d0c755fbade11870472d2cc917cff	1427	deps: update to crossbeam-channel 0.4
+813c676ecac053559a3b1b72034e0c34c8ed7e06	1335	searcher: fix roll buffer bug
+052c857da065cb8bd90f48c980ba091b879076d7	1284	doc: mention .ignore and .rgignore more prominently
+5e84e784c8a407a0f03bdcbfd6e54c31e9c79663	1246	doc: add translations section
+01e8e1162177b4402893d4b60972d1031149e650	1261	doc: improve PCRE2 failure mode documentation
+9268ff8e8db179a484810cfbc40f3a8dba74ccaf	1223,1292	ripgrep: fix bug when CWD has directory named `-`
+c2cb0a4de4597c8f911c8ebece6aa0435ef5da6f	1293	ripgrep: add --glob-case-insensitive
+adb9332f52b884c8b872d1c969a7841188fe3089	1334	regex: fix -F aho-corasick optimization
+d1389db2e39802d5e04dc7b902fd2b1f9f615b01	1302	search: better errors for preprocessor commands
+03bf37ff4a29361c47843369f7d3dc5689b8fdac	1268	alloc: use jemalloc when building with musl
+fdde2bcd380488071c88d562fe6e1e5f1b39e47b	1247	deps: update regex to 1.1.6
+3edb11c513b79f3ae596f8513fec7f94545c483d	1242	ignore/types: add additional java files
+967e7ad0de3e657e8f81c1384a48ca1eea4edde7	1155	ripgrep: add --auto-hybrid-regex flag
+601f212a0b64d5aa63dd9ef19c9409f5e9194181	1185	ripgrep: add -I as a short option for --no-filename
+5a565354f8b41ba5fad0a509a0c0078c12e17fe5	1172	versioning: next version will be ripgrep 11
+2a6532ae71cd5c63da0bb2f2a7e61d51cc9891f4	1189	doc: note cases of exorbitant memory usage
+ece1f50cfe49fea324d96f97a2ae00ebbd0cad03	1078	printer: support previews for long lines
+a7d26c8f144a4957b75f71087a66692d0b25759a	306,855	binary: rejigger ripgrep's handling of binary files
+09108b7fda7af6db7c1c4f0366301f9a21cc485d	497,838	regex: make multi-literal searcher faster
+5962abc4655a0f07ece6fc6bd45142e8ee1cab0c	1207,1208	searcher: add option to disable BOM sniffing
+b00cd69a40329b14a304bb75567d13964856d733	1207,1208	searcher: add option to disable BOM sniffing
+cd9815cb376e4679af93a90a964cdb78173318da	1228	deps: update to aho-corasick 0.7
+f19b84fb23e94eb3a738f55d89c3a65225ac4bb3	1203	regex: bump regex dep to fix match bug
+d9cf05ad50d976d55e2c5e1234fa3d03aad4bd66	1079	deps: update to aho-corasick 0.6.10
+895e26a000cc54643691bdaef5fd7ea5f4451a89	1195	ci: don't do releases on all tags
+626ed00c196d54411ed2793b1568b1c48ccc95a0	1144,1194	searcher: revert big-endian patch
+a4868b88351318182eed3b801d0c97a106a7d38f	1144	searcher: use naive line counting on big-endian
+de0bc789828eb3a67cd85e1c32b2e8fe07fbfd77	1175	deps: bump encoding_rs to 0.8.16
+386dd2806d3411834b7666db7fc7d7bd3910ce6c	916	changelog: BUG #916
+f158a42a715fb6470aa2924182cbf8e1e0fd9448	1154	ignore: correctly detect hidden files on Windows
+0df71240ff19fe8fa278b64d8776725f0253bcf9	1176	search: fix -F and -f interaction bug
+f3164f2615ce18d3ea7b5ce122dfe2a381d1b3f4	1159	exit: tweak exit status logic
+31d3e241306f305c1cb94e1882511da2b48dcd36	1125	args: prevent panicking in 'rg -h | rg'
+bf842dbc7fba45befe9b0d9e28f94336c809c9e3	1091	doc: add note about inverted flags
+6d5dba85bd455c348655c3f91347989abb160cd4	1103	doc: clarify automatic encoding detection
+12a6ca45f9dad30864715dfecd917bb571b687d4	1138	config: add --no-ignore-dot flag
+9d703110cfe01782d2d0b03a340f5983da215e68	1095	regex: make CRLF hack more robust
+276e2c9b9ab3dac7643033d8b9d6c272d5dac1d5	1163	searcher: always strip BOM
+9a9f54d44ce45c6c3c5bfa31ad1a08fda57cdad7	1175	readme: encoding_rs's SIMD support is broken
+44a9e377371006f01f2e425fbf8d49e43bc14a9b	1116,1120	ignore/types: add method for retrieving file type definition
+4691d1103417a68905f0fa77adb1a6988c808fdc	1121	ripgrep: don't skip stdout in --files mode
+519a6b68af2339afadaa32a8649efabbb0b9266a	1043	grep: remove unused dependencies
+9c940b45f4f81b51eee7dcf5836fb3680cf6b62c	373,1098	globset: permit ** to appear anywhere
+aeaa5fc1b13bd5b903ef5660d3a6cb26b6745945	1174	globset: fix repeated use of **
+23be3cf850386ec0d4d8724fb9bf5ddeaab2c27d	1173	ignore: fix handling of **
+a7f2d482342eb2250b5a32ee03a8fe16990228dc	1106,1130	printer: fix path handling in summarizer
+0b04553affdb4e15ffd4ef2a29840cad3fc4fc7a	1099	grep-cli: support Brotli/Zstd decompression
+718a00f6f2f88238546f7d33c1ea52217002495e	1164,1170	ripgrep: add --ignore-file-case-insensitive
+662a9bc73dc01c529de93c991584035bbba38549	1141,1142	deps: update to crossbeam-channel 0.3
+b41e5963279d5a7c633514d4a6afcb480c6c6915	1101	doc: escape braces in AsciiDoc
+fb622666206089cf7092ae116612898ac358c91c	1089	deps: update encoding_rs
+db256c87ebd52ccab144db5e1bb35f2c1be8f6d5	1055	ripgrep: suggest -U/--multiline
+ba533f390edbad39a334c3fb8b56f839642292ee	1052	grep-searcher: update to encoding_rs_io 0.1.3
+ba503eb6775f0031c684a3bfeeb1c9cb07601dd6	1064	grep-regex: fix inner literal detection
+b7a456ae83dc0d065fe6f3d1d489e6cf71ba70f8	1032	deb: add completions
+c12acd7396ce550483d3d840853b9cbde9db032c	1032	deb: add completions
+4846d63539690047fa58ec582d94bcba16da1c09	990	grep-cli: introduce new grep-cli crate
+40e310a9f9e21929acb5b0eb364ffad51df80608	404	ripgrep: add --sort and --sortr flags
+f9ce7a84a8ce1be033099ee4785815bc5f269223	321	ignore: add 'same_file_system' option
+2f3dbf5fee7a83a7d8e9bbeb48eebf79f9415c47	984	ignore: fix false positive in path_is_symlink
+5c80e4adb69c618e458cfc70a8502a497604825c	842	release: better support for binary Debian package
+95a4f15916699a1188f7b27c7eb71f850f404098	953	ignore: clarify docs for DirEntry::error
+0eef05142a03cbe393e8e346d401991d45878a81	1019	ripgrep: move minimum version to Rust stable
+edd6eb4e06c528b668672ac32b45a62939802a83	1022	ripgrep: make --no-pcre2-unicode the canonical flag
+d5c0b0303002087504e956706c323073a1b09a2b	2,162,176,188,200,244,389,416,441,643,690,764,917,922,937,940,980,993,997,1013	changelog: massive update for libripgrep
+d9ca5293569efb255608d3c601107bcfe7060f15	162	libripgrep: initial commit introducing libripgrep
+2913fc4cd063f4d869f54497a313aafbf5330346	448	tests: reduce reliance on state in tests
+0863c75a5a819dc94754f3465246366ffd5d541f	671	ignore: fix bug in matched_path_or_any_parents
+1611c04e6f2cf2de7bdf4ab1ab1647b1efd6796b	995	ignore: respect XDG_CONFIG_DIR/git/config
+dca8110da2a2783dedeb00f2cab21f3b55d211ad	900	ripgrep: when given no patterns, don't match
+0d11497d2133f1973321ae383e139a9f1a71500f	903	tests: be looser with gzip failure
+22ac2e056e1826957dddfaac6e45dadc4414bbe1	907	ripgrep: stop early when --files --quiet is used
+03af61fc7bb384cb594359fee806912ee5e57a98	918	ripgrep: don't skip tar archives
+560dffd2476f16b4b296aae6aca7aec0f0c6ba1c	934	ripgrep: add --no-ignore-global flag
+e65ca21a6cebceb9ba79fcd164da24478cc01fb0	934	ignore: only respect .gitignore in git repos
+6771626553934f16306e8409aee78f7a63e43738	951	ripgrep: improve usage documentation
+b9c922be53fdadb28ddbb02b4b0d0a63f8bdebe7	957	ripgrep: better --path-separator error message
+231456c409ff38c75c39d01b781b569965ddf808	978,981	ripgrep: add --pre flag
+1d09d4d31ba3ac2eb09edf31e8ec46b2b5cec388	898	ripgrep: add support for lz4 decompression
+d11a3b33773620bcc593f82b557757f0c2ec8a05	987	crates.io: use 'OR' instead of '/'
+d09e2f6af1821c4d6fcdcfb7278e57c76c1f5c76	985	globset: clarify documentation on regex method
+df469fe1b4f723c98a9b4aa4cd96a85a7986fd2c	924	termcolor: moved to its own repository
+ac90316e359d41520f4f0c445286f3abda59db80	964	ripgrep: add --fixed-strings flag
+a6467f880aee7bfaeb57f81feba2b57f8f117854	923	ripgrep: disable autotests
+004bb35694a564e3f677003dddc97e455bcd7922	955	ripgrep/printer: fix small performance regression
+cd6c1909674648f13d9de16aa7413ea7ed240e49	955	ripgrep: use new BufferedStandardStream from termcolor
+ca23a170f769f59e5bde02a4ab32b54cd2d66165	948	ripgrep: use exit code 2 to indicate error
+6ffb4b7466c914a2683847b5fb4e30ea16749e94	902	doc: go away snap
+ab64da73ab3f73f50192459dfc1e49c6cabd9de8	835,836	ignore: speed up Gitignore::empty
+ae6f8714912d522e8042701c30da43c6c667dfd3	795	output: remove --line-number-width flag
+b75526bd7f92529c8e49c9795d3c0e6bc4143721	880	output: add --no-column flag
+507801c1f2efdc45ea25227a613c2e38cdecf88b	893	ignore: support .git directory OR file
+0ee0b160b583715b2c4629978695f3567cb6fc09	646	logging: add new --no-ignore-messages flag
+8cb03941e6ec978cabc2cf2f7c348b389c9cc917	870	doc: add search and replace faq
+ebdb7c1d4c027de7ee2ffc2675420cd876b97237	891	ignore: impl Clone for DirEntry
+42b8132d0ad1918c1c0dc677015d87c12819fa26	851	grep: add "perfect" smart case detection
+cd08707c7c82058559bd5557efb3c1d0379dbf1d	268,395,702,853	grep: upgrade to regex-syntax 0.5
+1f70e9187ceca65e7196f65e8cad1cba65efb47c	135	deps: update regex crate
+00520b30f5f38e543e17b1a4cc5e8417bc488ea4	411,799	output: add --stats flag
+27fc9f2fd341bd3ed672f79d43bf983514188b96	566,814	search: add a --count-matches flag
+b006943c01561a4ae5b928081d1bb4087b599e19	812	search: add -b/--byte-offset flag
+91d0756f62790356012d692a7b340df92b54beac	526,811	ignore: support backslash escaping
+dbf6f15625dfa395cdea2675b2a7c24e743a1197	852	mmap: handle ENOMEM error
+f5411b992cb5287e35ceca724651121c0beb3995	832	doc: use PATTERNFILE for -f/--file flag
+354996a16fe40edfc6ed2a6a50292f2dab58419a	782	doc: clarify snap installation instructions
+cb47be938ec81208d64039a539841a7b0a166794	791	ci: build man page on ARM cross-compile
+fe9be658f410d2e35c1cfe236a338f95aa03a724	789	doc: omit revision when it isn't available
+8c800adab7ca441519e4bc503450123a80923c41	815	doc: clarify failure mode
+d65966efbca5cfe2afdc6930e868d02e53591a43	820	ignore: fix performance regression on Windows
+c78ab9e66970803e17a688990e3c30722d9c97cc	797	termcolor: improve "intense" docs
+d57fc580818e655e7b0edca2924e259bd5dc02d2	798	termcolor: add underline support
+18f549d289b95b0de9e0f7b6c7d880b7752ea04d	824	ignore: fix symlink following on Windows
+c749b604dc2276cf64c792de742aa34ea9fbadec	684	doc: clarify --ignore-file flag
+361698b90a6b31feac78ac2f16082342f750a1e1	807	ignore: fix improper hidden filtering
+b71a110ccf1c9cfe5f4c447cc3878a2e45ed7b8f	800	ignore: fix custom ignore name bug
+ca3e0e8a498a0cb50960f32e9353d99b853c37a8	779	doc: clarify --files-without-match
+8e93fa0e7fecf375e03d398660eb0e9ba7cf3473	780,781	deps: update regex to 0.2.6
+706323ad8f2600db7d46482a7d95972b1416c0eb	773	globset: add more tests for single-asterisk pattern
+c57d0fb4e862005ca0c7b79fb90a31a11e022ff7	196	config: add persistent configuration
+d83bab4d3f29a0176a20ea004c2cba44058d4210	553	argv: permit repeated flags
+e36b65a11a7fa72e4b43f89c71441884269f0522	705	windows: fix OneDrive traversals
+11ad7ab204f415d6e3af35b9e8c8907092857266	633	ignore/deps: update walkdir
+93943793c314e0566ed57d7c0642c3b818c76c50	760	worker: better error handling for memory maps
+f007f940c53a4818ead58f2fe2e0fac95cc3a40a	539	search: add support for searching compressed files
+51864c13fc329332b9ebcf2a7e45e7b6aadeedbd	761	ignore: fix handling of / in patterns
+a6d3a959ebd4633e2d939e4455186ed4726c3bb0	747	types: yarn.lock is not YAML
+58bdc366ec292653124699940190432ae30a6732	740	printer: add --passthru flag
+34c0b1bc709f74678d7c1a24046c26571c25eaec	725	doc: various updates
+14779ed0ea5d28aaa6c04dff3be77989f9fd2836	727	ux: suggest --fixed-strings flag
+ba1023e1e45d7bd6edffa43d06c9613d3b84de8f	544	printer: add support for line number alignment
+7dd1194a975721c49121f07644ebd0414cddbff5	617	deps: update to latest regex crate
+03b0d832edb821d2baed81e04fc82a0699935777	684	Update app.rs (#707)
+86c890bcecf885619565ce949ddb9099d55dd43c	717	Improve detection of upper-case characters by smart-case feature
+d775259ed9399037e1a1da0ff65dd377bc8b82d1	676	Add armhf build to Travis CI
+d73a75d6cd82068252c35c5718900b6a1acb296e	693	Omit context separators when using a contextless option like -c or -l
+679198e71aaa33b777405924110a96cf594aef12	663	Support both [^...] and [!...] for globset class negation
+8b9eba2147587d5c8a39708fdda6a1a3be032f9e	649	Properly match the rules "**/" and "!**/"
+5714dbde09ace2080fbea2ef063956a3c2602222	648	ignore: partially revert symlink loop check optimization
+1bf9d2925989061313b4181140dba79186df1cba	633	ignore: be fastidious with file handles
+2a14bf22491b01cabe882bfaa116a4aea048047f	599	printer: fix colors on empty matches
+8dc513b5d2fad3bfc820c60724575c02b0c259ae	559	Skip regression 210 test on APFS
+e7c06b92fb996adcbc40d1f025e29c44de5383e8	402	Fix printing context after an early return from a search
+58fb4f987eeebaf3530c8d1367845c4a3432f85e	618	Update README to be more explicit about precompiled binaries (fixes #618)
+67b835fe2adf40989bc68ee62cec58f12887cf94	521	Color --replace text using the match type
+1136f8adabb694634e6bc0c5ca3842e9403fe697	600	Avoid expensive check with --files (fixes #600)
+d97c80be63f7cdd46f7bd8d9a17e92a698c51a89	503	termcolor: make StandardStream be Send
+398326bfe2f696b71d9a812b11868de12a57dcb7	581	doc: note that ripgrep may terminate unexpectedly
+30ca3ecca65d06ebc1d0794f3968397709aff9a8	413	ci: strip ripgrep binary on Unix
+3d9acdab189006880e9d4ccdbe9ae42b164901ec	574	Add short key for julia type
+972ec1adc606b860b3989e332dd92a5c2e1e59f1	482	bump clap to 2.26
+6dce04963d4ee2d1bd6c17559d237f6dc88e048e	568	Allow options with non-numeric arguments to accept leading hyphens in arguments (fixes #568)
+354a5cad970453043fe25c2a184afc7808e235c2	342	Fix invisible file path text in PowerShell (#557)
+bfbd53eb92cc6398417e247ed4e22ca24fd963e4	558	benchsuite: fix bugs
+ad262f114623679f701bb836996977fc57f5dd91	524	Update `--version` output to show compile-time features
+112b3c5e0ae232fdbce90cd505c57f2c4abc4a22	493	Fix another bug in -o/--only-matching.
+229b8e3b3322177e2a518d87358b3503dfc18cdf	483	Make --quiet flag apply when using --files option
+0b685c842993ea55bbabbd7bde5f29f5636bcf9f	442	deps: update clap to 2.24
+362abed44a000da3b31e5dd027e16eb4e36e1bed	451	Fix reiteration of the first found match with --only-mathing flag
+c50b8b4125dc7f1181944dd92d0aca97c2450421	444	Add better error messages for invalid globs.
+66efbad871620fe2dbe675438fdc8d9922e72826	362	Add dfa-size-limit and regex-size-limit arguments
+e9df420d2f653519e266969f8a91a6c64aaa0b41	377	Add ability to colorize column numbers.
+90a11dec5e5765af560d343e879869a60363ef54	34	Add `-o/--only-matching` flag.
+1425d6735e8418361a1dd286d578b8ff8ef0f173	426	Bamp clap to 2.22.2
+01deac9427d399b8ddd901ecaf31e01f06a6c10c	419	Add -0 shortcut for --null
+685cc6c5622b02fd5a53c8bc953176b159c780e4	415	Add vim type.
+3ac1b68e54ee9d8f827acb9131657475fe4c67a4	381	Add license info to termcolor crate.
+46f94826fdb6e3061362ac975cb18edc8c98c30a	1	Update whirlwind tour with encoding info.
+75f1855a91ca00b5d0e62740595b1b91bc5142a2	407	Fix brew tap sha256 sum.
+d352b792944af6dc5d818b1ed3119f0914dfce38	129	Add new -M/--max-columns option.
+ae863bc7aa6fc887aa237b007f3bfce4fdf33e11	345	Improve docs for --glob flag.
+f0d3cae56963a912a6e50bc7c4d11416e4ef4989	340	Clarify -u/--unrestricted flags.
+4ef481813084b83e04ece4ed44ccb38b49f7e817	380	No line numbers when searching only stdin.
+8bbe58d623db78a32b04eabff9a69667ad23ff7b	1	Add support for additional text encodings.
+b3fd0df94bbf928ea00cf9a10bd007f4b236d85b	394	Fixes #394 - Added in svg to the types file
+c1b841e934f6a999a9ac53b581ff4e5e847bc684	381	Add license files to each crate.
+f5ede0e31942825fc1329f7dfbba0c3ef4bb560f	393	Add scss and ejs.
+80e91a1f1d725eb8e331f3613a352edb8b13677b	405	Fix leading slash bug when used with `!`.
+50f7a60a8d730266a55717a0e19b978a7ce2c740	347	Add "Known issues" section in README.md
+066f97d85553f12696272086d26fa86fc2c84d9e	391	Add enclosing group to alternations in globs
+4e8c0fc4ade785775005b416dc030295c684cb67	383	bump clap to 2.20.5
+79d40d0e20a5710476b43c58c42db5124c2010a1	52,311	Tweak how binary files are handled internally.
+525b27804949d9362d4e1890a0cfa18a2eb272bd	326	Don't parses regexes with --files.
+16de47920cb14d03a1ed5d851a9f5283472d3d7c	327	Permit --heading to override --no-heading.
+22cb644eb6fc7872c1a0e5e084791b87382014b4	324	termcolor: add support for output to standard error
+b04a68a782467658b601b86f9b2048b420ee23aa	330	Update 0.4.0 changelog.
+ed60ec736cabab43725ae24e442a407bb0455590	318	Fix invalid UTF-8 output on Windows.
+a7d0e4066870178f8529382fe273ce1ce580741d	182	Use basic SGR sequences when possible.
+7a951f103a2abeba5af53905e168a09179704b48	243	Make --column imply --line-number.
+e940bc956dcb9bc7ee01bdfea11275d1950d74f5	313	update bytecount
+8751e5570697e6b2b913b2ab06e0dabf9f28b436	275	Add --path-separator flag.
+2143bcf9cb259c2230aa79a7cbc23cb1ec1fdae7	308	Add example to -r/--replace docs.
+461e0c4e33b38532545af4f97ec92bd367963017	286	Don't search stdout redirected file.
+ed01e80a796b7f5cbc83c63517d884d85f1cebd7	83	Provide a mechanism to compose type definitions
+8f7b9be356c005435f5612904f38ed5d95cc2aa0	262	Add docs for shell completion files.
+b65a8c353b1d214f2b26be61b715059727ce94bb	263	Add --sort-files flag.
+95cea77625f978a21b1d923e54d13f9217f0ef30	258	Tweak the parallel directory iterator.
+b187c1a8175d88b743e2e225dbec98661f7a2f94	266	Rejigger bold and intense settings.
+932875684ea181cff8ba6a9a7e1cd5fd004fed35	296	Add types for handling SWIG files. (#297)
+b65bb37b14655e1a89c7cd19c8b011ef3e312791	295	Remove superfluous memmap dependency in `grep` crate.
+de5cb7d22e00c18dfce082a68b0cf45924b56e7f	281	Remove special ^C handling.
+9911cd0cd9569ef03255b5f1565d781a16d1cd9c	271	Remove ~ dependency on clap.
+900ef0abc76c21697afa5c5a1a4f53f0a7d4ecc5	284	Update docs to explain use of -g and --files to search for paths. (#285)
+8396d3ffaae3784880a6cef25775ba2abd9f4fcf	268	Make backreference support clear.
+652c70f207ccfd859055c0bde09cbd6cc4a3d263	277	Fix cut-off line in globset docs.
+bb70f967437279e49fb87df23ae567c276e4cc33	279	Fix a non-termination bug.
+d66812102b6184a0dd7d168a3afe2dbf209841cb	270	Fix leading hypen bug by updating clap.
+7282706b4265317e762a5c77ee3ff3afd5baf9f5	256	Fix bug reading root symlink.
+0473df1ef5721143941fb7f883e22b17292b35bb	251	Disable Unicode mode for literal regex.
+301a3fd71d3a923419d6d3e7604979b314121801	229	Detect more uppercase literals for --smart-case.
+d12bdf35a57733184f5db897f685d8626a1a4b18	247	Clarify use of --heading/--no-heading.
+ae592b11e3b5d77a5cd1de02e01b4e370e5d72d6	242	Only emit bold ANSI code if bold is true.
+9598331fa81c653dd581f750494e0dc51cca1963	241	Propagate no_messages option to worker.
+e8a30cb8934106e63f9d0938c547e535acb7b888	37,51,94,117,182,231	Completely re-work colored output and tty handling.
+bd3e7eedb1d8698a46e18afd2041e675f6597947	138	Add --files-without-matches flag.
+92dc402f7f598c3d0045f94df9988bbe1c0c79cf	136,189,210,230	Switch from Docopt to Clap.
+5b73dcc8abc3133c98603c64339c35e0ed90c577	226	Rework parallelism in directory iterator.
+2dce0dc0df3c9ade3d89dd1ed673213d76760509	228	Fix a bug with handling --ignore-file.
+77ad7588ae191c8216f0696dad1996c4d0dd561b	149	Add --no-messages flag.
+58aca2efb24801b43870acac5b40c59fbc9ef350	159	Add -m/--max-count flag.
+351eddc17e3f7164978c2f001ff9b8e3bc328e33	186	Add new 'h' file type.
+277dda544ce0e3d5f6f3693c087a4564e8401fbf	203	Include the name "ripgrep" in more places.
+598b162fea356249506f4ca5480882564fc3321e	215	Note -e/--regexp's additional usefulness.
+0222e024fef6c52fc1cd01b6c7ec01ab38031bce	199	Fixes a bug with --smart-case.
+02de97b8ce2762a7530cc18bba737f6ccea022a2	128	Use the bytecount crate for fast line counting.
+7cf560d27cf2e4ac589e34ab848bf76f6df1bd4d	217	adding .mak extension for makefile filetype. Fixes #217
+16975797feb297ed0e8022117723c71cd6013f4f	206	Fixes a matching bug in the glob override matcher.
+971446a9af2d837e9a062cb6b4a473924c5af73c	206	Fixes a matching bug in the glob override matcher.
+79a8d0ab3f75be2d30a8c55ae97dfd858e583be8	119	Reset the terminal when Ctrl-C is pressed
+d79add341ba4be10bb3459877318b9c5a30f5db3	9	Move all gitignore matching to separate crate.
+f2e1711781d245eca7bc9087fc833cf59af98a0b	184	Fix bug when processing parent gitignore files.
+247a9398f4dd1903ed561aa1bb2ba088a70c5a79	164	Switch to thread_local crate in lieu of thread_local!.
+4737326ed3e0d0a328dafcce9b8d4375ff142460	156	Update regex-syntax for bug fix.
+4665128f25144f2c0e7ccab72af808274be9b54b	147	Clarify documentation for --replace.
+e96d93034a4829250f61b190901a8faf9a1eeb1f	87	Finish overhaul of glob matching.
+175406df01c704d557715b6f558f1624f9e8aaf9	134	Refactor and test glob sets.
+46dff8f4becc9007b073a1f3f412d6a1a544440c	116	Be better with short circuiting with --quiet.
+925d0db9f032be79bfcd9cf618063dbe6ffc4f93	124	Add -s/--case-sensitive flag.
+3e892a7a80e86d5e57e95626788c10e23d4221cf	118	Correct example with --type-add.
+3e78fce3a3ca226dde4e332a30bf24fad03f8f35	99	Don't print empty lines in single threaded mode.
+7a3fd1f23fe7a4d679fb1fb7d13884a653e5d4f5	89	Add a --null flag.
+d30640344090fc3ffde6d58e0c5a4c928fb00990	105	Fix an off-by-one error with --column.
+f27aa3ff6fcff9adfa312d8d404254419f90c029	106	Add regression test.
+104d740f769256ee6beeaef5a0d1c245947c0ce9	98	Don't quit if opening a file fails.
+f85822266ff8121cc2f7a64ea5428c673bd69de2	8	Don't use an intermediate buffer when --threads=1.
+6a8051b258408343c4cf164acdc4cc2cd7928129	93	Don't union inner literals of repetitions.
+a13ac3e3d49729403a734c9f3eab2d99a66e21b0	19	On Windows, always consider stdin to be a tty.
+ed94aedf2746172a16e2ed3933eeaf1f41602fc6	90	Permit whitelisting hidden files in ignores.
+fd5ae2f7955aac1f8603713cef307a333676a467	80	Add curly brace alternates to glob format.
+e7839f22006073101ff1f72a5b78c1ae06092399	46	Merge pull request #71 from catchmrbharath/issue46
+9dc5464c84cf96c8e7cba96e2b470ebd066c2393	77	Stop after first match is found with --quiet.
+b2bbd46178b34f45a5c97c8b25b54a33b544b3da	82	Clarify documentation of --type-add.
+ab0d1c1c797c0464ad4fcdfc641bcf88f9ade304	35	Be more conservative with stdin.
+a8f3d9e87e7e9192a9c1815da7c07d4522ccc1b2	26	Add --files-with-matches flag.
+9f1aae64f85b69a4b495498b5c802942a4c39143	46	[Fixes #46] Use 1 less worker thread than number of threads
+1595f0faf594be5d303b1783857d23a0fda74230	70	Add --smart-case.
+8eeb0c0b60da59828a48d995e969bdba5816ea31	68	Add --no-ignore-vcs flag.
+423f2a1927d770c5fc2d5cb4980ac66e9c149ea5	47	Permit options with --help/--version.
+4b5e789a2ae854d234cd8fd3a87380a0f99dc584	38	Strip trailing whitespace in gitignore patterns.
+37b731a04895362514a9cbaf3f16c8706135414d	13,58	Update brew package to 0.1.17.
+a44735aa8755cc262d212b50b6239a0030b9a948	36	Tweak memory maps on darwin.
+6b2efd4d88b78f2e108f1984fa9dcedfeadf383d	55	If a file is empty, still try to search it.
+c8227e0cf3bc4e8d98de84d6068b3affe95235e5	64	Don't ignore first path when using --files.
+b941c10b9005edbb520cdd38fdb94ace2969fb57	67	Fix directory whitelisting.
+71ad9bf393a3d89f8c6395d963d9329f1a271d81	30	Fix trailing recursive globs in gitignore.
+ce85df1d2e5a39ab021f7781abc49f5a1252011d	24	Clarify what rg does in --help.
+a6e3cab65a4e0b8dc14473eb83b10eaff2e7848d	20	Add --no-filename flag.
+7b860affbeb015aa0298a95b1e23eb8db7d181cc	21	Change the default output of --files to elide './'.
+af4dc785370a031b55d709fb7541260c185e1c54	22	Update to docopt 0.6.85.
+9ce0484670c9d63c5ac16bb52d2fa026c58e7a37	15	Clarify the documentation of the --type-* flags.
+346bad7dfcceea62e27dba8110ac470fc52ff9bf	25	Fix handling of absolute patterns in parent gitignore files.
+155676b474cf1e5f11e9e32b1e4e1e5798850cff	43	Fixes #43.
+a3fc4cdded50c370698154433600ea51dca390df	16	Fix a bug in the translation from a gitignore pattern to a glob.
+cc90511ab29d3c37e873acac0fd80f90473f54bb	40	Switch from .rgignore to .ignore.
+6367dd61ba5bd215f99a71564691b14aeab15a4e	18	Column numbers should start at 1.
+d5c045469b8f59f007a1c5c265edc5598858d2e0	14	Don't use panic-on-abort.
+d22a3ca3e57dc5c28bfb161fc6a0d54856e0f486	5	Improve the "bad literal" error message.
+fdca74148dbb168035f538506621e59b92766090	4	Stream results when feasible.

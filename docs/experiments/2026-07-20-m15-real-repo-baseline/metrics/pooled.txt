@@ -1,0 +1,87 @@
+# .loco/eval/20260721T043543Z
+run	outcome	passed	sr_error	sr_correction	sr_block	repeat_corr	finish_missing	finish_args_corr	finish_nudge	status_note	pipe_note	empty_test_note	verify_total	verify_zero	verify_allpass	args_tool_key	args_tool_switch	length_retry	verify_nudge_pipe	finish_nudge_pipe	status_pipe_qual	status_no_summary	model_diff	model_diff_trunc	sr_recovered	sr_recovery_denom	finish_missing_maxrun	perturb_turns	stop_cause	first_mut_turn	cargo_after_mut	zero_mut_end	status_in_args	sr_files	verify_failed	sr_corr_total	perturb_turns_ext	parse_fail_first	finish_nudge_total	pipe_unreleased	max_prompt	max_est	est_ratio_max	budget_ratio_max	pack_turns	pack_elided	pack_dropped	overflow_shrink	overflow_giveup	inline_sys_turns	protected_edits	nav_hit	fix_hit	reads	greps	lists
+run-fd-1873-path-sep-0	timeout	False	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	3244	3097	1.0620	0.1257	0	0	0	0	0	0	0	0	0	1	1	0
+run-fd-1873-path-sep-1	timeout	False	0	0	0	0	0	0	0	5	0	0	1	0	0	0	0	1	0	0	0	0	2	0	0	0	0	0	-	7	1	-	0	-	1	0	0	0	0	0	12284	11055	1.1268	0.4761	0	0	0	0	0	0	1	1	1	4	1	1
+run-fd-1873-path-sep-2	timeout	False	0	0	0	0	0	0	0	7	3	0	0	0	0	0	0	2	0	0	0	1	1	0	0	0	0	0	-	12	1	-	0	-	0	0	0	0	0	3	17331	11889	1.7874	0.6716	0	0	0	0	0	0	0	1	1	3	0	0
+run-fd-404-min-exact-depth-0	repetition_stop	False	0	0	0	1	0	0	0	4	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	other	0	0	repetition_stop	0	-	0	0	0	0	0	0	8370	8601	1.0725	0.3244	0	0	0	0	0	0	0	1	0	2	7	0
+run-fd-404-min-exact-depth-1	max_turns	False	1	0	0	0	0	0	0	6	2	0	0	0	0	0	0	0	0	0	0	0	2	0	0	1	0	0	-	6	1	-	0	walk.rs:1	0	0	0	0	0	2	9715	7981	1.2202	0.3765	0	0	0	0	0	0	0	1	1	5	1	0
+run-fd-404-min-exact-depth-2	max_turns	False	0	0	0	0	0	0	0	8	9	0	0	0	0	7	0	0	0	0	0	0	5	0	0	0	0	0	-	7	1	-	0	-	0	0	0	0	0	9	17304	17164	1.0725	0.6706	0	0	0	0	0	0	0	1	1	5	0	0
+run-fd-535-prune-0	max_turns	False	0	0	0	0	0	0	0	7	0	0	0	0	0	15	0	0	0	0	0	1	1	0	0	0	0	0	-	12	0	-	0	-	0	0	0	0	0	0	21034	22161	1.0709	0.8151	0	0	0	0	0	0	0	1	1	4	1	0
+run-fd-535-prune-1	timeout	False	0	0	0	0	0	0	0	5	0	0	0	0	0	8	0	2	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	16721	17739	1.0979	0.6480	0	0	0	0	0	0	0	1	0	6	0	0
+run-fd-535-prune-2	max_turns	False	1	0	0	0	0	0	0	9	0	0	0	0	0	2	0	0	0	0	0	0	3	1	0	1	0	0	-	22	0	-	0	walk.rs:1	0	0	0	0	0	0	18928	19663	1.0709	0.7335	0	0	0	0	0	0	0	1	1	4	0	0
+run-fd-615-hidden-dot-pattern-0	max_turns	False	0	0	0	0	0	0	0	6	0	0	0	0	0	4	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	23692	20224	1.2569	0.9182	0	0	0	0	0	0	0	1	0	8	0	0
+run-fd-615-hidden-dot-pattern-1	timeout	False	0	0	0	0	0	0	0	4	0	0	0	0	0	0	0	2	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	19400	15486	1.4563	0.7518	0	0	0	0	0	0	0	1	0	7	0	0
+run-fd-615-hidden-dot-pattern-2	timeout	False	0	0	0	0	0	0	0	3	0	0	0	0	0	3	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	15964	13292	1.2584	0.6187	0	0	0	0	0	0	0	1	0	5	0	0
+# summary sr_error=2 sr_correction=0 sr_block=0 repeat_corr=1 finish_missing=0 finish_args_corr=0 finish_nudge=0 status_note=64 pipe_note=14 empty_test_note=0 verify_total=1 verify_zero=0 verify_allpass=0 args_tool_key=39 args_tool_switch=0 length_retry=10 verify_nudge_pipe=0 finish_nudge_pipe=0 status_pipe_qual=0 status_no_summary=2 model_diff=14 model_diff_trunc=1 recovered=0/2 stops sr=0 finish=0 other=1 zero_mut max_turns=1 finished=0 other=5 cargo_after_mut=4/6 parse_fail_first=0
+# tokens max_prompt=23692 est_ratio_max=1.7874 pack_turns=0 overflow_shrink=0 overflow_giveup=0 protected_edits=1
+# .loco/eval/20260721T060346Z
+run	outcome	passed	sr_error	sr_correction	sr_block	repeat_corr	finish_missing	finish_args_corr	finish_nudge	status_note	pipe_note	empty_test_note	verify_total	verify_zero	verify_allpass	args_tool_key	args_tool_switch	length_retry	verify_nudge_pipe	finish_nudge_pipe	status_pipe_qual	status_no_summary	model_diff	model_diff_trunc	sr_recovered	sr_recovery_denom	finish_missing_maxrun	perturb_turns	stop_cause	first_mut_turn	cargo_after_mut	zero_mut_end	status_in_args	sr_files	verify_failed	sr_corr_total	perturb_turns_ext	parse_fail_first	finish_nudge_total	pipe_unreleased	max_prompt	max_est	est_ratio_max	budget_ratio_max	pack_turns	pack_elided	pack_dropped	overflow_shrink	overflow_giveup	inline_sys_turns	protected_edits	nav_hit	fix_hit	reads	greps	lists
+run-delta-1089-whole-file-commit-0	timeout	False	0	0	0	0	0	0	0	4	0	0	0	0	0	0	0	2	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	12812	12181	1.1641	0.4965	0	0	0	0	0	0	0	1	0	5	0	1
+run-delta-1089-whole-file-commit-1	timeout	False	0	0	0	0	0	0	0	7	2	0	0	0	0	4	1	2	0	0	0	0	1	0	0	0	0	0	-	11	1	-	0	-	0	0	0	0	0	2	18918	16589	1.1632	0.7331	0	0	0	0	0	0	0	1	0	6	1	1
+run-delta-1089-whole-file-commit-2	max_turns	False	0	0	0	0	0	0	0	8	8	0	0	0	0	9	0	1	0	0	0	0	3	2	0	0	0	0	-	9	1	-	0	-	0	0	0	0	0	8	18502	17135	1.1627	0.7170	0	0	0	0	0	0	0	1	0	6	0	1
+run-fd-675-number-parse-error-0	max_turns	False	0	0	0	0	0	0	0	10	0	0	0	0	0	0	0	1	0	0	0	0	4	0	0	0	0	0	-	20	0	-	0	-	0	0	0	0	0	0	15816	15823	1.0827	0.6129	0	0	0	0	0	0	0	1	1	3	1	0
+run-fd-675-number-parse-error-1	max_turns	False	0	0	0	1	0	0	0	7	0	0	0	0	0	0	0	1	0	0	0	0	1	0	0	0	0	0	-	20	0	-	0	-	0	0	0	0	0	0	11868	11422	1.0974	0.4599	0	0	0	0	0	0	0	1	1	3	2	0
+run-fd-675-number-parse-error-2	timeout	False	0	0	0	1	0	0	0	4	0	0	0	0	0	0	0	2	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	7442	7227	1.0827	0.2884	0	0	0	0	0	0	0	1	0	2	0	0
+run-fd-898-strip-cwd-exec-0	max_turns	False	0	0	0	0	0	0	0	6	0	0	2	0	0	6	0	0	0	0	0	0	1	0	0	0	0	0	-	9	1	-	0	-	2	0	0	0	0	0	25882	25480	1.0879	1.0030	1	1	0	0	0	0	0	1	0	7	2	0
+run-fd-898-strip-cwd-exec-1	timeout	False	0	0	0	0	0	0	0	5	0	0	0	0	0	6	0	2	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	19183	19941	1.1080	0.7434	0	0	0	0	0	0	0	1	0	6	0	1
+run-fd-898-strip-cwd-exec-2	max_turns	False	0	0	0	0	0	0	0	6	3	0	0	0	0	2	0	2	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	3	18640	18367	1.0879	0.7224	0	0	0	0	0	0	0	1	0	6	3	0
+# summary sr_error=0 sr_correction=0 sr_block=0 repeat_corr=2 finish_missing=0 finish_args_corr=0 finish_nudge=0 status_note=57 pipe_note=13 empty_test_note=0 verify_total=2 verify_zero=0 verify_allpass=0 args_tool_key=27 args_tool_switch=1 length_retry=13 verify_nudge_pipe=0 finish_nudge_pipe=0 status_pipe_qual=0 status_no_summary=0 model_diff=10 model_diff_trunc=2 recovered=0/0 stops sr=0 finish=0 other=0 zero_mut max_turns=1 finished=0 other=3 cargo_after_mut=3/5 parse_fail_first=0
+# tokens max_prompt=25882 est_ratio_max=1.1641 pack_turns=1 overflow_shrink=0 overflow_giveup=0 protected_edits=0
+# .loco/eval/20260721T072200Z
+run	outcome	passed	sr_error	sr_correction	sr_block	repeat_corr	finish_missing	finish_args_corr	finish_nudge	status_note	pipe_note	empty_test_note	verify_total	verify_zero	verify_allpass	args_tool_key	args_tool_switch	length_retry	verify_nudge_pipe	finish_nudge_pipe	status_pipe_qual	status_no_summary	model_diff	model_diff_trunc	sr_recovered	sr_recovery_denom	finish_missing_maxrun	perturb_turns	stop_cause	first_mut_turn	cargo_after_mut	zero_mut_end	status_in_args	sr_files	verify_failed	sr_corr_total	perturb_turns_ext	parse_fail_first	finish_nudge_total	pipe_unreleased	max_prompt	max_est	est_ratio_max	budget_ratio_max	pack_turns	pack_elided	pack_dropped	overflow_shrink	overflow_giveup	inline_sys_turns	protected_edits	nav_hit	fix_hit	reads	greps	lists
+run-rg-1138-no-ignore-dot-0	repetition_stop	False	0	0	0	1	0	0	0	3	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	other	0	0	repetition_stop	0	-	0	0	0	0	0	0	7686	7021	1.1734	0.2979	0	0	0	0	0	0	0	0	0	2	0	0
+run-rg-1138-no-ignore-dot-1	repetition_stop	False	0	0	0	1	0	0	0	4	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	other	0	0	repetition_stop	0	-	0	0	0	0	0	0	8292	7444	1.1734	0.3213	0	0	0	0	0	0	0	0	0	2	7	0
+run-rg-1138-no-ignore-dot-2	repetition_stop	False	0	0	0	1	0	0	0	3	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	other	0	0	repetition_stop	0	-	0	0	0	0	0	0	10104	9424	1.1734	0.3916	0	0	0	0	0	0	0	0	0	2	0	0
+run-rg-1159-exit-status-0	max_turns	False	0	0	0	1	0	0	0	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	27057	25550	1.1956	1.0486	2	2	0	0	0	0	0	1	0	6	0	5
+run-rg-1159-exit-status-1	max_turns	False	0	0	0	0	0	0	0	7	1	0	0	0	0	0	0	1	0	0	0	1	1	0	0	0	0	0	-	17	1	-	0	-	0	0	0	0	0	1	20234	18560	1.1956	0.7841	0	0	0	0	0	0	0	1	1	7	1	2
+run-rg-1159-exit-status-2	timeout	False	0	0	0	1	0	0	0	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	27266	25687	1.1956	1.0567	4	10	0	0	0	0	0	1	0	6	0	1
+run-rg-1176-fixed-strings-file-0	max_turns	False	0	0	0	0	0	0	0	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	22011	20597	1.2029	0.8530	0	0	0	0	0	0	0	1	0	9	0	0
+run-rg-1176-fixed-strings-file-1	max_turns	False	0	0	0	0	0	0	0	6	0	0	0	0	0	1	0	2	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	15058	13615	1.2029	0.5836	0	0	0	0	0	0	0	0	0	8	0	2
+run-rg-1176-fixed-strings-file-2	max_turns	False	0	0	0	0	0	0	0	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	22360	20634	1.2029	0.8665	0	0	0	0	0	0	0	0	0	7	4	0
+run-rg-1293-glob-case-insensitive-0	max_turns	False	0	0	0	1	0	0	0	6	0	0	0	0	0	6	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	23348	22141	1.2269	0.9048	0	0	0	0	0	0	0	1	0	5	5	1
+run-rg-1293-glob-case-insensitive-1	timeout	False	0	0	0	0	0	0	0	2	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	6118	5557	1.2044	0.2371	0	0	0	0	0	0	0	0	0	2	0	0
+run-rg-1293-glob-case-insensitive-2	finished	False	0	0	0	0	1	0	0	2	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	-	0	0	finished	0	-	0	0	0	0	0	0	7639	6350	1.2585	0.2960	0	0	0	0	0	0	0	0	0	0	2	0
+# summary sr_error=0 sr_correction=0 sr_block=0 repeat_corr=6 finish_missing=1 finish_args_corr=0 finish_nudge=0 status_note=57 pipe_note=1 empty_test_note=0 verify_total=0 verify_zero=0 verify_allpass=0 args_tool_key=7 args_tool_switch=0 length_retry=6 verify_nudge_pipe=0 finish_nudge_pipe=0 status_pipe_qual=0 status_no_summary=1 model_diff=1 model_diff_trunc=0 recovered=0/0 stops sr=0 finish=0 other=3 zero_mut max_turns=5 finished=1 other=5 cargo_after_mut=1/1 parse_fail_first=0
+# tokens max_prompt=27266 est_ratio_max=1.2585 pack_turns=6 overflow_shrink=0 overflow_giveup=0 protected_edits=0
+# .loco/eval/20260721T082907Z
+run	outcome	passed	sr_error	sr_correction	sr_block	repeat_corr	finish_missing	finish_args_corr	finish_nudge	status_note	pipe_note	empty_test_note	verify_total	verify_zero	verify_allpass	args_tool_key	args_tool_switch	length_retry	verify_nudge_pipe	finish_nudge_pipe	status_pipe_qual	status_no_summary	model_diff	model_diff_trunc	sr_recovered	sr_recovery_denom	finish_missing_maxrun	perturb_turns	stop_cause	first_mut_turn	cargo_after_mut	zero_mut_end	status_in_args	sr_files	verify_failed	sr_corr_total	perturb_turns_ext	parse_fail_first	finish_nudge_total	pipe_unreleased	max_prompt	max_est	est_ratio_max	budget_ratio_max	pack_turns	pack_elided	pack_dropped	overflow_shrink	overflow_giveup	inline_sys_turns	protected_edits	nav_hit	fix_hit	reads	greps	lists
+run-rg-1390-no-context-sep-0	max_turns	False	0	0	0	1	0	0	0	6	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	25365	24357	1.2064	0.9830	0	0	0	0	0	0	0	0	0	4	1	1
+run-rg-1390-no-context-sep-1	max_turns	False	0	0	0	0	0	0	0	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	26718	25754	1.2064	1.0354	2	2	0	0	0	0	0	0	0	9	1	2
+run-rg-1390-no-context-sep-2	timeout	False	0	0	0	0	0	0	0	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	26762	25727	1.2064	1.0371	4	4	0	0	0	0	0	0	0	7	1	0
+run-rg-1420-no-ignore-exclude-0	max_turns	False	0	0	0	1	0	0	0	6	0	0	0	0	0	1	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	21840	17868	1.2223	0.8464	0	0	0	0	0	0	0	0	0	3	15	1
+run-rg-1420-no-ignore-exclude-1	timeout	False	0	0	0	0	0	0	0	6	0	0	0	0	0	9	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	28682	25585	1.1616	1.1115	1	2	0	0	0	0	0	1	0	6	6	2
+run-rg-1420-no-ignore-exclude-2	max_turns	False	0	0	0	1	0	0	0	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	20856	19166	1.1579	0.8082	0	0	0	0	0	0	0	1	0	7	8	2
+run-rg-1466-no-ignore-files-0	repetition_stop	False	0	0	0	1	0	0	0	5	0	0	0	0	0	0	4	0	0	0	0	0	0	0	0	0	0	0	other	0	0	repetition_stop	0	-	0	0	0	0	0	0	18668	18000	1.2483	0.7235	0	0	0	0	0	0	0	1	0	1	0	1
+run-rg-1466-no-ignore-files-1	max_turns	False	0	0	0	1	0	0	0	7	3	0	0	0	0	0	0	0	0	0	1	5	1	0	0	0	0	0	-	18	1	-	0	-	0	0	0	0	0	3	9568	8436	1.2507	0.3708	0	0	0	0	0	0	0	1	1	1	0	0
+run-rg-1466-no-ignore-files-2	max_turns	False	0	0	0	1	0	0	0	6	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	15107	12832	1.2404	0.5855	0	0	0	0	0	0	0	1	0	4	11	0
+# summary sr_error=0 sr_correction=0 sr_block=0 repeat_corr=6 finish_missing=0 finish_args_corr=0 finish_nudge=0 status_note=54 pipe_note=3 empty_test_note=0 verify_total=0 verify_zero=0 verify_allpass=0 args_tool_key=10 args_tool_switch=4 length_retry=4 verify_nudge_pipe=0 finish_nudge_pipe=0 status_pipe_qual=1 status_no_summary=5 model_diff=1 model_diff_trunc=0 recovered=0/0 stops sr=0 finish=0 other=1 zero_mut max_turns=5 finished=0 other=3 cargo_after_mut=1/1 parse_fail_first=0
+# tokens max_prompt=28682 est_ratio_max=1.2507 pack_turns=7 overflow_shrink=0 overflow_giveup=0 protected_edits=0
+# .loco/eval/20260721T093354Z
+run	outcome	passed	sr_error	sr_correction	sr_block	repeat_corr	finish_missing	finish_args_corr	finish_nudge	status_note	pipe_note	empty_test_note	verify_total	verify_zero	verify_allpass	args_tool_key	args_tool_switch	length_retry	verify_nudge_pipe	finish_nudge_pipe	status_pipe_qual	status_no_summary	model_diff	model_diff_trunc	sr_recovered	sr_recovery_denom	finish_missing_maxrun	perturb_turns	stop_cause	first_mut_turn	cargo_after_mut	zero_mut_end	status_in_args	sr_files	verify_failed	sr_corr_total	perturb_turns_ext	parse_fail_first	finish_nudge_total	pipe_unreleased	max_prompt	max_est	est_ratio_max	budget_ratio_max	pack_turns	pack_elided	pack_dropped	overflow_shrink	overflow_giveup	inline_sys_turns	protected_edits	nav_hit	fix_hit	reads	greps	lists
+run-rg-1868-passthru-context-0	max_turns	False	0	0	0	0	0	0	0	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	22698	20310	1.1985	0.8796	0	0	0	0	0	0	0	1	0	2	2	1
+run-rg-1868-passthru-context-1	max_turns	False	0	0	0	0	0	0	0	6	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	25345	24489	1.1993	0.9822	0	0	0	0	0	0	0	0	0	3	0	3
+run-rg-1868-passthru-context-2	timeout	False	0	0	0	0	0	0	0	5	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	26514	25191	1.1993	1.0275	4	5	0	0	0	0	0	1	0	3	0	1
+run-rg-568-leading-hyphen-0	timeout	False	0	0	0	0	0	0	0	4	0	0	0	0	0	0	0	2	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	17155	16271	1.2669	0.6648	0	0	0	0	0	0	0	1	0	3	0	0
+run-rg-568-leading-hyphen-1	timeout	False	0	0	0	0	0	0	0	5	0	0	0	0	0	0	0	3	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	14554	13249	1.2669	0.5640	0	0	0	0	0	0	0	1	0	5	0	0
+run-rg-568-leading-hyphen-2	max_turns	False	0	0	0	0	0	0	0	9	1	0	0	0	0	0	0	1	0	0	0	0	3	0	0	0	0	0	-	16	1	-	0	-	0	0	0	0	0	1	20230	18705	1.2682	0.7840	0	0	0	0	0	0	0	1	1	3	1	0
+run-rg-740-passthru-0	max_turns	False	0	0	0	0	0	0	0	6	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	22832	21615	1.2279	0.8848	0	0	0	0	0	0	0	1	0	6	1	0
+run-rg-740-passthru-1	max_turns	False	0	0	0	0	0	0	0	6	0	0	0	0	0	19	0	1	0	0	0	0	0	0	0	0	0	0	-	0	0	max_turns	0	-	0	0	0	0	0	0	25402	23998	1.2041	0.9844	0	0	0	0	0	0	0	1	0	5	0	0
+run-rg-740-passthru-2	timeout	False	0	0	0	0	0	0	0	6	0	0	0	0	0	19	0	0	0	0	0	0	0	0	0	0	0	0	-	0	0	timeout	0	-	0	0	0	0	0	0	25461	24405	1.2113	0.9867	4	5	0	0	0	0	0	1	0	6	0	2
+# summary sr_error=0 sr_correction=0 sr_block=0 repeat_corr=0 finish_missing=0 finish_args_corr=0 finish_nudge=0 status_note=53 pipe_note=1 empty_test_note=0 verify_total=0 verify_zero=0 verify_allpass=0 args_tool_key=38 args_tool_switch=0 length_retry=9 verify_nudge_pipe=0 finish_nudge_pipe=0 status_pipe_qual=0 status_no_summary=0 model_diff=3 model_diff_trunc=0 recovered=0/0 stops sr=0 finish=0 other=0 zero_mut max_turns=4 finished=0 other=4 cargo_after_mut=1/1 parse_fail_first=0
+# tokens max_prompt=26514 est_ratio_max=1.2682 pack_turns=8 overflow_shrink=0 overflow_giveup=0 protected_edits=0
+
+# pooled over 5 stamp dir(s), 51 runs
+# pass_rate tasks=17 mean=0.0000 ci95=[0.0000,0.0000] resamples=10000 seed=0
+# disqualification N=17 all_pass=0 all_fail=17 band=4.04 disqualified=True
+# nav_hit[pass] tasks=0 excluded=17 mean=nan ci95=[nan,nan] resamples=10000 seed=0
+# nav_hit[fail] tasks=17 excluded=0 mean=0.7451 ci95=[0.5686,0.9020] resamples=10000 seed=0
+# fix_hit[pass] tasks=0 excluded=17 mean=nan ci95=[nan,nan] resamples=10000 seed=0
+# fix_hit[fail] tasks=17 excluded=0 mean=0.2157 ci95=[0.0980,0.3529] resamples=10000 seed=0
+# estimator inline_system=False {'slope_per_est_token': 0.9942562785980344, 'intercept_per_message': 32.987934936565274, 'n': 1039}
+# estimator inline_system=True None
+# tokens est_ratio_max=1.7874 max_prompt=28682 pack_turns=22 overflow_shrink=0 overflow_giveup=0
+# pipe device fired=1 opportunities=32   # 분모 = 파이프 포함 run_command 수(pipe_note 프록시)
+# finish_nudge fired=0 armed_runs~=2   # ⚠ APPROX 분모 — 무장 조건(뮤테이션 후 exit 0 검증)의 **근사치**다. 정확한 값은 finish_nudge.rs 상태기계 재현이 필요하다(perturb_turns·sr_corr_total 선례). 리포트에 정확 분모로 인용하지 말 것 — §9-B1이 거짓이 된다
+# a3_diff attached=29 truncated=3 truncation_rate=0.1034   # §1-2 답 1: A-3에서 새로 얻는 것은 절단률뿐이다(효과는 측정 불가)
+# NOTE 통과 층과 실패 층은 합산하지 않는다 (§5-4 제약 3·§6-4-19③ 공약)
+# NOTE 재추출 단위는 과제다 — 런 수준 구간은 보고하지 않는다 (§6-4-7)

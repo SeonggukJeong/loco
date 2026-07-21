@@ -1,0 +1,7 @@
+prompt = "Sorry for not using the official bug template, it always returned error code 400 on my end, and acted pretty buggy in general.\r\n\r\n## Bug description ##\r\n\r\nI use a variant of the following line to find pdf files and sort them by date: \r\n\r\n```\r\nfd --strip-cwd-prefix -e pdf -X ls -t\r\n```\r\n`--strip-cwd-prefix` should remove the leading `./` string from the output (as per https://github.com/sharkdp/fd/pull/861). However, this string is still present in the output of `fd` in my interactive shell session, as well as in my shell scripts.\r\n\r\n## Expected behavior ##\r\n\r\n`fd` should always remove the leading `./` when I invoke it with `--strip-cwd-prefix`.\r\n\r\n\r\n## Version information ##\r\n\r\n```console\r\n$ fd --version\r\nfd 8.3.0\r\n$ uname -srm\r\nLinux 5.15.5-arch1-1 x86_64\r\n$ lsb-release -a\r\n-e LSB Version:\t1.4\r\n-e Distributor ID:\tArch\r\n-e Description:\tArch Linux\r\n-e Release:\trolling\r\n-e Codename:\tn/a\r\n\r\n```\r\n"
+check = "cargo test --test tests test_exec"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/tests.rs"]

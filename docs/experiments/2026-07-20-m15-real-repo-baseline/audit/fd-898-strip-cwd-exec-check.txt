@@ -1,0 +1,131 @@
+
+running 6 tests
+test test_exec ... FAILED
+test test_exec_batch ... FAILED
+test test_exec_batch_multi ... ok
+test test_exec_batch_with_limit ... ok
+test test_exec_multi ... ok
+test test_exec_with_separator ... ok
+
+failures:
+
+---- test_exec stdout ----
+
+thread 'test_exec' (15787482) panicked at tests/testenv/mod.rs:262:13:
+`fd foo --strip-cwd-prefix --exec echo {}` did not produce the expected output.
+Showing diff between expected and actual:
+-a.foo
+-one/b.foo
+-one/two/C.Foo2
+-one/two/c.foo
+-one/two/three/d.foo
+-one/two/three/directory_foo
++./a.foo
++./one/b.foo
++./one/two/C.Foo2
++./one/two/c.foo
++./one/two/three/d.foo
++./one/two/three/directory_foo
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- test_exec_batch stdout ----
+
+thread 'test_exec_batch' (15787830) panicked at tests/testenv/mod.rs:262:13:
+`fd foo --strip-cwd-prefix --exec-batch echo {}` did not produce the expected output.
+Showing diff between expected and actual:
+-a.foo one/b.foo one/two/C.Foo2 one/two/c.foo one/two/three/d.foo one/two/three/directory_foo
++./a.foo ./one/b.foo ./one/two/C.Foo2 ./one/two/c.foo ./one/two/three/d.foo ./one/two/three/directory_foo
+
+
+
+failures:
+    test_exec
+    test_exec_batch
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 68 filtered out; finished in 0.65s
+
+
+   Compiling libc v0.2.134
+   Compiling autocfg v1.1.0
+   Compiling cfg-if v1.0.0
+   Compiling version_check v0.9.4
+   Compiling bitflags v1.3.2
+   Compiling once_cell v1.15.0
+   Compiling memchr v2.5.0
+   Compiling proc-macro2 v1.0.43
+   Compiling unicode-ident v1.0.3
+   Compiling hashbrown v0.12.3
+   Compiling quote v1.0.21
+   Compiling os_str_bytes v6.3.0
+   Compiling log v0.4.17
+   Compiling termcolor v1.1.3
+   Compiling strsim v0.10.0
+   Compiling clap_lex v0.2.4
+   Compiling indexmap v1.9.1
+   Compiling num-traits v0.2.15
+   Compiling proc-macro-error-attr v1.0.4
+   Compiling syn v1.0.99
+   Compiling core-foundation-sys v0.8.3
+   Compiling textwrap v0.15.0
+   Compiling num-integer v0.1.45
+   Compiling proc-macro-error v1.0.4
+   Compiling regex-syntax v0.6.27
+   Compiling aho-corasick v0.7.19
+   Compiling crossbeam-utils v0.8.11
+   Compiling terminal_size v0.1.17
+   Compiling bstr v0.2.17
+   Compiling anyhow v1.0.65
+   Compiling fnv v1.0.7
+   Compiling same-file v1.0.6
+   Compiling regex v1.6.0
+   Compiling atty v0.2.14
+   Compiling lazy_static v1.4.0
+   Compiling walkdir v2.3.2
+   Compiling globset v0.4.9
+   Compiling clap v3.2.20
+   Compiling dirs-sys-next v0.1.2
+   Compiling nix v0.25.0
+   Compiling time v0.1.44
+   Compiling iana-time-zone v0.1.47
+   Compiling nix v0.24.2
+   Compiling thread_local v1.1.4
+   Compiling ansi_term v0.12.1
+   Compiling lscolors v0.12.0
+   Compiling dirs-next v2.0.0
+   Compiling argmax v0.3.1
+   Compiling ctrlc v3.2.3
+   Compiling users v0.11.0
+   Compiling rand v0.4.6
+   Compiling num_cpus v1.13.1
+   Compiling remove_dir_all v0.5.3
+   Compiling humantime v2.1.0
+   Compiling normpath v0.3.2
+   Compiling ignore v0.4.18
+   Compiling filetime v0.2.17
+   Compiling diff v0.1.13
+   Compiling tempdir v0.3.7
+   Compiling clap_complete v3.2.4
+   Compiling fd-find v8.4.0 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-fd-898-strip-cwd-exec-9xnb_4zx/f)
+   Compiling chrono v0.4.22
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> src/filesystem.rs:96:30
+   |
+96 | pub fn osstr_to_bytes(input: &OsStr) -> Cow<[u8]> {
+   |                              ^^^^^^     ^^^^^^^^^ the same lifetime is hidden here
+   |                              |
+   |                              the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+96 | pub fn osstr_to_bytes(input: &OsStr) -> Cow<'_, [u8]> {
+   |                                             +++
+
+   Compiling test-case-macros v2.2.1
+warning: `fd-find` (bin "fd") generated 1 warning (run `cargo fix --bin "fd" -p fd-find` to apply 1 suggestion)
+   Compiling test-case v2.2.1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.33s
+     Running tests/tests.rs (target/debug/deps/tests-f11eaf9f5b65e3c6)
+error: test failed, to rerun pass `--test tests`

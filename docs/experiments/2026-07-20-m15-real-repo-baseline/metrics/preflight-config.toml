@@ -1,0 +1,16 @@
+# loco 로컬 설정 (git-ignored — .loco/.gitignore 가 `*`)
+#
+# 2026-07-19 M13 앵커 배치 (T6) — 사전등록
+# docs/experiments/2026-07-19-llamacpp-anchor/pre-registration.md §2-1
+#
+# context_tokens / max_output_tokens / command_timeout_secs 는 대조 배치
+# 20260718T222824Z 의 effective_config 를 그대로 따온 값이다.
+# temperature(0.1)와 max_turns(25)는 override 하지 않는다 — 대조 배치도
+# 코드 기본값을 썼다.
+#
+# base_url 이 이 배치의 유일한 의도된 조건 변경이다 — scripts/serve.sh 가
+# llama-server 를 8080 에 띄운다. 대조는 LM Studio(1234)였다.
+context_tokens = 8192
+max_output_tokens = 4096
+command_timeout_secs = 60
+base_url = "http://localhost:8080/v1"

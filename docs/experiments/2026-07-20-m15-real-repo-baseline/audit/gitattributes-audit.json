@@ -1,0 +1,66 @@
+[
+  {
+    "task": "fd-1873-path-sep",
+    "hits": []
+  },
+  {
+    "task": "fd-1727-ignore-contain",
+    "hits": []
+  },
+  {
+    "task": "fd-615-hidden-dot-pattern",
+    "hits": []
+  },
+  {
+    "task": "fd-535-prune",
+    "hits": []
+  },
+  {
+    "task": "fd-404-min-exact-depth",
+    "hits": []
+  },
+  {
+    "task": "fd-250-invalid-utf8",
+    "hits": []
+  },
+  {
+    "task": "fd-89-excludes",
+    "hits": []
+  },
+  {
+    "task": "fd-675-number-parse-error",
+    "hits": []
+  },
+  {
+    "task": "rg-2664-sortr-path",
+    "hits": []
+  },
+  {
+    "task": "rg-1868-passthru-context",
+    "hits": []
+  },
+  {
+    "task": "rg-1176-fixed-strings-file",
+    "hits": []
+  },
+  {
+    "task": "rg-1159-exit-status",
+    "hits": []
+  },
+  {
+    "task": "rg-693-contextless-sep",
+    "hits": []
+  },
+  {
+    "task": "rg-568-leading-hyphen",
+    "hits": []
+  },
+  {
+    "task": "rg-483-quiet-files",
+    "hits": []
+  },
+  {
+    "task": "rg-740-passthru",
+    "hits": []
+  }
+]

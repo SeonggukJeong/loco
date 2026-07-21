@@ -1,0 +1,3 @@
+9b775ecd36bf6b399186219a0b9345ccd403d6ef	src/handlers/diff_header_misc.rs,src/handlers/mod.rs,src/tests/test_example_diffs.rs,
+dda9a87421a2590ed3a37637ab1d956fd5083af1	src/handlers/submodule.rs,src/tests/test_example_diffs.rs,
+bd54a51205beb2aa71f8d4efb9b0749f425fb1da	src/handlers/commit_meta.rs,src/tests/test_example_diffs.rs,

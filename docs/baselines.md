@@ -1173,3 +1173,86 @@ M13이 20세션에서 "미관측"이라 기록한 규칙의 실발화다 — 법
 
 전 항목 **팔당 n=1, 반복 없음, 사후 분석.** 전체 분석: `docs/experiments/2026-07-20-honest-verification-ii/report.md`,
 법의학 원본 `.superpowers/sdd/m14-forensics.md`.
+
+## M15 — 실레포 트랙 + cold-start 베이스라인 (2026-07-21)
+
+**한 줄:** `tasks-real` 첫 무인 배치 **0/51** (엄격 0) · 전패 **17/17** · 실격
+(전패≥13) **예** → M16 대조 **비인용**. 효과 실험이 아니라 **바닥 좌표**.
+
+상세: `docs/experiments/2026-07-20-m15-real-repo-baseline/report.md` ·
+같은 디렉터리 `README.md` · 사전등록 `pre-registration.md`.
+
+### 측정 조건
+
+| 항목 | 값 |
+|---|---|
+| 모델 | ornith-1.0-9b Q4_K_M (`ornith`) |
+| 운용점 | **32768** (TaskSpec) · 전역 config 8192 |
+| 서버 로드 | **37632** (`n_ctx_slot`, L_req 37601 → 256 정렬) |
+| 표본 | N=17 (fd6+delta1+rg10) · ×3 · seed 0 · **51런** |
+| 프롬프트 | 이슈 본문 only (온보딩·경로 힌트 없음) |
+| 코드 | 러너 HEAD `1d10e09` · 승인 `66a3c7e` / 본문 `0b89dcb` |
+| 벽시계 | 하위 배치 합 **~6.22h** |
+
+### 배치 ↔ 스탬프
+
+| 하위 | 스탬프 | 통과 |
+|---|---|---|
+| B1 | `20260721T043543Z` | 0/12 |
+| B2 | `20260721T060346Z` | 0/9 |
+| B3 | `20260721T072200Z` | 0/12 (ff 1) |
+| B4 | `20260721T082907Z` | 0/9 |
+| B5 | `20260721T093354Z` | 0/9 |
+| **합** | | **0/51** (엄격 0 · ff 1 · schema_fallback 0) |
+
+H9: 전 런 `effective_context_tokens=32768`.
+
+### outcome (51런)
+
+| outcome | n |
+|---|---|
+| max_turns | 27 |
+| timeout | 18 |
+| repetition_stop | 5 |
+| finished (check 실패) | 1 |
+
+### pool (`exp_metrics.py --pool`, resamples=10000 seed=0)
+
+| 지표 | 값 |
+|---|---|
+| 통과 과제 평균 | **0.0** · 95% CI [0, 0] |
+| 실격 | all_fail=17 · band≈4.04 · **disqualified=True** |
+| nav_hit (실패 층) | mean **0.75** · CI ≈ [0.57, 0.90] |
+| fix_hit (실패 층) | mean **0.22** · CI ≈ [0.10, 0.35] |
+| pack_turns / est_ratio_max / max_prompt | 22 / **1.79** / 28682 |
+| overflow_shrink · giveup | 0 · 0 |
+
+원 출력: `docs/experiments/2026-07-20-m15-real-repo-baseline/metrics/pooled.txt`.
+
+### 판정 · 해석
+
+| | |
+|---|---|
+| 사전등록 실격 | **충족** → “양의 베이스라인 확보 **실패**” · M16 대조 **쓰지 말 것** |
+| 좌표로서 | **유효** — cold start 실레포 바닥 = 0 |
+| 테스트 결함? | 배치 전 `--verify` 17/17 · spot 재검증 변별·해결 ✓ → **아님** |
+| 병목 가설 | 탐색 일부 성공(nav) · **수선 진입·완주 실패** (fix 낮음 · MaxTurns/Timeout) |
+| pack | 대형 런 발동 확인 · **통과 구원 아님** |
+
+### 비교 금지
+
+- `tasks/` / M13 파일럿 / M14 게이트 통과율과 **나란히 몇 % 비교 금지**
+  (트랙·프롬프트·채점·규모가 다름).
+- `n_ctx_slot(37632) ≠ context_tokens(32768)` — 분기 2 형태 첫 배치.
+
+### 다음 · closeout (2026-07-21)
+
+- 게이트 재확인: `cargo test` 436 · clippy clean · `eval --verify` tasks 12/12 ·
+  tasks-large 3/3 · tasks-real **17/17** (closeout 로그: 실험 dir `metrics/closeout-verify-*.txt`).
+- 수치 교차검증: 5 stamp `report.json` 합 **0/51** · ff **1** · outcome
+  max_turns 27 / timeout 18 / repetition_stop 5 / finished 1 · 전패 17 ·
+  H9 `effective_context_tokens=32768` 전 런 — `report.md`/본 절과 일치.
+- metrics 산출물(배치 로그·프리플라이트·`serve-37601.log`·stamps) 실험 dir에 동결.
+- M16 후보: 레포 온보딩 하네스 (`docs/m16-candidates.md`) — 스펙은 후속.
+- main 병합: 인프라 Ready와 베이스라인 실격을 **구분** (사전등록 A5) — **사용자 판정**.
+

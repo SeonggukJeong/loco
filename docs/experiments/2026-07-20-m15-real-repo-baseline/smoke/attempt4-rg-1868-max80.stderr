@@ -1,0 +1,36 @@
+· Let me explore the core crate to understand how --passthru and context options are handled.
+→ list_files crates/core
+· Let me read the args.rs file to understand how --passthru and context options are parsed.
+→ read_file crates/core/args.rs
+· Let me search for passthru handling in the codebase.
+→ grep "passthru"
+· I can see the issue. In `mod.rs` line 317-319, when passthru is enabled, it sets before_context and after_context to 0. But the problem is that the context options (-A, -B, -C) are applied AFTER passthru is set. Let me look at the order of operations in args.rs.
+→ read_file crates/searcher/src/searcher/mod.rs
+· Let me see the full context of how the searcher is built in args.rs.
+→ read_file crates/core/args.rs
+· Let me see how binary/text options are handled to understand the expected pattern.
+→ read_file crates/core/args.rs
+(응답이 잘림 — 더 짧게 다시 요청)
+· Let me see how binary/text options are handled to understand the expected pattern.
+→ grep "fn binary" crates/core/args.rs
+· Let me look at how binary detection is resolved to understand the override pattern.
+→ grep "fn binary_detection" crates/core/args.rs
+· Let me see what the contexts() method returns when no context flags are given.
+→ grep "fn contexts" crates/core/args.rs
+· Now I understand the issue. In `build()`, passthru unconditionally zeros out before/after context. The fix should be: if context values are non-zero, passthru should be disabled (later option wins). Let me look at the exact code.
+→ read_file crates/searcher/src/searcher/mod.rs
+· The fix is in the `build()` method. When passthru is true, it unconditionally zeros out before/after context. Instead, if context values are non-zero, passthru should be disabled (later option wins).
+→ edit_file crates/searcher/src/searcher/mod.rs
+· Verify the fix compiles and tests pass.
+→ run_command cargo test -p grep-searcher 2>&1 | tail -30
+· Build ripgrep to test the fix end-to-end.
+→ run_command cargo build --release 2>&1 | tail -5
+· Test the fix with the user's reproduction steps.
+→ run_command printf 'line 1\nline 2\nline 3\n' | ./target/release/rg --passthru -B1 3 && echo '---' && printf 'line 1\nline 2\nline 3\n' | ./target/release/rg -B1 --passthru 3
+· The fix is working. Both commands now produce the same output: line 2 and line 3. The later option correctly overrides the earlier one.
+(검증 없는 종료 — 확인 요청 주입)
+· Re-run tests without pipe to verify exit code properly.
+→ run_command cargo test -p grep-searcher 2>&1 | tail -5
+· Re-run tests without pipe to verify exit code properly.
+→ run_command cargo test -p grep-searcher
+· The tests all pass. Let me finish with the summary.

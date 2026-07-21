@@ -1,0 +1,175 @@
+a7b14ea99b99848b6824338c41f42b7497aa40d3	1887	Fix line numbers showing filename when hyperlinks enabled (#2058)
+991d5605639840ebca20de9346a01b2afe00cedc	1939	Cache the Git remote URL to speed up rendering hyperlinks
+59a907117bb9aeb467b392c4fdc36f2f931330c0	1504	Fix diff output when a diff ends with a mode change
+9c8f40e3562be6d8a32d54594028d4e2cbba8e4c	1098	Don't set colorMoved in introductory instructions (#1884)
+f4563d9d05c89b243dbd90c7887488f8472b9a0f	1878	Use same example config in manual as README (#1879)
+2d7015c774b7ce93bbd8b5b07e7580d066442fc4	1848	Fix link
+4b80dfb04c4a6e2dc841408345a2f72d441cf161	1658	Stop highlighting unchanged whitespace (#1659)
+9b775ecd36bf6b399186219a0b9345ccd403d6ef	320	Preserve "Binary files" line in color_only mode (#1649)
+977f89ae0d8cd46bd8cab67a5fcc37b876abe31d	1621	Fix headers of modified binary files, closes #1621 (#1629)
+9f66dc38497c93fdf6e402ba75d5dc4de1bb8051	587	--show-themes exit with error when no themes (#1611)
+ae26b5497cc5f7b958d7fa2683c0ebd002109c54	1501	Fix handling of tabs in grep output (#1507)
+fdaf4bfe1d8b59b397b069429b48c655bfc358a8	1475	Revert "Refactor subcommand handling (#1467)"
+dda9a87421a2590ed3a37637ab1d956fd5083af1	1408	Increase number of characters shown in submodule hashes
+feec45b5d724f3feb29b59e48f5335513e00a3b0	137	Fix warning highlight for trailing whitespace (#1037)
+9b3ff8ae95a6c11685c152d38dccf6d80fd81e93	1316	Remove manual line-wrapping (#1350)
+ce6448f9c3e8e61d06127c62ee775f9372bc1c34	1280	Mention use of DELTA_FEATURES in side-by-side section of manual
+956b2f41151915c1cfb01b11676421749ea20edb	1248	Explicitly request xz compression (#1249)
+a7bab81665828fd7aabf3b358a9bdfc652c5b31e	1197	Clarify that rg --json | delta is the only fully correct grep handler
+d9d80436ba14894640e5e0b7093f55b987b60be8	1192	Bump version in links to executables
+6d96b78502d0fd41bd0a30dd2826723aaed18e96	1157	Support configurable timestamps in git blame output (#1157)
+b3cc0f8cae943ec87a4e7b300af431cecda80b68	1056	Fix git-grep match-highlighting at line-start (#1057)
+ab8015e4f7168c30256503aa9f26548bf0cbfe93	677	Don't attempt to process ANSI sequences in non-UTF8 input
+bd54a51205beb2aa71f8d4efb9b0749f425fb1da	1089	Fix whole-file changes being attributed to the wrong commit in "git log" output
+37ea9521dcf7ccebc5724401091ce4b2764a5b62	1039,1090	Avoid lockup when running without arguments and stdin is connected to tty (#1112)
+4c879ac1afca68a30c9a100bea2965b858eb1853	1104	Improve blame format width in chameleon theme
+29c9239ea5d7d6a2d4e111cd8b1ebe8a56fa2cf8	1105	Only trigger `git show` handler if a file extension was parsed (#1106)
+9c840f6f4cc25530368e21c6cc54a716655e920d	128	Add support for irreversible-delete
+29710e1f9551876dfd10fe0119ddea8a17e8830b	1014	Use file paths from arguments in preference to those in diff input
+dd19c974baadae1a1565067130b3eb81770123b1	1010	Apply file-transformation to diff header, in addition to hunk header
+6c652ebd433dceeab24eaa1e5c6c378e6628b799	949	Handle side-by-side differently when assigning line number colors
+a7765f8003b572430cf1255709b8732240a703f0	1002	Flush minus/plus line buffers in additional code locations
+55287a827e8f2527df938a1b85e23290f8692607	989	Run in diff mode iff two positional arguments are supplied
+1403fe2b8ef26c84cd625bb6f550755f82f47576	895	Use assets API from bat library instead of vendored code (#903)
+10ff766a65f23d4f48cefaa457a660bfc090d668	974	Fix parsing for .properties files with `-` in path (#975)
+12c165a786cf52f7b72cc9b581860f01b448233a	965	Make git include colors in output going to delta (#966)
+3d5b6852a06e4aaf2ae8e3b02a3b2e4e59429f22	890	Fix hyperlink absolute paths (#939)
+08ae6c850266192a2624b7911507f63afccd2de6	926	Fix broken links in manual
+0f2b48dd6257a33458c126bf033e39059ce0fe0d	377	Prevent clap from switching to multiline format for short help
+e9e9fb7c6975ae9f0a04cf4f14fec4a38c281af1	890	Construct hyperlink file path relative to cwd
+9106a51ac385f26d5eccdfd68af933508668ae28	891	Drop deprecated options (#914)
+f498544dfd0ffe7d1a3edbfef65a5067ad50091d	888	structopt to clap (#889)
+13f60da9ffe713aa68c3464c2451f5e072678921	868	Use formatted blame metadata as blame key
+a1b8dbc410a1cdfa7341f091c95e8e89e46e28d0	867	New option blame-code-style
+2ad2a53ac2fe397b55e23bc1514ae55336eb0c9e	837	Make file-style=omit omit common-case modified description only
+799ad15d15b5246f55ae496d427ac79c55546194	842	Don't take syntax-theme from env var during tests
+3ce64ddefb896f8a64013deb78235b4dda1d0fb8	753	Emit line as raw if canonical line state is raw
+fbf88e4686cdc0d70f1905c2b16a0cd732399447	848	DELTA_FEATURES appends iff prefixed with +
+c1d8867f80ee60002362df47d959eb927a108c86	829	Raw pass-through handling of --word-diff and --color-words output
+69c7aaa28fdda955cf430134170e3a533970cc0f	839	Do not query CPU data when querying process data (#845)
+5ea8dfc4331f072eff4db3e4827e9b7985433a8a	61	Fix documentation of --width option
+424fe8b59ad33cf80ec16b33c858525daec82716	842	Ignore test maing ANSI assertions
+f044df22e895794ec9f3625d107f43648f21ba37	842	Ignore test maing ANSI assertions
+0b3aefb48c139e7ae60796b989696ce2d83739c3	824	Disable last-resort process tree inspection
+5901af50280846ab6c3e0e2cc249e27939a257e4	826	Be permissive about unexpected state machine state
+3ec93061822301024041b383db571cb9d6c9a49d	765	Gracefully handle failure to parse hunk header
+6f5090b7638aa8c9f88828a2e2631f6f5df84c8a	813	Do not truncate hunk header line
+422954164f68b95fe9578ab1e0e1d1c80ca9345e	189	Handle combined diff format
+ea9e6f36e36303cdea0cae13f2827c632262ffe0	189	Handle combined diff format
+b0e02830b27e7ee90a0fb820108a21546b82a1db	440	Do not handle --word-diff or --color-words output
+14272816193484bdf1c1228c2c23fcc16d5c9d69	810	Revert "Refactor: rewrite superimpose_styles function (#804)"
+ec08c4de76ff26046a0cebc70a54f5c42fbfb835	808	808 honor raw blame styles (#809)
+39ef747843d3f49078a5402577bde8e6ae235b67	776	Change rules for non-emph style
+7d2ac303573a444ec3e98657bd0bd6d11f562b21	802	802 fix color moved side by side panic (#803)
+f65f312f1e378df55449a03dc7fb935596f477ef	795	Remove trailing \r from raw line, in presence of ANSI escape sequences (#800)
+5dc0d6ef7e37a565b06d794b50fcc763079f9ed7	72	New option to map raw styles encountered in input
+cdaceb548e26433a5e6dc80298879ba52c270fc9	776	Change rules for non-emph style
+07892bc572a92bca8e3fec3d1b0ba717d80cc096	769	Handle grep output
+c2767a50a556a2929b64d2f7b08d458d83aebae9	769	Handle grep output
+24a07ff9474dc8dc4942026b7d6c3804132cb047	426	Handle `git blame` output
+d62dc41af8fb8ef9675beb9484dccbbb5881d43c	769	Handle grep output
+6719cf8e07d3bc6fb5a229e00aeaefbfb852d9a3	426	Handle `git blame` output
+56c47ed24d34964b17e220fdc448e23987d1131a	766	Update private Homebrew formula to 0.9.2 (fix #766) (#767)
+47a4fdd208ea31baa22d1203ab4a6fa94be9abde	755	Do not reformat submodule diffs under `git add -p` (#756)
+b49f9033cbed8fb17179390b182ce46338f44430	716	Remove superfluous lowercasing of feature names. (#718)
+fb0d80992b3d1e5ff369c3b93251e1da66c27788	672	Fix interaction between navigate and (hunk-header-style without "line-number")
+19eec9bd3e037cd542dfafa40e067098fad917ac	291	Handle blame output
+bffa1efded7359b57d862a25422ef6b386ff9e4c	662	More minimalistic display of submodule (short) diffs (#700)
+e22fd94f143e74c326586f5c281b0ea959df5563	662	More minimalistic display of submodule log diffs
+4f6ab57023446c162fc09a1b514cbccaf68513fd	683	Fix deadlock in `git diff` mode (#695)
+64fa4c6aeb3542148d6701deb2992cd86f89da68	693	Support `insteadOf` replacements in git remote URLs
+98485fcfec8edff271dd5df5413f6809cc003825	693	Support `insteadOf` replacements in git remote URLs
+130b0b6a2146d4b42be6f8cfeda4d120e65576f2	680	Make it possible to jump between files when navigate is active (#684)
+223b2c6f3d2155137451d50dc370aa624ef6ae96	681	Ignore ctrl-c (SIGINT) to avoid leaving an orphaned pager process. (#686)
+35ba0dc1a9e280207cf1c342496c73e3b3ce2a3c	681	Terminate process gracefully on error in diff() (#685)
+c2dc651678843c18287e7dab6e189b1f8eb4e123	667	Recognize GitHub SSH remote URLs that don't start with `git@` for hyperlinks (#668)
+207e033841c55b226d617ec396f4b799d695b28b	644	Revert to capturing diff output and processing in current process (#645)
+ac2873dabe53916354f264c7a9b26a18a23c082b	625	Fix filenames with spaces (#643)
+230f5468f7adddc098ab7b8cb241f06e497ae0d2	631	Fix #631 (#632)
+ebe08f9a6d7156e6e1f4504f38f4652426fdb50e	613	Add hyperlinks-commit-link-format option (#614)
+d4da66d0fc94ab2e62abd3cbb0d4221b422f7753	174	Support custom commit line regex when parsing git output (#558)
+feb89ac4387524c7ab571065cec7a190d1917f16	582	Only read major version when parsing less version (#606)
+fe16f7533deb55e83ed0d736e1cd826ad8ae7522	583	Emit description of file mode change (#605)
+53e59f2eb51fd62e0716be32b22fdaa6b6f928e5	513,543	Use git diff instead of diff -u (#546)
+0e99a10e07b5b684b618b0a7a176fa254f8ef884	447	Fix ansi syntax theme (#581)
+6630202259cf984a8b20d7cb76086986a107390c	552	Output paths relative to current working directory
+598c2e3f1498a7e590ed764de7026cfed69ded71	567	Deprecate --24-bit-color, replacing with --true-color (#571)
+9d8e5d6394f033f1bbd4603ae5becb3d3cad2006	529	Exit if it looks like starting the pager process would never terminate (#531)
+97c58c4586508bdb84cc68873ac1294309a7268f	522	Allow user to specify tab replacement string
+1bff1ebf40450d1a1dd826e0f639c5573f451514	510	Handle tabs in hunk header code fragment (#511)
+ba0d36cb2de1be6e8c4332d37f796393ccc07b15	307,493	Parse GIT_CONFIG_PARAMETERS
+57d3f65e2e08c3abc5147fd0a0d115f8fab1b47d	481	Add styles for file path and line number in hunk header
+9e53f520440c38dc3b3dc21b9e68b1b2c2509179	460	Reference correct token in bump-homebrew-formula workflow
+c5f82fe553e90d914c1df4976af1d081db66793a	463	Wait for pager process before exiting (#469)
+162b98f67e6dc452a206686fee0d75d80251b7c6	309	Emit file in hunk header even when there is no frag
+2bbf1891a6ef4965aed6a063b9ff97308abbd10b	462	Note that MacOS binaries do not work on older OS versions
+530edc2546fb80839253880a13234f5c7b2b8bdc	461	Link to jftuga/less-Windows/releases in Windows README section
+f501e23887c1878ece1c6ece56cb751135b34c26	308	308 side by side tabs (#459)
+334dec742d78d6d72715eaefaaa1c8313c6315fb	309	Implement hunk-header-style 'file' attribute
+46eb84bd34f8ff67f749eec8a287d5a3e7a0919a	448	Exit with diff's exit code (#449)
+f83f53f9d3188b657d0659c264eef5cd327c05bc	281	Reset highlighter after painting hunk header (#435)
+4b99d7c994343347215a3a7d6e7f95eedbc06603	427	Expose line-buffer-size as a new option (#429)
+73571485466055335401990d8c47b8621f3f4f7e	388	Fix whitespace errors under keep-plus-minus-markers (#425)
+af27c560f7f272bb70306461146984882afa8e56	392	Handle copied files
+2abec297fe4730f4716bb9a40a8731de62d40268	386	Interpret an invalid pager such as '' as no paging
+1ca06156570914b85875f95ab6ae1dcf685f082c	370	Fix link to Windows binary
+ecb2da1e271aa0daa6dd2ed4c6658d59347020e6	292	Interpret `line-numbers = false` in gitconfig as no line numbers at all (#296)
+5f00f29d73b47fa14aa123a7d16ee9622f3eb02b	292	Do not display hunk first line number when hunk-header-style is raw
+d4441fe24a36b1134b110680283929ec4fb23d24	154	Truncate long lines (#290)
+de114e3ea52c82ab92f4cc52aefaf76e027a3f07	262	Use native ansi-parsing utilities instead of console crate
+b5f5ca572466dacfc7fada83d8e2f4e52f13f17e	280	Expand tabs when emitting as raw line
+6669e6ad698e44c51856ab40fe0dc6d87b7cb4b7	274	Disable side-by-side when color-only is in effect
+25caec1d7281d02f7461c3381415ed5987fd60a7	275	Do not send artificial leading space to syntax highlighter
+c68bb0195c9a95d5e18cbfeeb328f4d8690533be	245	Bugfix: avoid emitting header twice when file is renamed with changes
+5f97f327e3c0cae04790114190639cf929ec9810	72	Add inspect-raw-lines {true,false} option
+c5733826b988fe54fbc0298512e222ba057df3bc	263	Paint buffered minus and plus lines before handling hunk header
+b2257cfae7eacc73e47299d90d9a8d479b3e362c	257	Format files and commits as OSC 8 hyperlinks
+e65db80b0bf4aa119940597356e602a211207ba6	252	Set features early
+b888c03610a008d2c3f441476eeb2a3104397089	253	Fix programmatic construction of option/flag names
+4c8f5f5835956e9f5b852b9adbf0a5ffbea1e9be	86	Add side-by-side diff view (#243)
+c0bcc9d641de2b0fba9ae1857ea7c142128e5a3d	242	Apply rewrite rules earlier
+b88ab3de01d6dfeb76967a9abcda1b79d10aa1b1	238	Fix line number padding
+5db4565d2cddf103e4aecaa433cbca1fa51ba7bb	232	Improve unified diff directory diff handling
+c7bb973e0ff0103b6197585c60563b596e5faf0a	207,226	Rename --list-*, --show-* commands
+d39b07c2016748053146c89540a141575320b9b4	212	Bugfix: highlight trailing whitespace added to a blank line
+97116f284bd826cd0c2805ed3b0f4359b310ad6a	184	New option --word-diff-regex
+3bcb910077c855e023f483fc2909e94d8279d8d2	215	Fix test of diff.mnemonicPrefix prefixes
+d76dba82a7d33ded533813d17d5b5b4e581a27b6	61,155	Make decorations respect --width
+2232215af0f05dadcda0357fc47c11c8ddef6ed2	192	Mention diff-highlight along with diff-so-fancy in README
+97c5adae310fb88220d494418465a84f19d86104	169	Implement --*-non-emph styles
+18c1d1a17ec5222e4c22fe307655e2fe2b7be0ef	104	Add MacPorts to README
+9d1aafee2465b3b89de09ae72e1b8b8fbda4a981	150	Don't panic on invalid utf-8 input data
+783582095a424d5b0b3feb93952aebdcb0a87def	85	Update binary assets from bat
+af1e2d663ced3d1248f7e2f9b8cfe693ca395b21	136	Use ANSI CSI "Erase in Line" code instead of right-padding
+8e9c43dffa2b8f5470590a3be76b0e841e6cd6b7	127	Fix parsing file paths containing spaces
+8530c1134416fd3f6f80c6328e017e552a1027ad	125	Fix parsing of merge conflict output
+0f7d48498e175538804ba8716476f6bc117b1340	120	Only strip expected git-added "a/" and "b/" prefixes. (#124)
+c36fc36fd16864d2d7592414af2ca8647fd40e12	118	Update binary assets from bat
+7f6f35029aef9bc46124605bbb496efe61ab1459	100	Keep trying to parse even if first line is  not recognized
+37cc69ea434303ec8ebf4f248d4bd7f1febfe3e2	110	Support 256-color terminal environments
+27e5673a40edbb7fe9d5429d60c052e5c91fba04	99	Provide CLI options for all colors
+c674f36bd854b55af471588c56379cb042237c17	105	Support SVN diff output
+270de8fb5ff0a0c6db489e6ce713d124fe16c7b2	93	Output Git's "Binary files $file_1 and $file_2 differ" line
+38a3a2ca694b65514e2fb139da2299c69ea059e1	92	Fix hashes in homebrew formula
+f6d4d333d5c06f66643622206f384a3410c14c61	89	Tighten up state machine parser. Fixes #89
+ff02c53af3aae065f13243e908e7b6245c49dd95	54	Fix ansi-light, ansi-dark, and base16 themes
+0b4452165889406245afedc76434e68d03a881c9	71	Change --plus-emph-color default for dark mode
+716c37f219f78b8021284773fece528a1e8cd918	58	Merge pull request #67 from ronjouch/patch-1
+01868010f265c0e0fa72dd9d0f9599f096e9060a	58	README: Document env. var to fix mouse scrolling (fix #58)
+27fa1626ae4ceb2de4432a0fba546d964bc051de	66	Fix Homebrew formula hashes
+bee498e7fb65ea1b3815efa745d745df6512ed5c	26	Use package name git-delta for debian package
+1a88adf8e42f3033bf04ecfadd0807296b3748ce	60	Handle submodule line
+2ec95785d0c11fb852ce196b052410f9df003531	2	Honor BAT_THEME environment variable and refactor.
+50a277385a3f20fdd3baac1b4263ceea6bca5882	42	Ignore environment variables if they are empty
+20a9f78a825c3fe786302ab412a6af7651c6bd68	41	Make one more character available for less
+2d52dded116c6e6e776800108b01914c1f60e40e	38	Handle broken pipe in --compare-themes
+3af7f5a08b5e1eb321ed0f5d148ee06d78321a64	34	Apply background colors to unrecognized file types
+8c3733a699ee63b77c0d8ef2460b4a3b652c0bf2	27	Replace all tabs in line with spaces
+788fd3453bcaacdf9150be53524283c59ef99be9	23	Update Homebrew instructions
+d6cb09eafe622598479cfa0b2ece63b8a91f5026	10	Fix width calculation and terminating newline when writing underline
+8e4ade1bf1ed4a6b0b453af8e2ff6c7168df0b59	18	Don't compute negative line lengths
+19276b5b4ec380e1e00d784595efaeaf6ce5f40d	16	Replace tabs with spaces
+a6d16c315f14243f23c8a59f37ad26088fb71fb4	14	Support --theme=none
+e4197550687f14435be3b73afb8507d3b2609dee	3	Support --width=max. Fixes #3
+a6be51a79ce335978b287bee78453ba30ee8f38f	6	Make list_themes work. Fixes #6
+6a34f9146d4efaae547e9c316c6016c8bbcf1833	4	Use syntax and theme data built by bat. Fixes #4, #5

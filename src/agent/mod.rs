@@ -210,6 +210,20 @@ impl<C: LlmClient> Agent<C> {
         floored_input_budget(self.context_tokens, self.max_output_tokens as usize)
     }
 
+    /// 이 에이전트가 **생성 시점에 스냅샷한** 컨텍스트 운용점 (M15 H9).
+    /// eval의 `RunRecord`가 실효값을 자증할 때 `Config`가 아니라 여기서 읽어야 한다 —
+    /// `Config` 쪽을 다시 읽으면 두 값이 같은 출처가 되어 오버라이드 순서 오류를
+    /// 탐지하지 못한다(플랜 1R Critical 2)
+    pub fn context_tokens(&self) -> usize {
+        self.context_tokens
+    }
+
+    /// 이 에이전트가 생성 시점에 스냅샷한 턴 상한 (M15 H9). context_tokens()와 같은 이유로
+    /// eval의 RunRecord는 cfg가 아니라 여기서 읽어야 순서 오류를 탐지한다
+    pub fn max_turns(&self) -> usize {
+        self.max_turns
+    }
+
     fn schema_tool_names(&self) -> Vec<&'static str> {
         let mut names = self.registry.names();
         names.push("finish");
@@ -283,14 +297,45 @@ impl<C: LlmClient> Agent<C> {
                         session.pack(self.input_budget() >> overflow_shrinks);
                     }
                     Err(LlmError::Api { status: 400, body }) if looks_like_context_overflow(&body) => {
-                        on_event(AgentEvent::Notice(
-                            "(컨텍스트 초과 — context_tokens 설정과 서버 로드 설정을 확인하세요)".to_string(),
-                        ));
+                        // M15 H14: on_event만 타던 것을 트랜스크립트에도 남긴다.
+                        // 축소 재시도(위 arm)는 M14가 이미 notice_recorded!로 기록하는데
+                        // **포기한 런만 흔적이 없어** 배치 후 구분이 불가능했다 (§5-2 ⑤)
+                        notice_recorded!(
+                            session,
+                            on_event,
+                            "(컨텍스트 초과 — context_tokens 설정과 서버 로드 설정을 확인하세요)".to_string()
+                        );
                         return Err(LlmError::Api { status: 400, body });
                     }
                     other => break other?,
                 }
             };
+
+            // M15 H13·§5-2 ②: 축 C의 원자료. 측정 지점 = **응답을 만들어낸
+            // 마지막 반복의 직렬화 직전 히스토리**. 세 사실이 이것을 보장한다:
+            // ① 오버플로 재시도는 위 loop 안에서 축소 예산으로 다시 pack하므로
+            //    루프 종료 후 읽어야 마지막 반복의 상태다
+            // ② chat_with_fallback은 inline_system을 켜기만 하고 끄지 못하므로
+            //    (self.inline_system = true 한 곳뿐) 호출 후 값이 곧 성공한 요청이 쓴 값이다 —
+            //    직렬화 메시지 집합을 바꾸므로 §5-3의 층화 키로 남긴다
+            // ③ 루프 종료와 이 지점 사이에 히스토리를 바꾸는 문장이 없다
+            //
+            // ⚠ 기록만 한다 — 히스토리·상태선·모델 대면 텍스트 어디에도 안 나간다(§5-6)
+            let est = session.total_tokens();
+            let n_msgs = session.messages().len();
+            session.record_extra(
+                "usage",
+                &serde_json::json!({
+                    "prompt_tokens": resp.prompt_tokens(),
+                    "completion_tokens": resp.completion_tokens(),
+                    "estimate_tokens": est,
+                    "messages": n_msgs,
+                    "budget": self.input_budget(),
+                    "inline_system": self.inline_system,
+                    "overflow_shrinks": overflow_shrinks,
+                })
+                .to_string(),
+            );
 
             // length 판정 **전**에 무조건 기록 — length 턴도 세야 하는 게 이 기록의
             // 목적이다(M14 C-2, M13이 "빈-content 턴"으로만 대리 추정하던 것)
@@ -604,6 +649,37 @@ impl<C: LlmClient> Agent<C> {
                         tracker.record_mutation_ok(p);
                     }
                 }
+                // M15 H10·§5-4: 항해/수선 지표의 원자료. **툴별로 분리**한다 —
+                // 셋을 한 집합으로 합치면 §1-1 축의 근거인 M8 실패 분석의
+                // "미열람(grep만)" 구분이 사라져 축과 계측기가 어긋난다.
+                //
+                // 항해 지표를 read_file 집합만으로 정의하는 것은 **축의 정의에서
+                // 나오는 설계 결정**이지 기술적 제약이 아니다. §1-1이 이 트랙의
+                // 축을 세운 근거가 M8 실패 분석의 "monthly.rs 미열람(grep만)"이고,
+                // 그 구분은 "grep으로 스쳤는가"와 "열어서 읽었는가"를 **가르는 것이
+                // 목적**이다 — 그래서 grep으로 오라클을 지목한 런을 항해 성공에서
+                // 빼는 것은 부작용이 아니라 의도된 방향이다.
+                // ⚠ grep은 path로 **파일 하나를 지목할 수 있다**(grep.rs의
+                // `if base.is_file()` 분기). "grep은 경로를 못 준다"는 것은 사실이
+                // 아니다 — 스펙 개정 10이 이 근거를 정정했다. list_files는 참이다
+                // (walk_entries가 `if p == base { continue }`로 시작점을 버린다).
+                // 경로는 status_note::normalize로 정규화해 표기 변형을 합산한다
+                if matches!(
+                    turn.action.tool.as_str(),
+                    "read_file" | "edit_file" | "write_file" | "grep" | "list_files"
+                ) {
+                    let touched = matches!(
+                        turn.action.tool.as_str(),
+                        "read_file" | "edit_file" | "write_file"
+                    )
+                    .then(|| turn.action.args.get("path").and_then(|v| v.as_str()))
+                    .flatten()
+                    .map(status_note::normalize);
+                    session.record_extra(
+                        "touch",
+                        &serde_json::json!({"tool": turn.action.tool, "path": touched}).to_string(),
+                    );
+                }
             }
             finish_missing_streak = 0;
             let ev = match turn.action.tool.as_str() {
@@ -848,6 +924,24 @@ mod tests {
 
     fn ok(text: &str) -> Result<ChatResponse, LlmError> {
         ok_with_reason(text, "stop")
+    }
+
+    /// M15 H13 — usage를 실은 응답. 기존 `ok()`는 `usage: None`이다
+    fn ok_with_usage(text: &str, prompt: u32, completion: u32) -> Result<ChatResponse, LlmError> {
+        Ok(ChatResponse {
+            choices: vec![Choice {
+                message: ResponseMessage {
+                    role: "assistant".into(),
+                    content: Some(text.into()),
+                    reasoning_content: None,
+                },
+                finish_reason: Some("stop".into()),
+            }],
+            usage: Some(crate::llm::types::Usage {
+                completion_tokens: Some(completion),
+                prompt_tokens: Some(prompt),
+            }),
+        })
     }
 
     fn turn(tool: &str, args: serde_json::Value) -> String {
@@ -1399,6 +1493,191 @@ mod tests {
         // 오버플로 Notice: M13 스펙 리뷰 C1이 지적한 "배치는 끝났는데 흔적 0" 공백
         assert!(jsonl.contains("\"kind\":\"notice\""), "notice kind가 안 남았다:\n{jsonl}");
         assert!(jsonl.contains("컨텍스트 초과로 보임"), "오버플로 notice 본문이 안 남았다:\n{jsonl}");
+    }
+
+    /// M15 H13·§5-2 ② — 턴마다 서버 실측과 추정치를 나란히 남긴다.
+    /// 측정 지점은 **응답을 만들어낸 마지막 반복의 직렬화 직전 히스토리**다.
+    /// ⚠ `new_session`은 `Transcript::disabled()`라 이 테스트에 못 쓴다 —
+    /// 실 파일이어야 단언이 공허하지 않다(M14가 같은 함정을 겪었다)
+    #[tokio::test]
+    async fn each_turn_records_usage_next_to_the_estimate() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        let script = Scripted::new(vec![ok_with_usage(&finish("done"), 999, 11)]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let out = run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+        assert!(matches!(out, AgentOutcome::Finished(_)));
+
+        let text = std::fs::read_to_string(&tpath).unwrap();
+        let rec: serde_json::Value = text
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .find(|v| v["kind"] == "usage")
+            .expect("턴마다 usage 이벤트가 있어야 한다");
+        let body: serde_json::Value =
+            serde_json::from_str(rec["content"].as_str().unwrap()).unwrap();
+        assert_eq!(body["prompt_tokens"], 999);
+        assert_eq!(body["completion_tokens"], 11);
+        assert!(body["estimate_tokens"].as_u64().unwrap() > 0, "추정치가 나란히 있어야 한다");
+        assert!(body["budget"].as_u64().unwrap() > 0);
+        assert_eq!(body["inline_system"], false, "§5-3 층화 키");
+        assert_eq!(body["overflow_shrinks"], 0);
+    }
+
+    /// 짝 — 서버가 usage를 안 주면 `null`이어야 한다. 0으로 떨어지면 §5-3 회귀가
+    /// 원점을 지나는 거짓 관측을 얻는다(T10의 `missing_usage_is_none_not_zero`와 같은 규율)
+    #[tokio::test]
+    async fn missing_usage_records_null_not_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        let script = Scripted::new(vec![ok(&finish("done"))]); // usage: None
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+
+        let text = std::fs::read_to_string(&tpath).unwrap();
+        let rec: serde_json::Value = text
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .find(|v| v["kind"] == "usage")
+            .expect("usage 이벤트는 서버 응답과 무관하게 남아야 한다");
+        let body: serde_json::Value =
+            serde_json::from_str(rec["content"].as_str().unwrap()).unwrap();
+        assert!(body["prompt_tokens"].is_null(), "0이 아니라 null: {body}");
+        assert!(body["estimate_tokens"].as_u64().unwrap() > 0, "추정치는 서버와 무관하게 있다");
+    }
+
+    /// M15 H14·§5-2 ⑤ — 오버플로로 **포기**한 런이 트랜스크립트에 남아야 한다.
+    /// M13이 △(계측 불가)로 분류한 2종 중 하나다. 축소 재시도(2회)는 M14가
+    /// 이미 기록하므로 여기서 닫는 것은 3번째 400(최종 포기)뿐이다
+    #[tokio::test]
+    async fn overflow_giveup_is_recorded_in_the_transcript() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        // 컨텍스트 초과 400을 3번 — 2회는 축소 재시도, 3번째가 최종 포기.
+        // LlmError는 Clone을 파생하지 않는다 — vec![x; 3]이 아니라 루프로 push
+        let mut v = Vec::new();
+        for _ in 0..3 {
+            v.push(Err(LlmError::Api {
+                status: 400,
+                body: "context length exceeded".into(),
+            }));
+        }
+        let script = Scripted::new(v);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let err = run_quiet(&mut agent, &mut session, "요청").await.unwrap_err();
+        assert!(matches!(err, LlmError::Api { status: 400, .. }), "{err:?}");
+
+        let text = std::fs::read_to_string(&tpath).unwrap();
+        let notices: Vec<&str> = text.lines().filter(|l| l.contains("\"kind\":\"notice\"")).collect();
+        assert_eq!(
+            notices.iter().filter(|l| l.contains("히스토리 절삭 후 재시도")).count(),
+            2,
+            "축소 재시도 2회 (M14가 이미 기록): {notices:?}"
+        );
+        assert_eq!(
+            notices.iter().filter(|l| l.contains("컨텍스트 초과 — context_tokens")).count(),
+            1,
+            "최종 포기도 기록돼야 한다 (M15 H14): {notices:?}"
+        );
+    }
+
+    /// M15 H10·§5-4 — 툴별로 **분리**해 남긴다. 합치면 §1-1 축의 근거인
+    /// M8 실패 분석의 "미열람(grep만)" 구분이 사라진다
+    #[tokio::test]
+    async fn touched_files_are_recorded_per_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "fn main() {}\n").unwrap();
+
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "src/lib.rs"}))),
+            ok(&turn("grep", serde_json::json!({"pattern": "fn"}))),
+            // 리뷰 지적(경계 케이스 누락): path를 **준** grep 호출. 내부 matches!가
+            // grep을 뺀 올바른 구현에서만 null로 남는다 — 내부·외부 집합을 합친
+            // 회귀 구현이라면 이 호출이 "src/lib.rs"로 기록돼 아래 단언이 잡아낸다
+            ok(&turn("grep", serde_json::json!({"pattern": "fn", "path": "src/lib.rs"}))),
+            // list_files도 호출 계수일 뿐임을 고정 — path를 줘도 null이어야 한다
+            ok(&turn("list_files", serde_json::json!({"path": "src"}))),
+            ok(&turn("write_file", serde_json::json!({"path": "src/lib.rs", "content": "fn main() {}\n// x\n"}))),
+            ok(&turn("run_command", serde_json::json!({"command": "true"}))),
+            ok(&finish("done")),
+            ok(&finish("done")), // VERIFY_NUDGE가 1차 finish를 반려한다
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+
+        let touches: Vec<serde_json::Value> = std::fs::read_to_string(&tpath)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .filter(|v| v["kind"] == "touch")
+            .map(|v| serde_json::from_str(v["content"].as_str().unwrap()).unwrap())
+            .collect();
+
+        // read_file은 경로를 준다 — 항해 지표의 유일한 원천
+        let read = touches.iter().find(|t| t["tool"] == "read_file").expect("read_file 기록");
+        assert_eq!(read["path"], "src/lib.rs");
+        // grep 호출은 두 건 — 하나는 path 없이, 하나는 path를 주고 호출했다.
+        // 리뷰 지적: 기존 테스트는 path 없는 호출만 있어 "outer/inner matches!를
+        // 합친" 회귀와 구별이 안 됐다(둘 다 null을 낸다). path를 **준** 쪽까지
+        // 둘 다 null이어야 진짜 경계 단언이 된다 — path 있는 grep이 null이 아니라
+        // "src/lib.rs"로 나오면 내부 matches!가 삭제된 회귀다.
+        let grep_touches: Vec<&serde_json::Value> =
+            touches.iter().filter(|t| t["tool"] == "grep").collect();
+        assert_eq!(grep_touches.len(), 2, "grep 호출 두 건이 각각 기록돼야 한다: {grep_touches:?}");
+        assert!(
+            grep_touches.iter().all(|t| t["path"].is_null()),
+            "path를 줘도 grep은 null로 기록된다 (합친-집합 회귀면 여기서 실패): {grep_touches:?}"
+        );
+        // list_files도 path를 줬지만 호출 계수일 뿐 — null로 남아야 한다
+        let list = touches.iter().find(|t| t["tool"] == "list_files").expect("list_files 기록");
+        assert!(list["path"].is_null(), "path를 줘도 list_files는 null로 기록된다: {list}");
+        // write_file은 수선 지표의 원천
+        let write = touches.iter().find(|t| t["tool"] == "write_file").expect("write_file 기록");
+        assert_eq!(write["path"], "src/lib.rs");
+        // finish·run_command는 기록 대상이 아니다
+        assert!(touches.iter().all(|t| t["tool"] != "run_command"));
+        assert!(touches.iter().all(|t| t["tool"] != "finish"));
+        // 총 touch 이벤트 수 고정: read_file 1 + grep 2 + list_files 1 + write_file 1 = 5.
+        // 임의의 중복 기록(예: 같은 턴에 두 번 push)이 있으면 여기서 잡힌다
+        assert_eq!(touches.len(), 5, "touch 이벤트 총수가 스크립트와 어긋난다: {touches:?}");
+    }
+
+    /// 실패한 디스패치는 접촉이 아니다 — 기록은 `if dispatch_ok` **안**에 있어야 한다.
+    ///
+    /// ⚠ **이 테스트에 본문이 있어야 반증이 성립한다.** 초판은 이것을 주석 한 줄뿐인
+    /// **빈 함수**로 출하했고, 빈 테스트는 항상 통과하므로 Step 4의 "블록을
+    /// `dispatch_ok` 밖으로 옮기면 실패해야 한다"가 **절대 실패할 수 없었다**
+    /// (플랜 1R 실현 I3). 본문을 넣으면 실제로 `left: 1, right: 0`으로 실패한다
+    #[tokio::test]
+    async fn failed_dispatch_is_not_recorded_as_a_touch() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        // 존재하지 않는 파일 → read_file이 Error를 돌려준다 (dispatch_ok=false)
+        let script = Scripted::new(vec![
+            ok(&turn("read_file", serde_json::json!({"path": "nope.rs"}))),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "요청").await.unwrap();
+
+        let n = std::fs::read_to_string(&tpath)
+            .unwrap()
+            .lines()
+            .filter(|l| l.contains("\"kind\":\"touch\""))
+            .count();
+        assert_eq!(n, 0, "실패한 디스패치는 접촉이 아니다 (기록이 dispatch_ok 밖으로 샜다)");
     }
 
     #[tokio::test]

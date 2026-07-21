@@ -1,0 +1,143 @@
+
+running 1 test
+test test_invalid_utf8 ... FAILED
+
+failures:
+
+---- test_invalid_utf8 stdout ----
+
+thread 'test_invalid_utf8' (15780474) panicked at tests/tests.rs:904:7:
+called `Result::unwrap()` on an `Err` value: Os { code: 92, kind: Uncategorized, message: "Illegal byte sequence" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    test_invalid_utf8
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.00s
+
+
+warning: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+   Compiling libc v0.2.36
+   Compiling void v1.0.2
+   Compiling cfg-if v0.1.2
+   Compiling winapi-build v0.1.1
+   Compiling lazy_static v1.0.0
+   Compiling unicode-width v0.1.4
+   Compiling utf8-ranges v1.0.0
+   Compiling ansi_term v0.10.2
+   Compiling regex-syntax v0.4.2
+   Compiling bitflags v1.0.1
+   Compiling strsim v0.7.0
+   Compiling vec_map v0.8.0
+   Compiling unreachable v1.0.0
+   Compiling log v0.4.1
+   Compiling kernel32-sys v0.2.2
+   Compiling version_check v0.1.3
+   Compiling same-file v1.0.2
+   Compiling winapi v0.2.8
+   Compiling thread_local v0.3.5
+   Compiling memchr v2.0.1
+   Compiling term_size v0.3.1
+   Compiling atty v0.2.6
+   Compiling bitflags v0.9.1
+   Compiling textwrap v0.9.0
+   Compiling aho-corasick v0.6.4
+   Compiling fnv v1.0.6
+   Compiling walkdir v2.1.4
+   Compiling nix v0.9.0
+   Compiling crossbeam v0.3.2
+   Compiling rand v0.4.2
+   Compiling num_cpus v1.8.0
+   Compiling ansi_term v0.9.0
+   Compiling clap v2.30.0
+   Compiling diff v0.1.11
+   Compiling regex v0.2.6
+   Compiling ctrlc v3.1.0
+   Compiling globset v0.3.0
+   Compiling remove_dir_all v0.3.0
+   Compiling tempdir v0.3.6
+   Compiling ignore v0.4.1
+   Compiling fd-find v6.3.0 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-fd-250-invalid-utf8-417kza1u/f)
+warning: use of deprecated constant `std::sync::ONCE_INIT`: the `Once::new()` function is now preferred
+  --> src/exec/mod.rs:42:9
+   |
+42 | /         lazy_static! {
+43 | |             static ref PLACEHOLDER_PATTERN: Regex = Regex::new(r"\{(/?\.?|//)\}").unwrap();
+44 | |         }
+   | |_________^
+   |
+   = note: `#[warn(deprecated)]` on by default
+   = note: this warning originates in the macro `__lazy_static_create` which comes from the expansion of the macro `lazy_static` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: use of deprecated method `core::str::<impl str>::trim_left`: superseded by `trim_start`
+   --> tests/testenv/mod.rs:127:37
+    |
+127 |                 if trim_left { line.trim_left() } else { line };
+    |                                     ^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+    |
+127 -                 if trim_left { line.trim_left() } else { line };
+127 +                 if trim_left { line.trim_start() } else { line };
+    |
+
+warning: use of deprecated method `core::str::<impl str>::trim_left_matches`: superseded by `trim_start_matches`
+   --> src/main.rs:157:43
+    |
+157 |             let patterns = exts.map(|e| e.trim_left_matches('.'))
+    |                                           ^^^^^^^^^^^^^^^^^
+    |
+help: replace the use of the deprecated method
+    |
+157 -             let patterns = exts.map(|e| e.trim_left_matches('.'))
+157 +             let patterns = exts.map(|e| e.trim_start_matches('.'))
+    |
+
+warning: use of deprecated method `std::error::Error::description`: use the Display impl or to_string()
+   --> src/main.rs:164:39
+    |
+164 |                 Err(err) => error(err.description()),
+    |                                       ^^^^^^^^^^^
+
+warning: use of deprecated method `std::error::Error::description`: use the Display impl or to_string()
+   --> src/main.rs:184:21
+    |
+184 |                 err.description()
+    |                     ^^^^^^^^^^^
+
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:182:20
+    |
+182 |             panic!(format_exit_error(args, &output));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: `#[warn(non_fmt_panics)]` (part of `#[warn(rust_2021_compatibility)]`) on by default
+help: add a "{}" format string to `Display` the message
+    |
+182 |             panic!("{}", format_exit_error(args, &output));
+    |                    +++++
+
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:191:20
+    |
+191 |             panic!(format_output_error(args, &expected, &actual));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+help: add a "{}" format string to `Display` the message
+    |
+191 |             panic!("{}", format_output_error(args, &expected, &actual));
+    |                    +++++
+
+warning: `fd-find` (test "tests") generated 3 warnings (run `cargo fix --test "tests" -p fd-find` to apply 3 suggestions)
+warning: `fd-find` (bin "fd") generated 4 warnings (run `cargo fix --bin "fd" -p fd-find` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.12s
+     Running tests/tests.rs (target/debug/deps/tests-d0a1073369a8f48f)
+error: test failed, to rerun pass `--test tests`

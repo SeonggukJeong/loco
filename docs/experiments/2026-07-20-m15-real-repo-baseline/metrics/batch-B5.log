@@ -1,0 +1,34 @@
+[rg-1868-passthru-context] 1/3 실행 중… (시드 0)
+(심링크 건너뜀: tasks-real/rg-1868-passthru-context/fixture/HomebrewFormula)
+[rg-1868-passthru-context] 1/3 — 실패 (MaxTurns, 25턴, 330.8s)
+[rg-1868-passthru-context] 2/3 실행 중… (시드 1)
+(심링크 건너뜀: tasks-real/rg-1868-passthru-context/fixture/HomebrewFormula)
+[rg-1868-passthru-context] 2/3 — 실패 (MaxTurns, 24턴, 481.6s)
+[rg-1868-passthru-context] 3/3 실행 중… (시드 2)
+(심링크 건너뜀: tasks-real/rg-1868-passthru-context/fixture/HomebrewFormula)
+[rg-1868-passthru-context] 3/3 — 실패 (Timeout, 18턴, 605.0s)
+[rg-568-leading-hyphen] 1/3 실행 중… (시드 0)
+(심링크 건너뜀: tasks-real/rg-568-leading-hyphen/fixture/HomebrewFormula)
+[rg-568-leading-hyphen] 1/3 — 실패 (Timeout, 11턴, 605.0s)
+[rg-568-leading-hyphen] 2/3 실행 중… (시드 1)
+(심링크 건너뜀: tasks-real/rg-568-leading-hyphen/fixture/HomebrewFormula)
+[rg-568-leading-hyphen] 2/3 — 실패 (Timeout, 13턴, 605.0s)
+[rg-568-leading-hyphen] 3/3 실행 중… (시드 2)
+(심링크 건너뜀: tasks-real/rg-568-leading-hyphen/fixture/HomebrewFormula)
+[rg-568-leading-hyphen] 3/3 — 실패 (MaxTurns, 24턴, 408.3s)
+[rg-740-passthru] 1/3 실행 중… (시드 0)
+(심링크 건너뜀: tasks-real/rg-740-passthru/fixture/HomebrewFormula)
+[rg-740-passthru] 1/3 — 실패 (MaxTurns, 24턴, 398.4s)
+[rg-740-passthru] 2/3 실행 중… (시드 1)
+(심링크 건너뜀: tasks-real/rg-740-passthru/fixture/HomebrewFormula)
+[rg-740-passthru] 2/3 — 실패 (MaxTurns, 24턴, 423.7s)
+[rg-740-passthru] 3/3 실행 중… (시드 2)
+(심링크 건너뜀: tasks-real/rg-740-passthru/fixture/HomebrewFormula)
+[rg-740-passthru] 3/3 — 실패 (Timeout, 21턴, 605.0s)
+과제                                통과      엄격      평균 턴      평균 시간
+rg-1868-passthru-context         0/3     0/3      22.3     472.5s
+rg-568-leading-hyphen            0/3     0/3      16.0     539.4s
+rg-740-passthru                  0/3     0/3      23.0     475.7s
+전체 통과율 0.0% (0/9) · 엄격 0.0% (0/9) · 거짓 성공 finish 0 · 평균 495.9s/런 (시드 0부터, timeout×1)
+
+리포트: /Users/sgj/develop/loco/.loco/eval/20260721T093354Z/report.json

@@ -1,0 +1,56 @@
+3bd38f275e4d3cb35794e3869e35d6947cbbf182	776	fix(tests): restrict 'cat' tests to unix environments. Fixes #776 (#777)
+4564977b7ac4fc9131feaecbfbf1a7567897e629	684	Add support for microseconds, closes #684
+0ce6578ea91b51871a5e0d67ef2a41ba637e4af5	647	Update man page
+ac617c8714310265986fcdb38adc04cc19e6b1e8	601,614	Add new --sort option
+a8752769ab28078b6d8dc3d9a96d16d3f1af9ca8	600	Show unused parameters in command names
+9859ecaafefacdfd0ea10537a41edd983abb1131	642	Always compute relative speed comprison for export, closes #642
+2793d7b9941d4dc3dcd2edc53855c8b7bebd895e	640	Do not export intermediate results to stdout, closes #640
+e29465616f4aaf8357137c63960682e284ddb665	595	Close #595
+5b5daa0493c539168e8b916089e13c52f0d5e8c1	570	Improve hints for outlier warnings
+f00acf962e9ca2ae80ce5880850940be71c038b6	568	Fixes #568
+049d1138c94b1654a80b3afc164bcc5c672560f5	542	Don't output colours by default if TERM=dumb or NO_COLOR=1
+277807cb5a380b9db656e9dd4d7495fb09c56e25	377	Implement --output={null,pipe,<FILE>}
+f75f0a10fe412f3f73c95f21b9dc2375b59ed712	508	Use cross to build x86_64-unknown-linux-gnu executables
+ec467161799b5cba510dc3df0262f990a5f03ab7	508	Use cross to build x86_64-unknown-linux-gnu executables
+0ad80759c0d7f6c3bf48280bb628d3f7f1ec3db5	247	Add execution order to README
+272b1076849c7dccf80f145b7251e9d215bac5b9	452	Fixed #452 - Difference between markdown and asciidoctor output
+58d3eada6151798b1ed4dc05fb0900902ba5630b	427	Enable colors on Windows, closes #427
+5f553cb91ad7c381d9a74d2c03ab13ed7da32c1f	427	Enable colors on Windows, closes #427
+5c6b302591e24e51f710f6f153604bd4fd9717f1	403	Document different increase pattern for -P
+b2ea743adfcb0f7e78350ba0d5a4ad3d75d60459	378	Reduce shell-startup-time measurements to 50
+297dddb70e3c9671d448e698a08f1d33b76aa04c	408	Require user and system time units to match report time unit
+6bfef81aaafbc371a9d02ad846c90e4dd9511a9e	392	Fix reference to plotting script
+5348ab9ba3048f49071b281ca33a25bed92bd0e6	381	benchmark.rs: Don't use # in benchmark name
+46ad9bf39a84f8619492484c27376845e1084ce1	337	Show error if numeric arguments can not be parsed
+699d8ca3292e1d4f87f8456029a68e2d9df46772	331	Add ARM binaries
+b2a246c1950753705b63ac9ac297a482218f0bb7	319	Fix nan/inf output for very fast commands
+148460b950cc15e94e5ea24e65afaabc27671df1	319	Fix nan/inf output for very fast commands
+0f0a109ca0a75fad8731a1b095f737d73cf9bcb8	326	add CLI option to identify a command with a custom name
+674b5422ab5c68d05933be535c59af3d24e16ef7	329	Fix outlier detection for "fast outliers"
+daf5ced4989d59b7fbd444f1c9fcd6a4f5f5ef0e	332	Keep output colorized for 'full' and 'color' style
+f6464a294300749e696a39046b633243f8a2baff	253	Support matrices of independent parameter lists
+92bab7ef319f15c4e2d2fba40841761c0dff311b	231	Add link to chronologer
+559e387ffafda28f6131dbb1ade52e6ed0abdcfb	229	Use ASCII spinner for Windows
+6a8dd1962ce0bd33b7f2c3d100256b01efd46a9e	182	Also run prepare command during warmup
+df2e6716d729dfe6ef48324d5d18fc14b367f6b0	225	Add relative speed to markdown export, closes #225
+8a7d04347dabe4df13ecea1c0f6a711c2a810576	208	Higher precision for rel. speed in markdown output
+ce5daff3c11dac55cfd37f2092eafa66a0745453	197	Update Arch install instructions
+0006e90084701e15d1f3a93108263a5125fa5ce3	177	Add Alpine Linux installation instructions
+048506bed4fb650c9410c9a59d9c94934e5efc1b	78	Show (dimmed) # of runs along with range.
+f0b6f130ea013cd0d2db9c559c07d65de80bcdaf	80	Add option to set time units for CLI & Markdown, closes #80
+01581f60e0530dd7db728e0d0be73334dd143702	61	Add option to set the shell, closes #61
+29804c54c9809e6b856710d20ae55715cd9e73d0	71	Change markdown export to use seconds, closes #71
+3246ec27e1f92fd88087f38622b258567713d05a	70	Compact output, add `-s color` option, closes #70
+bd2ea3188ca228ffa42ad82462f9423896a5ee80	60	Update dependencies
+d78c33b864fdbe416b86096f6a195ad5ce43b5fe	77	Added options to specify the max/exact numbers of runs.
+94621ad315c1a3522c9d9737e7972e1d7aa4192e	69	Bump version for csv, closes #69
+3351f52b1b0acd08364794914e8f77eaeb034606	49	Add newline to JSON output, closes #49
+a4df90e44cfa438653af38ea02f1ea0e54df6e0e	8	Add --setup option, closes #8
+004793834906f99fd4f8b510947a15ce6bcaa8fb	3	Add min and max, closes #3
+c432fecd366a7a5b262e1a1df8d3bf206467d5cd	10	Use milliseconds for small durations, closes #10
+3f3267e424769f1ad4c88a441fb49ebdacf637d2	7	Show current time estimate, closes #7
+7dae4cdc6785c9dab516bfc72cf29ec7dacc970b	11	Add --ignore-failure option, closes #11
+2ab118ddb93ed26e4bcc38afec25a1a2e7b1f31b	13	Close stdin for child-processes, closes #13
+984cec72d5988e3cb9a160a81bc041cce04b1ae8	15	Correct for shell spawning time, closes #15
+dab3f9455fe6e774cca2e2a72e74f1797e94d56d	2	Add --min-runs, closes #2
+68fdc2c6fcbafb1368e9786c72e10b6f54377d41	1	Add --warmup option, closes #1
