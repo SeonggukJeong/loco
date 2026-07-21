@@ -5,11 +5,15 @@
   §4-1-1(분기)·§5(축 C)·§6(측정)·§6-4(사전등록 필수 19항목)·§8(비교가능성)·§9(성공 기준)
 - 플랜: `docs/superpowers/plans/2026-07-20-m15-real-repo-track.md` Task 23
 - 프로토콜: `docs/experiments/PROTOCOL.md` (M15 이후 개정 적용 — 항목 17)
-- **상태: 승인됨 (2026-07-21).** 사용자가 승인했고, **이 상태 행 갱신 커밋이 승인의 성립 근거**다
-  (전언 승인 불가 — M11·M12·M13·M14 전례). 승인 시점의 사전등록 본문은 직전 커밋
-  `0b89dcb`에 고정돼 있으며, 본 커밋은 상태 행·서명란 외의 어떤 조건도 바꾸지 않는다
-  (표본 N=17 · r_obs=1.2587 · 로드 37601 · 실격≥13 · 51런 · 중단·재측정 공약 불변).
+- **상태: 승인됨 (2026-07-21).** 사용자가 승인했고, **승인 성립 커밋은 `66a3c7e`**다
+  (전언 승인 불가 — M11·M12·M13·M14 전례). 승인 시점의 사전등록 본문은 초안 커밋
+  `0b89dcb`에 고정. 표본 N=17 · r_obs=1.2587 · L_req=37601 · 실격≥13 · 51런 · 중단·재측정 공약 불변.
   T24 GPU 배치는 이 승인 이후에만 시작한다 (PROTOCOL 1).
+- **개정 A (2026-07-21, T24 게이트 실측):** 4③ 동결 서버 로드를 **37632**로 정정.
+  사유: `L_req=37601`은 산식 출력 그대로(재측정 없음)이나, llama-server b9960이
+  `-c`를 **256 배수로 올림**해 `n_ctx_slot=37632`를 보고한다(`ceil(37601/256)*256`).
+  배치 기동은 `LOCO_CTX=37632`로 하여 `-c == n_ctx_slot` 등호를 성립시킨다.
+  운용점 32768·r_obs·표본·판정·예산은 불변. 잔재 로드(예: 40960)는 여전히 등호 실패.
 
 ## 0. 성격 — 효과 실험이 아니라 베이스라인 기술 통계
 
@@ -42,7 +46,7 @@
 | GGUF | `~/.lmstudio/models/deepreinforce-ai/Ornith-1.0-9B-GGUF/ornith-1.0-9b-Q4_K_M.gguf` | handoff / serve.sh |
 | 서빙 | `scripts/serve.sh` 핀 (M13) | 핀 변경 = 비교가능성 무효 |
 | **실효 운용점 `context_tokens`** | **과제별 32768** (`TaskSpec`, H1). **전역 config = 8192** (올리지 말 것) | §8 각주 3; 전역을 32768로 올리면 `tasks/` 앵커 조건이 오염된다 |
-| **서버 로드 ctx** | **`LOCO_CTX=37601`** (4③ 동결값 **등호**, `≥` 아님) | T22 분기 2 — 아래 §8 |
+| **서버 로드 ctx** | **`LOCO_CTX=37632`** (4③ 동결값 **등호**, `≥` 아님) | L_req=37601 → 256-정렬 개정 A |
 | `max_output_tokens` | **4096** | M13 사고 토큰 잠식 레버(§4-5·M13 §3-2). 전역 `.loco/config.toml` |
 | `max_turns` | **25** (코드 기본; `task.toml` 오버라이드 없음) | 스모크의 max_turns 상향(40–100)은 pack 도달용이며 **배치 조건이 아님** |
 | `temperature` | 0.1 (코드 기본) | config에 두지 않음 |
@@ -53,7 +57,7 @@
 | `base_url` | `http://localhost:8080/v1` | serve.sh 기본 포트 |
 | `--repeats` | **3** | 아래 §8-2 |
 | `base_seed` / 하위 배치 `--seed` | **0** (전 하위 배치 동일) | `base_seed+repeat` → 시드 {0,1,2}. 분할이 시드 집합을 바꾸지 않게 전 배치 동일 seed |
-| 모델 서버 로드 명령 | `LOCO_MODEL_GGUF=<gguf> LOCO_CTX=37601 scripts/serve.sh > <로그> 2>&1` | 등호 동결 |
+| 모델 서버 로드 명령 | `LOCO_MODEL_GGUF=<gguf> LOCO_CTX=37632 scripts/serve.sh > <로그> 2>&1` | 개정 A 등호 동결 |
 
 ### 2-1. T22 분기 결과 (재유도 금지 — 인용)
 
@@ -69,11 +73,11 @@
 | `L_req` | **37601** = ⌈(32768−4096)·0.9·1.2587 + 4096 + 1024⌉ |
 | `n_ctx_train` | **262144** (T20 GGUF 직독, `supply-survey.md` §1) |
 | 분기 | **2** (`32768 < 37601 ≤ 262144`) |
-| 확정 서버 로드 | **37601** |
+| 확정 서버 로드 (4③) | **37632** (개정 A — L_req 37601의 256-정렬 실현값) |
 | 스모크 관측 로드 (배치 조건 아님) | 40960 |
-| 사후 슬랙 (기록용, `마진`과 구분) | `n_ctx_slot_obs − ((ctx−mo)·0.9·r_obs + mo)` = 40960 − 36576.5 = **4383.5** (스모크 로드 기준). 배치에서는 `37601 − 36576.5 = 1024.5` ≈ `마진` |
+| 사후 슬랙 (기록용, `마진`과 구분) | `n_ctx_slot_obs − ((ctx−mo)·0.9·r_obs + mo)` = 40960 − 36576.5 = **4383.5** (스모크 로드 기준). 배치에서는 `37632 − 36576.5 = 1055.5` |
 
-⚠ 분기 2이므로 **`n_ctx_slot ≠ context_tokens`**. 리포트에 로드(37601)와 운용점(32768)을
+⚠ 분기 2이므로 **`n_ctx_slot ≠ context_tokens`**. 리포트에 로드(37632)·L_req(37601)·운용점(32768)을
 나란히 적고, `n_ctx_slot`이 증언하는 것은 **동결 로드**이지 실효 운용점이 아님을 명시한다
 (§8 각주 6). 실효 운용점의 증인은 H9 `RunRecord.effective_context_tokens`다.
 
@@ -379,7 +383,7 @@ env | grep -E '^CARGO' | tee docs/experiments/2026-07-20-m15-real-repo-baseline/
 1. 각 런 `report.json` → `effective_context_tokens` (H9) == **32768**
    (`grep -c '"effective_context_tokens"'` 및 값 검증).
 2. `effective_max_turns` == **25**.
-3. 서버 로그 `n_ctx_slot == 37601` (4③ 등호) — 통과 로그를 배치 산출물에 **첨부** (§9-A4).
+3. 서버 로그 `n_ctx_slot == 37632` (4③ 등호, 개정 A) — 통과 로그를 배치 산출물에 **첨부** (§9-A4).
 4. `curl /v1/models` → `data[0].id == ornith`.
 5. §3-6 해시 표와 배치 직전 `task.toml`/`procure.toml` 재해시 일치.
 6. `schema_fallback_count == 0` (0이 아니면 해당 런 측정 신뢰 불가 — 보고).
@@ -419,7 +423,7 @@ pgrep -x llama-server | xargs -r kill
 # pgrep -x llama-server | xargs kill 2>/dev/null || true
 
 LOCO_MODEL_GGUF=~/.lmstudio/models/deepreinforce-ai/Ornith-1.0-9B-GGUF/ornith-1.0-9b-Q4_K_M.gguf \
-LOCO_CTX=37601 \
+LOCO_CTX=37632 \
   scripts/serve.sh \
   > docs/experiments/2026-07-20-m15-real-repo-baseline/metrics/serve-37601.log 2>&1 &
 ```
@@ -453,7 +457,7 @@ Expected: `PID == SID`.
 | 조항 | M15 이후 형태 | 본 배치 |
 |---|---|---|
 | 4① | 세 트리 `--verify` (`tasks` 12/12 · `tasks-large` 3/3 · `tasks-real` **17/17**) | 준수 |
-| 4③ | `n_ctx_slot ==` **동결 서버 로드 37601** (등호; 동결값 ≥ 실효 운용점 32768) | 준수 |
+| 4③ | `n_ctx_slot ==` **동결 서버 로드 37632** (등호, 개정 A; ≥ 실효 운용점 32768) | 준수 |
 | 항목 5 | 실효 운용 증인 = H9 `effective_context_tokens`; `n_ctx_slot`은 로드 증인 | 준수 |
 | 4④ | fork-then-setsid | 준수 |
 
@@ -484,9 +488,9 @@ ls ${TMPDIR}/loco-eval-* 2>/dev/null | head
 2. `cargo run -- eval tasks --verify` → 12/12
 3. `cargo run -- eval tasks-large --verify` → 3/3
 4. `cargo run -- eval tasks-real --verify` → **17/17**
-5. 서버 `LOCO_CTX=37601` 기동 + 로그 캡처
+5. 서버 `LOCO_CTX=37632` 기동 + 로그 캡처 (개정 A)
 6. json_schema curl → **HTTP 200** (PROTOCOL 본문 명령)
-7. 로그 `n_ctx_slot` **== 37601**
+7. 로그 `n_ctx_slot` **== 37632**
 8. `/v1/models` `data[0].id` **== ornith**
 9. `ls ${TMPDIR}/.cargo` 없음
 10. `env | grep -E '^CARGO'` 캡처
@@ -503,7 +507,7 @@ ls ${TMPDIR}/loco-eval-* 2>/dev/null | head
 3. `tasks/`·`tasks-large` 앵커는 8K 불변 — 전역 config 오염 금지.
 4. 단일 모델·단일 양자화·단일 운용점(32K).
 5. M12 `sr_error` · M13 T7 `verify_*` · M14 `verify_allpass` 각주 유효.
-6. **분기 2:** `n_ctx_slot(37601) ≠ context_tokens(32768)` — 리포트에 병기.
+6. **분기 2:** `n_ctx_slot(37632) ≠ context_tokens(32768)` (L_req=37601) — 리포트에 병기.
 
 ## 17. 성공 기준 매핑 (§9, 배치 후 T25)
 
@@ -527,9 +531,10 @@ ls ${TMPDIR}/loco-eval-* 2>/dev/null | head
 
 ## 승인 서명
 
-- [x] 위 조건·표본(N=17)·로드 **37601**·`r_obs` **1.2587**·실격 **≥13**·예산 **51런/12h**·
+- [x] 위 조건·표본(N=17)·L_req **37601**·4③ 로드 **37632**(개정 A)·`r_obs` **1.2587**·실격 **≥13**·예산 **51런/12h**·
       재측정 공약을 데이터 없이 확정한다
 - [x] 상태 행을 `승인됨(날짜)`로 바꾸는 커밋이 승인의 성립 근거다
 - 승인자 / 날짜: 사용자 / 2026-07-21
+- 개정 A: T24 게이트 실측(llama.cpp 256-정렬). L_req·r_obs 재측정 없음.
 
-**승인됨 — T24 착수 가능 (PROTOCOL 1).**
+**승인됨 — T24 진행 중 (PROTOCOL 1). 4③ 로드 = 37632 (개정 A).**
