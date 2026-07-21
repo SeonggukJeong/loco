@@ -8,6 +8,9 @@ usage:
                                                                # M15 H15 후반부 — §6-1의
                                                                # --filter 분할을 배치 수준
                                                                # 하나로 되돌리는 풀링 집계
+  python3 scripts/exp_metrics.py --session <session.jsonl>   # M15 H19 — 스모크 1세션
+                                                               # 트랜스크립트에서 r_obs 산출
+                                                               # (report.json 없이)
 
 assistant 이벤트는 마커 카운트에서 제외(모델이 교정문을 인용할 수 있음).
 섭동 유도 규칙은 스펙 §5 원복 핀과 동일해야 한다: 스트릭은 액션 결과 턴
@@ -756,6 +759,47 @@ def pool(stamp_dirs, resamples=10000, seed=0):
     print("# NOTE 재추출 단위는 과제다 — 런 수준 구간은 보고하지 않는다 (§6-4-7)")
 
 
+def session_mode(path):
+    """단일 세션 트랜스크립트에서 §4-1-1 스모크 산출을 낸다 (M15 H19).
+
+    exp_metrics.py의 나머지는 eval 스탬프 디렉터리(report.json + run-*.jsonl)를
+    받는다 — 스모크는 `cargo run -- -p …` 1회라 .loco/sessions/*.jsonl 하나뿐이고
+    그 경로를 읽을 수단이 없었다.
+
+    산출 셋:
+      r_obs                      — 턴별 prompt_tokens/estimate_tokens의 **최댓값**
+                                   (평균이 아니다. 오버플로를 결정하는 것은 최대 턴)
+      first_turn_prompt_tokens   — §5-5의 의미 확정용. 세션 첫 턴은 **정의상 캐시
+                                   미적중**이므로 이 값이 "완전 프롬프트" 기준이다
+                                   (serve.sh에 캐시 차단 플래그가 없고 추가하면
+                                   핀 변경이라 비교가능성에 걸린다 — 7R I1)
+      pack_fired                 — §4-1-1의 도달 조건. **0이면 스모크가 예산점에
+                                   못 닿은 것이라 §5-3 회귀가 외삽이 된다**
+    """
+    events = [json.loads(l) for l in open(path)]
+    (counts, rec, den, fin_max, perturb, last, first_mut, cargo_mut, st_args,
+     sr_files, perturb_ext, sr_corr_total, tok) = run_metrics(events)
+    first = None
+    for e in events:
+        if e.get("kind") == "usage":
+            u = json.loads(e.get("content") or "{}")
+            if u.get("prompt_tokens") is not None:
+                first = u["prompt_tokens"]
+                break
+    print(f"# session {path}")
+    print(f"r_obs={tok['est_ratio_max']:.4f} max_prompt={tok['max_prompt']} "
+          f"max_est={tok['max_est']} first_turn_prompt_tokens={first} "
+          f"pack_fired={tok['pack_turns']} budget_ratio_max={tok['budget_ratio_max']:.4f} "
+          f"overflow_shrink={tok['overflow_shrink']} overflow_giveup={tok['overflow_giveup']}")
+    fit = estimator_fit(tok["usage_rows"])
+    for inl, f in fit.items():
+        print(f"# estimator inline_system={inl} {f}")
+    if not tok["pack_turns"]:
+        print("# WARN pack 미발동 — 예산점에 못 닿았다. §4-1-1 도달 조건 미충족이므로 "
+              "세션을 더 길게 돌릴 것 (§5-3 회귀가 3배 외삽이 된다)")
+    return tok
+
+
 def selftest():
     def ev(kind, content, tool=None, args=None):
         e = {"kind": kind, "content": content}
@@ -1364,6 +1408,34 @@ def selftest():
         # ⑦ 주 지표의 불확실성(§6-4-7)
         assert "pass_rate tasks=" in out and "ci95=[" in out, out
 
+    # M15 H19 — 1세션 트랜스크립트에서 r_obs를 낸다. report.json이 없다
+    # (스모크는 eval이 아니라 `cargo run -- -p …` 1회다). turn1은 ratio 1.0
+    # (1000/1000), turn2는 ratio 1.3(1300/1000) — r_obs는 **턴별 비율의
+    # 최댓값**(§4-1-1)이라 1.3000이어야 한다. first_turn_prompt_tokens는 turn1의
+    # 값(1000, §5-5 캐시-미스 기준)이고, pack 이벤트 1건으로 pack_fired=1.
+    session_events = [
+        ev("usage", json.dumps({"prompt_tokens": 1000, "completion_tokens": 20,
+                                "estimate_tokens": 1000, "messages": 5,
+                                "budget": 25804, "inline_system": False})),
+        ev("usage", json.dumps({"prompt_tokens": 1300, "completion_tokens": 20,
+                                "estimate_tokens": 1000, "messages": 9,
+                                "budget": 25804, "inline_system": False})),
+        ev("pack", json.dumps({"budget": 25804, "before": 30000, "after": 25000,
+                               "elided": 2, "dropped": 0})),
+    ]
+    with tempfile.TemporaryDirectory() as session_dir:
+        session_path = os.path.join(session_dir, "smoke.jsonl")
+        with open(session_path, "w") as f:
+            for e in session_events:
+                f.write(json.dumps(e) + "\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            session_mode(session_path)
+        session_out = buf.getvalue()
+    assert "r_obs=1.3000" in session_out, session_out
+    assert "first_turn_prompt_tokens=1000" in session_out, session_out
+    assert "pack_fired=1" in session_out, session_out
+
     print("selftest ok")
 
 
@@ -1383,6 +1455,8 @@ if __name__ == "__main__":
             else:
                 args.append(a)
         pool(args, resamples=resamples, seed=seed)
+    elif len(sys.argv) >= 3 and sys.argv[1] == "--session":
+        session_mode(sys.argv[2])
     elif len(sys.argv) >= 2:
         for d in sys.argv[1:]:
             process(d)
