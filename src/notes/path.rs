@@ -27,7 +27,12 @@ impl std::error::Error for PathError {}
 /// Models often pass a storage-relative path (`.loco/notes/_root`); strip that
 /// prefix so the key is `_root` / `src`, not `.loco/notes/_root` (which would
 /// write under `.loco/notes/.loco/notes/` and never satisfy the mut-gate).
-/// Rejected: `.`/`..` segments, NUL, absolute/escape, empty.
+///
+/// Also map the **directory alone** (`.loco/notes` / `.loco/notes/`) to
+/// [`ROOT_KEY`] — smoke `20260721T161025Z` wrote `.loco/notes/.loco/notes.md`
+/// and never certified `_root`, looping on the mut-gate.
+/// Rejected: `.`/`..` segments, NUL, absolute/escape, empty (other than the
+/// storage-dir → `_root` salvage above).
 /// Only `_root` is the root key — bare `root` stays the ordinary key `"root"`.
 pub fn normalize_key(raw: &str) -> Result<String, PathError> {
     if raw.contains('\0') {
@@ -51,10 +56,17 @@ pub fn normalize_key(raw: &str) -> Result<String, PathError> {
             "absolute notes key not allowed: {raw}"
         )));
     }
-    // Strip storage prefix (once, after ./ collapse). Case-sensitive on purpose.
+    // Strip storage prefix (after ./ collapse). Case-sensitive on purpose.
+    // Exact dir / empty rest after `…/notes/` → [`ROOT_KEY`]; `…/notes/foo` → `foo`.
+    // Do NOT map every empty key to root (`.md` alone must still error).
+    let mut from_storage = false;
+    if s == ".loco/notes" || s == "loco/notes" {
+        return Ok(ROOT_KEY.to_string());
+    }
     for prefix in [".loco/notes/", "loco/notes/"] {
         if let Some(rest) = s.strip_prefix(prefix) {
             s = rest.to_string();
+            from_storage = true;
             break;
         }
     }
@@ -64,7 +76,15 @@ pub fn normalize_key(raw: &str) -> Result<String, PathError> {
     while s.ends_with('/') {
         s.pop();
     }
+    // `.loco/notes.md` → after .md strip still `.loco/notes`
+    if s == ".loco/notes" || s == "loco/notes" {
+        return Ok(ROOT_KEY.to_string());
+    }
     if s.is_empty() {
+        if from_storage {
+            // `.loco/notes/` with no key suffix
+            return Ok(ROOT_KEY.to_string());
+        }
         return Err(PathError::Invalid("empty notes key".into()));
     }
     for seg in s.split('/') {
@@ -217,6 +237,17 @@ mod tests {
         assert_eq!(normalize_key("loco/notes/src").unwrap(), "src");
         // bare key still works
         assert_eq!(normalize_key("_root").unwrap(), "_root");
+    }
+
+    #[test]
+    fn normalize_maps_notes_dir_alone_to_root() {
+        // Smoke 20260721T161025Z: path=".loco/notes" → .loco/notes/.loco/notes.md
+        // while mut-gate still demanded certified `_root` → notes thrash / RepetitionStop
+        assert_eq!(normalize_key(".loco/notes").unwrap(), ROOT_KEY);
+        assert_eq!(normalize_key(".loco/notes/").unwrap(), ROOT_KEY);
+        assert_eq!(normalize_key("./.loco/notes").unwrap(), ROOT_KEY);
+        assert_eq!(normalize_key("loco/notes").unwrap(), ROOT_KEY);
+        assert_eq!(normalize_key(".loco/notes.md").unwrap(), ROOT_KEY);
     }
 
     #[test]

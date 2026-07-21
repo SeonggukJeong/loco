@@ -223,6 +223,30 @@ mod tests {
     }
 
     #[test]
+    fn notes_dir_alone_as_path_writes_root_not_nested() {
+        // 20260721T161025Z: path=".loco/notes" → nested .loco/notes/.loco/notes.md
+        let dir = tempfile::tempdir().unwrap();
+        let out = UpdateRepoNotes
+            .run(
+                &serde_json::json!({
+                    "path": ".loco/notes",
+                    "content": valid_root()
+                }),
+                &ctx(&dir),
+            )
+            .unwrap();
+        assert!(
+            out.contains("repo notes updated:") && out.contains("_root.md"),
+            "should write root key: {out}"
+        );
+        assert!(dir.path().join(".loco/notes/_root.md").is_file());
+        assert!(
+            !dir.path().join(".loco/notes/.loco/notes.md").exists(),
+            "must not nest storage dir as a key"
+        );
+    }
+
+    #[test]
     fn schema_fail_prefixes_and_includes_template() {
         let dir = tempfile::tempdir().unwrap();
         let err = UpdateRepoNotes
