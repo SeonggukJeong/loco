@@ -1,0 +1,124 @@
+e60582f83800498b4bae6a9f554f12ed834dd73e	1693	docs: clarify that -e/--extension matches all entry types
+ed4766419152120bb0b21516f581b4a4ac71f531	1873	fix: flag any pattern containing a path separator, not just ones that name a directory
+d45c99b80706ca51b40a0b20f37e8cfe8f5146c2	735	docs: document PowerShell placeholder quoting requirement
+72ff3cf6941d0ba53aebb12dab114981d8f55790	1958	feat: add --ignore-parent option to override --no-ignore-parent
+37f3c2e6cbf252c013d16fa55da81e97cd713c6f	1724	Change --exclude value name from "pattern" to "glob"
+247a5172e57b88ae02da3d4e3cf4fbce5a52b3c9	1888	Fix completions for alias fdfind in deb package for bash, zsh and fish.
+cd8fedc183933c3a0f0fdcba5428159154096b94	1843	Fix Windows hyperlinks for paths with spaces
+d05a718be5f4427da4aced6948362abc7d9f6c5a	1727	`--ignore-contain`: ignore directories containing a named entry (e.g. [`CACHEDIR.TAG`](https://bford.info/cachedir/)).
+b6af107ac6eafcf24dcfeedd7b348fbf31c268de	1838	tests/testenv/mod.rs: Change how fd binary executable is located
+be94ec6136f4bf092c8095a12b8b7942568431e3	1753	Merge pull request #1755 from tmccombs/master
+0e4488e9dc2ef76e48f1bc621cd05000b8a73818	1085	Merge pull request #1549 from tavianator/jemalloc-aarch64
+d7d63eddbebc3ee3e3c7c94ef5a1c23918e68347	1085	Fix #1085 for real
+216472ff9f0a3a0427d6b57510db91c42b4c3175	1085	ci: Support large page sizes on AArch64
+16c2d1e1d05e815ef5b564cb7710b80853b75066	1313	walk: Flush stdout in batches
+d9b69c84057bd271cf4c9d0fc104e9921120ccc4	1303	feat: Add a way to escape { and }in exec templates.
+19832fcbd3e59f9904aa4b7914a297242303bca6	1040	Merge pull request #1386 from SonkeWohler/fix-readme-as-tree
+d371b100398b0904a70b12df551429bbcc28fc7a	1040	fix(README.md): as-tree is unmaintained, fixes #1040
+ee44c1ed90d46fb231ea2fb79d1bcf39dd115a85	1141	refactor: Use scoped threads from stdlib in spawn_receiver
+a36f2cf61ce059bfcef8ed8fa99ab526a0771aad	1214	Skip an executable test if running as root
+27013537c9ca87d69a0908d40649b09626ea82cc	1209	Fix logic for when to read global ignore file
+2fcfe7a5b7f008c78c9507c520b5e86d97404a91	1172	Use just the file name of the program name
+527840526396341f027b17f4d51eeb5ecdf8eacb	918	walk: Use a bounded queue.
+5bb7a52704175ad0d1a545646c96bd72cd1f4c58	933,1060,1113	walk: Switch back to crossbeam-channel
+4ffc34956f9a00d3d5279758feabb5862f5dc9c4	898	Make --strip-cwd-prefix apply to -x/-X
+4419401b6c221f18eab98a58664ff2d75950a8be	1046	Enable --strip-cwd-prefix by default except with -0
+cbc6ddeefc3410cb5fa2a64ee796e6aef93ea11c	1051	Implement --type executable on Windows
+fdcbb2f008c4633574bb3a2418dfa8b06fb9b4a4	1072	Allow working directory to be nonexistent if search path is given
+40b368e76187ac6fbe0e0f4c590a7af28cd1a1b7	410	exec: Execute batches before they get too long
+da7ea790348c352b74c6ffb7c30b1e8b4e09a9b8	915	Use correct description for Debian package, closes #915
+4baefb2f5a4c09f2e6043b451214abb656a3dee6	867	walk: Split wants_to_quit into two separate flags
+16ae03c3b4d02052ce602bb079e0c3812b2e4ea3	868	walk: Encapsulate the buffering behavior in a struct
+f32060b0de34b52c255027aea12ac5ce53e40d6e	794	Change time comparisons to exclusive
+fe992706ae78f59b8dac6e55834bc69ed08a3b02	854	Raise SIGINT when dying by ^C
+088e42deef5a8aa49bcb3b80ba3ef18f42af9d4b	823	Improve --type help text
+66e3ccc5e185f334b51f64b9d7d126645e12bb52	720	Don't color each path component separately
+21fd01307313e7442670f6f2047371e465c53bba	839	Improve --full-path documentation, closes #839
+2570fbd04e058ed449e95b2583e7145c40e9c925	727	Add longer help text for --prune, closes #727
+690976380db1f11f6ed848761a2931e1424318d4	870	Add section concerning aliases, shell functions
+1b52948e42e612638131f376fee7415e08c4a38c	354	Add better documentation of vcs-ignore files.
+1795e0e9dd268da8057adbaa7184440dd78d1047	764	Add documentation and examples of ** in glob mode
+500f404c4fc4c71abd609451408cf90519337fa3	743	Mention `make` as a build dependency.
+6a18b3603705819384bd3aedef5ff81174b6b49a	783	Support --list-details on more platforms
+ba60a163fe0b8808a87118a7967c5e17da45a9d8	631	Use local times for time functions
+b5344dac304b5938d8a41c91bf6c1e2dc00d8984	605	Improve -x/-X help text and man page description
+aeff525c300481dc3eaa57cbbe1340cf798641d0	365	Attempt to fix #365
+2d398dc4a7849d6074b166482548195c187b46f7	752	Fix directory-existence check on Windows
+b507449146be2fb113ab117f05ed46ccd2fcb94f	737	Handle IO errors based on type, closes #737
+024309f37850415ae01415d850daaca6c30e7146	791	Add comment to README about making sure .local/bin is on PATH (#797)
+cadaef3f076fb0bebeb4b72813361b7e6aa5f186	615	Show error if pattern matches leading dot but --hidden is not given, closes #615
+17bd256ae6e4a8322552024e7d70644927912650	627	Improve --fixed-strings help text, closes #627
+ecfd8cea410b4c989e85c8e3561d944916415b85	684	Update --help text regarding pattern, closes #684
+d2659de7820b337c4cd82a06cba5277d346a02e8	673	Improve --extension help text, closes #673
+d205a7ff9e40430458348b0408bb4e529eb8b280	661	Improve --exclude help text, closes #661
+b2fa188029eb9d1450ab83053700995fc938d160	678	Avoid panic when sending errors after receiver shutdown
+e0adb45d082d8318ab284e208d59b8e3b53fc2d8	675	Fail with error message if numeric arguments can not be parsed
+ec4cc981fcf47dbf5eb654ece3950543605ef383	535	Add --prune flag
+a851570b15bbca91f1f4ef230c6d8939f2459ecc	636	Disable jemalloc on Android (fixes #636 and #642)
+1d1eefdb7be684550d17cd550f149339cc9c2c2b	498	Disable jemalloc on macOS
+ddee6aa8f333e4031c4bd272d31c010f7cc93fa3	469	Revert "Always enable colors on Windows, closes #469"
+e3c77ef7f55a974ae529e6a4344a0b9503058921	584	Update --size documentation
+cb56add1d876e7ed5cdbacb49b4318e4a5c807d0	511	Add new `--type socket` and `--type pipe` filters
+3b42898a695c661b937a58588b9eacf88f25d164	469	Always enable colors on Windows, closes #469
+d63c63be8cf8b6ecf75c1b5b8a2033ec7bb899f9	404	Add --min-depth and --exact-depth
+d43827fe57183fa1456688c38e1db25ff4c7062c	472,476	Add --max-results=<count> option
+5fc341832d9610bee66f14777ae84b7d72f351c9	552	Update lscolors dependency, closes #552
+f69b59195aff3a1c7626541c20ab6af524e7e7ed	437	Update dependencies, closes #437
+2f18903b293eaee4060a0589fa35ee03fb90bf86	487	Fix zsh autocompletion problem, closes #487
+8796de57b592ee90c687847a064be4fadd427e6c	507	Add same file system functionality
+08fcd7ce59dffc1e6673cb7872c03224a4f283b9	470	Make --changed-within/before work for directories
+d5da615c175daf6bee64ff6649336b65dc8d62f5	284	Implement glob-based searches
+a0505bd4df82dc2203195d4f651a5ab7227987d0	333	Expose exit status from `--exec-batch <cmd>`
+0b04bd19dfdd796e8d7f8097a9d687afc2ab7948	451	Add Alpine Linux installation instructions
+85f9db05652b6a8bd011b221c317285da0f1cfb9	386	Add troubleshooting section, closes #386
+2672d8416010e4e0c9e3291653aa9cb95606a3f8	385	Add section about catch-all patterns, closes #385
+985fab16bbe50d35216531b9f7476a3f33e55522	286	Add note about short and long help text, closes #286
+4b5efa3438a17fe134e75dd1f4797489a574a7f2	363,368	Use lscolors crate
+81a27fa9bd13eeda699969af01df8862d63ffbd7	342	Unify error messages, closes #342
+6ff58abb6c8275830439df0ef870cd590f11270e	156	Re-enable .ignore files, closes #156
+53226f82eb99d0effe286abe0e718799501a671e	288	Upgrade minimum reqiured version of Rust to 1.29
+aa70c5a446ae922de4e4cd3fdbd3c91cd43fa765	273	Add `--type empty`
+6fb5004b850f3bf898605d65cc44e94fb08691f8	244	Enable ARM cross-compilation
+59c9901cde03bfde2715a07e0c4a8ffc7b2da9c6	313	Update dependencies, fix #313
+8c1b037279fefb66816636d5a06b00cff4925ae3	268	Normalize absolute paths, fixes #268 (#270)
+47d95284aa8317086f58d97bdb2630eec2a337df	250	Skip invalid utf8 filenames, closes #250
+050fa9c3b185394392e8e2134df14bb4c4b3b68a	213	Fix file owner in deb package, closes #213
+32a34cf8c98025723d1c8668efe80e054ab69d9c	191	Introduce maximum output buffer size (#212)
+26ad7da347f8fd4d511849b492491e40ed185a08	210	Using wants_to_quit to exit the sender as well as the reciever (#211)
+faf934da4bc262cd41294ff5c1811f81033036f3	177,199	Added support for filtering by multiple filetypes and extensions (#205)
+c0bfc65d888509b38b044126bee398b22fffe94d	87	Handle terminal signals (#128)
+5ad69fb2fbcb211c6d651c6ddacefb19520f6242	89	Add support for exclude-patterns
+dbf1ba8b820793631f76827d1895056a8a7ac98c	76	Set up Travis to upload binary for every release
+d32fe0241e2c479c3b6816a526d1aa77cdcff9c4	73	Updated tutorial with real-world examples
+8d85debc12631d47274da8305e710723aae5dc74	113	Refactor path handling (fixes #113)
+e649c8fa79794843656493c96d8c44913c44d3a3	82,107	Use a uniform output format for searching ../
+4a5a5faf4dc133a8ff0084e4125b95372209d78d	84	Implement --exec feature
+f2632d5fce910849ab60ecd0e47730274d40fda4	111	Dot "." also matches newline by default (closes #111)
+8fc3a83d928f43ce37750ab3ff3f1433fc5dd6a1	81	Use absolute path to perform search, fixes #81
+97e3110333bce2a18a5f46917ba5ac497d11cfc9	99	Make Travis check that the code is correctly formatted
+affe41949d22e93dd64bb80e7aa843625176a88c	80	Switch symlink arg from 's' to 'l' (#83)
+a7f4a0a581ffc3ddebdb1c9fa5166c3e22806d6c	69	Re-enable macOS on Travis, both nightly and stable
+3b55edf5dda111f70a59c10ab5d7dd9c746b2430	57	Add examples to README (#68)
+4b61beaa7591c922d2f7da55853e7b0abab009e1	49	Add flag to force color
+d8d0cf5d6ec45dc6514782651952eef95cfef638	44	Modify test.sh for macOS, fixes #44
+54f33e5227e928fece1ed917749b6b4d4d23955f	40	Use absolute paths if root dir is an absolute path, fixes #40
+1b1f644398621780f104ffdd3bbe6f502f2662ad	39	Throw an error if root directory is non-existent, fixes #39
+24070b0be04f0dff961ed735794888be62919ee1	34	Handle invalid UTF-8, fixes #34
+2ea23c00005602255a29e387006a9fc1e91185b1	24	Exit gracefully on broken pipe, fixes #24
+8c6a9c8e321685135176b3a540c355c24244541f	23	Set static lifetime, fixes #23
+8adb5b9f848bb4f3b746254cb07943c6f3593f91	10	Add option to print absolute paths, closes #10
+634016b9a0421650068971b1f135b644371f7f24	5	Add optional second argument, closes #5
+ae12e00533f748af89562ddd7edc7f73f7020713	4	Switch to 'ignore', closes #4
+c45cf265776125811baf0b7ec1f88223daba97c3	22	Search only filename by default, closes #22
+f9cb3326c85e911c6024f3ca3fe1b928357b0046	21	Only parse dir_colors if output is colored, closes #21
+eb0206945125f2d3c3e2049e8273ddb0875e2cbb	20	Parse dircolors files, closes #20
+33ddee75411e9f5e5939faf38f0a6ccc0130c048	19	Colorize each path component, closes #19
+b4a252a3916ab342b289331fbf49aa2db73df579	11	Detect interactive terminal, closes #11
+e43353a0bbd5a44040e1450f862181f4fec65df3	13	Configurable search depth, closes #13
+7076dcbc6885771de6ec7c8119f41070e5ef5212	12	Option to search hidden directories, closes #12
+051af3d3202de08c7731d038d55e5690621d7f6b	16,17	Option to follow symlinks, disable colors, closes #16, closes #17
+6482f3ac09673f52805cfea0b3640483dee7cf03	7	Implement smart-case, closes #7
+fba5e02c250c99f992c7d05f25ad278d20cfc9cc	8	Colored output, closes #8
+b1baa5cb7617a58a5cc4e962db64af53bc3d8584	1	Code cleanup, error handling, closes #1
+23e51da3c9e2031810f68242fee2196bc1540a61	9	Add case-sensitive flag, closes #9
+4a36b0ef31da96c5eb369d010a0cc4f07e00d7d3	3	Case insensitivity, closes #3

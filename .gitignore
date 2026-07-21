@@ -6,3 +6,4 @@
 /target
 __pycache__/
 tasks-real/*/fixture/
+docs/experiments/2026-07-20-m15-real-repo-baseline/survey/*-records.bin
