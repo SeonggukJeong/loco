@@ -1599,6 +1599,12 @@ mod tests {
         let script = Scripted::new(vec![
             ok(&turn("read_file", serde_json::json!({"path": "src/lib.rs"}))),
             ok(&turn("grep", serde_json::json!({"pattern": "fn"}))),
+            // 리뷰 지적(경계 케이스 누락): path를 **준** grep 호출. 내부 matches!가
+            // grep을 뺀 올바른 구현에서만 null로 남는다 — 내부·외부 집합을 합친
+            // 회귀 구현이라면 이 호출이 "src/lib.rs"로 기록돼 아래 단언이 잡아낸다
+            ok(&turn("grep", serde_json::json!({"pattern": "fn", "path": "src/lib.rs"}))),
+            // list_files도 호출 계수일 뿐임을 고정 — path를 줘도 null이어야 한다
+            ok(&turn("list_files", serde_json::json!({"path": "src"}))),
             ok(&turn("write_file", serde_json::json!({"path": "src/lib.rs", "content": "fn main() {}\n// x\n"}))),
             ok(&turn("run_command", serde_json::json!({"command": "true"}))),
             ok(&finish("done")),
@@ -1620,16 +1626,30 @@ mod tests {
         // read_file은 경로를 준다 — 항해 지표의 유일한 원천
         let read = touches.iter().find(|t| t["tool"] == "read_file").expect("read_file 기록");
         assert_eq!(read["path"], "src/lib.rs");
-        // grep의 args에는 path가 **선택적**이고 이 호출은 안 줬으므로 null이다.
-        // (grep은 path로 파일을 지목할 수도 있다 — 스펙 개정 10. 항해 지표에서
-        //  빼는 것은 축의 정의에서 나오는 설계 결정이지 기술적 제약이 아니다)
-        let grep = touches.iter().find(|t| t["tool"] == "grep").expect("grep 호출 계수");
-        assert!(grep["path"].is_null(), "path를 안 준 grep 호출은 null로 기록된다: {grep}");
+        // grep 호출은 두 건 — 하나는 path 없이, 하나는 path를 주고 호출했다.
+        // 리뷰 지적: 기존 테스트는 path 없는 호출만 있어 "outer/inner matches!를
+        // 합친" 회귀와 구별이 안 됐다(둘 다 null을 낸다). path를 **준** 쪽까지
+        // 둘 다 null이어야 진짜 경계 단언이 된다 — path 있는 grep이 null이 아니라
+        // "src/lib.rs"로 나오면 내부 matches!가 삭제된 회귀다.
+        let grep_touches: Vec<&serde_json::Value> =
+            touches.iter().filter(|t| t["tool"] == "grep").collect();
+        assert_eq!(grep_touches.len(), 2, "grep 호출 두 건이 각각 기록돼야 한다: {grep_touches:?}");
+        assert!(
+            grep_touches.iter().all(|t| t["path"].is_null()),
+            "path를 줘도 grep은 null로 기록된다 (합친-집합 회귀면 여기서 실패): {grep_touches:?}"
+        );
+        // list_files도 path를 줬지만 호출 계수일 뿐 — null로 남아야 한다
+        let list = touches.iter().find(|t| t["tool"] == "list_files").expect("list_files 기록");
+        assert!(list["path"].is_null(), "path를 줘도 list_files는 null로 기록된다: {list}");
         // write_file은 수선 지표의 원천
         let write = touches.iter().find(|t| t["tool"] == "write_file").expect("write_file 기록");
         assert_eq!(write["path"], "src/lib.rs");
         // finish·run_command는 기록 대상이 아니다
         assert!(touches.iter().all(|t| t["tool"] != "run_command"));
+        assert!(touches.iter().all(|t| t["tool"] != "finish"));
+        // 총 touch 이벤트 수 고정: read_file 1 + grep 2 + list_files 1 + write_file 1 = 5.
+        // 임의의 중복 기록(예: 같은 턴에 두 번 push)이 있으면 여기서 잡힌다
+        assert_eq!(touches.len(), 5, "touch 이벤트 총수가 스크립트와 어긋난다: {touches:?}");
     }
 
     /// 실패한 디스패치는 접촉이 아니다 — 기록은 `if dispatch_ok` **안**에 있어야 한다.
