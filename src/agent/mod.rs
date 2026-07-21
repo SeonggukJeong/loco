@@ -297,9 +297,14 @@ impl<C: LlmClient> Agent<C> {
                         session.pack(self.input_budget() >> overflow_shrinks);
                     }
                     Err(LlmError::Api { status: 400, body }) if looks_like_context_overflow(&body) => {
-                        on_event(AgentEvent::Notice(
-                            "(컨텍스트 초과 — context_tokens 설정과 서버 로드 설정을 확인하세요)".to_string(),
-                        ));
+                        // M15 H14: on_event만 타던 것을 트랜스크립트에도 남긴다.
+                        // 축소 재시도(위 arm)는 M14가 이미 notice_recorded!로 기록하는데
+                        // **포기한 런만 흔적이 없어** 배치 후 구분이 불가능했다 (§5-2 ⑤)
+                        notice_recorded!(
+                            session,
+                            on_event,
+                            "(컨텍스트 초과 — context_tokens 설정과 서버 로드 설정을 확인하세요)".to_string()
+                        );
                         return Err(LlmError::Api { status: 400, body });
                     }
                     other => break other?,
@@ -1512,6 +1517,43 @@ mod tests {
             serde_json::from_str(rec["content"].as_str().unwrap()).unwrap();
         assert!(body["prompt_tokens"].is_null(), "0이 아니라 null: {body}");
         assert!(body["estimate_tokens"].as_u64().unwrap() > 0, "추정치는 서버와 무관하게 있다");
+    }
+
+    /// M15 H14·§5-2 ⑤ — 오버플로로 **포기**한 런이 트랜스크립트에 남아야 한다.
+    /// M13이 △(계측 불가)로 분류한 2종 중 하나다. 축소 재시도(2회)는 M14가
+    /// 이미 기록하므로 여기서 닫는 것은 3번째 400(최종 포기)뿐이다
+    #[tokio::test]
+    async fn overflow_giveup_is_recorded_in_the_transcript() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        // 컨텍스트 초과 400을 3번 — 2회는 축소 재시도, 3번째가 최종 포기.
+        // LlmError는 Clone을 파생하지 않는다 — vec![x; 3]이 아니라 루프로 push
+        let mut v = Vec::new();
+        for _ in 0..3 {
+            v.push(Err(LlmError::Api {
+                status: 400,
+                body: "context length exceeded".into(),
+            }));
+        }
+        let script = Scripted::new(v);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        let err = run_quiet(&mut agent, &mut session, "요청").await.unwrap_err();
+        assert!(matches!(err, LlmError::Api { status: 400, .. }), "{err:?}");
+
+        let text = std::fs::read_to_string(&tpath).unwrap();
+        let notices: Vec<&str> = text.lines().filter(|l| l.contains("\"kind\":\"notice\"")).collect();
+        assert_eq!(
+            notices.iter().filter(|l| l.contains("히스토리 절삭 후 재시도")).count(),
+            2,
+            "축소 재시도 2회 (M14가 이미 기록): {notices:?}"
+        );
+        assert_eq!(
+            notices.iter().filter(|l| l.contains("컨텍스트 초과 — context_tokens")).count(),
+            1,
+            "최종 포기도 기록돼야 한다 (M15 H14): {notices:?}"
+        );
     }
 
     #[tokio::test]
