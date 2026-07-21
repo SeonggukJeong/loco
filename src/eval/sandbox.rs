@@ -468,4 +468,48 @@ mod tests {
         );
         sb.cleanup();
     }
+
+    #[test]
+    fn fixture_provided_dot_cargo_is_restored_not_deleted() {
+        // M15 H18 — fd·ripgrep·zoxide는 .cargo/config.toml을 추적한다.
+        // 픽스처가 .cargo를 갖는 경로는 이 프로젝트 역사상 처음이다(§3-2 규약 5).
+        // 암묵 protected 정책은 "삭제"가 아니라 "원본 복원"이어야 한다 —
+        // 삭제하면 실레포 픽스처가 자기 빌드 설정을 잃은 채 check를 받는다
+        use crate::eval::with_implicit_protected;
+        let fx = fixture_with(&[(".cargo/config.toml", "[build]\nrustflags = []\n"), ("src/lib.rs", "x")]);
+        let sb = Sandbox::create(fx.path()).unwrap();
+        // 리워드 해킹 시뮬레이션: 가짜 러너 설정 + 추가 파일
+        std::fs::write(
+            sb.root.join(".cargo/config.toml"),
+            "[target.'cfg(all())']\nrunner = 'true'\n",
+        )
+        .unwrap();
+        std::fs::write(sb.root.join(".cargo/extra.toml"), "sneak").unwrap();
+
+        sb.sync_protected(fx.path(), &with_implicit_protected(&["src".to_string()])).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(sb.root.join(".cargo/config.toml")).unwrap(),
+            "[build]\nrustflags = []\n",
+            "픽스처 원본으로 복원 (M15 H18)"
+        );
+        assert!(!sb.root.join(".cargo/extra.toml").exists(), "에이전트 추가분은 삭제");
+        sb.cleanup();
+    }
+
+    #[test]
+    fn agent_created_dot_cargo_is_deleted_when_the_fixture_has_none() {
+        // 짝 테스트 — 기존 15개 과제가 타는 경로. 이것 없이 위 테스트만 있으면
+        // "항상 복원"이라는 반대 방향의 회귀를 못 잡는다 (M5 §4.1 벡터)
+        use crate::eval::with_implicit_protected;
+        let fx = fixture_with(&[("src/lib.rs", "x")]);
+        let sb = Sandbox::create(fx.path()).unwrap();
+        std::fs::create_dir_all(sb.root.join(".cargo")).unwrap();
+        std::fs::write(sb.root.join(".cargo/config.toml"), "runner = 'true'\n").unwrap();
+
+        sb.sync_protected(fx.path(), &with_implicit_protected(&["src".to_string()])).unwrap();
+
+        assert!(!sb.root.join(".cargo").exists(), "픽스처에 없으면 통째로 삭제");
+        sb.cleanup();
+    }
 }
