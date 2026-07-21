@@ -294,6 +294,9 @@ impl<C: LlmClient> Agent<C> {
         // M16: consecutive update_repo_notes schema rejects → one thrifty correction
         let mut notes_schema_streak: usize = 0;
         let mut notes_schema_corrected = false;
+        // M16: length / notes-shaped parse fail → one mouth-small correction
+        let mut notes_output_corrected = false;
+        let mut saw_mut_gate = false;
         while turns < self.max_turns {
             // 취소 신호 후에는 새 LLM 호출을 만들지 않는다 — run_bounded의 유예가
             // 이 경로로 빠르게 끝난다 (설계 §1). 진행 중이던 run_command는 자체
@@ -387,8 +390,29 @@ impl<C: LlmClient> Agent<C> {
                 // merge_adjacent_same_role는 pack()의 쌍 삭제 루프 안에서만 돌고
                 // (b)의 목적이 바로 pack 미발동이라 영영 교정되지 않는다
                 // ② 연속 주입 중복은 pack()이 회수할 수 없는 자리에 쌓인다
-                session.push_recovery_notice(LENGTH_RECOVERY);
-                notice_recorded!(session, on_event, "(응답이 잘림 — 더 짧게 다시 요청)".to_string());
+                // M16: notes-shaped cut or post-mut-gate → thrifty notes recovery once
+                let notes_cut = self.repo_notes
+                    && !notes_output_corrected
+                    && (saw_mut_gate
+                        || crate::tools::update_repo_notes::looks_like_notes_output(blob));
+                if notes_cut {
+                    notes_output_corrected = true;
+                    session.push_recovery_notice(
+                        crate::tools::update_repo_notes::NOTES_OUTPUT_CORRECTION,
+                    );
+                    notice_recorded!(
+                        session,
+                        on_event,
+                        "(응답 잘림 — notes thrifty 교정 주입)".to_string()
+                    );
+                } else {
+                    session.push_recovery_notice(LENGTH_RECOVERY);
+                    notice_recorded!(
+                        session,
+                        on_event,
+                        "(응답이 잘림 — 더 짧게 다시 요청)".to_string()
+                    );
+                }
                 let _ = status.on_turn(&status_note::TurnCtx {
                     turn: turns + 1,
                     max_turns: self.max_turns,
@@ -422,7 +446,20 @@ impl<C: LlmClient> Agent<C> {
                         on_event(AgentEvent::Notice(format!(
                             "(응답 파싱 실패 — 재시도 {attempts}/{PARSE_ATTEMPTS})"
                         )));
-                        session.push(ChatMessage::user(feedback));
+                        // M16: notes-shaped broken JSON → thrifty correction once
+                        let fb = if self.repo_notes
+                            && !notes_output_corrected
+                            && crate::tools::update_repo_notes::looks_like_notes_output(&text)
+                        {
+                            notes_output_corrected = true;
+                            format!(
+                                "{feedback}\n\n{}",
+                                crate::tools::update_repo_notes::NOTES_OUTPUT_CORRECTION
+                            )
+                        } else {
+                            feedback.to_string()
+                        };
+                        session.push(ChatMessage::user(fb));
                         // NOTE (M3 known gap): unlike the primary chat call above, this parse-retry is
                         // NOT wrapped by the context-overflow shrink-retry loop. An overflow 400 here
                         // propagates directly (clean error + rollback). Deferred to M4 — extract a
@@ -582,6 +619,9 @@ impl<C: LlmClient> Agent<C> {
                     None
                 };
                 if let Some(body) = ban_or_gate {
+                    if body.starts_with(crate::notes::NOTES_MUT_GATE_MARK) {
+                        saw_mut_gate = true;
+                    }
                     finish_missing_streak = 0;
                     let ev = finish_nudge::TurnEvent::MutationAttempt;
                     let (mut note, stop) =
@@ -1929,16 +1969,16 @@ mod tests {
         // 툴 결과 2개를 쌓으면 세 번째 턴의 패킹이 "오래된" 쪽(마지막 메시지가 아닌)을
         // 생략해야 한다. pack은 마지막 메시지(방금 받은 결과)는 건드리지 않으므로
         // 결과가 하나뿐이면 이 테스트는 성립하지 않는다 — 반드시 두 번 읽는다.
-        // 수치: 결과 각 ≈1500토큰, 예산 = (2500−100)×0.9 = 2160 → 둘 다 온전히는 못 담음.
-        // 주의: 실측 시스템 프롬프트(~552토큰)도 예산에 계상된다 — 여유 ~100토큰.
-        // 후속 마일스톤에서 프롬프트가 크게 자라면 이 수치를 재조정해야 한다
+        // 수치: 결과 각 ≈1500토큰. 예산은 시스템 프롬프트(brevity 규칙 포함)를
+        // 담은 뒤에도 "둘 다 온전"은 불가능하고, elide(ELIDED) 경로는 남도록 잡는다.
+        // context를 너무 낮추면 쌍 삭제만 일어나 ELIDED 없이 실패한다.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("big.txt"), "z".repeat(6_000)).unwrap();
         let read = || ok(&turn("read_file", serde_json::json!({"path": "big.txt"})));
         let script = Scripted::new(vec![read(), read(), ok(&finish("done"))]);
-        // repo_notes=false: pack arithmetic is calibrated without notes SYSTEM pointer
+        // repo_notes=false: pack arithmetic without notes SYSTEM pointer
         let config = Config {
-            context_tokens: 2_500,
+            context_tokens: 3_000,
             max_output_tokens: 100,
             repo_notes: false,
             ..Default::default()

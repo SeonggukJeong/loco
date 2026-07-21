@@ -23,6 +23,29 @@ root ≤1200 bytes, dir ≤800; `## role` one line; ≤3 entrypoint bullets; no 
 test logs, or issue text. Do **not** split topics into extra note files. \
 Do **not** paste rejection templates into `content`.";
 
+/// Injected once after length-cutoff / notes-shaped parse failure (mouth small).
+/// Targets the fd-smoke failure mode: huge notes JSON → max_tokens cut → loop.
+pub const NOTES_OUTPUT_CORRECTION: &str = "\
+Output cut or incomplete. Next turn: ONE short JSON only. \
+If `update_repo_notes`: path is `_root` or `src` (not `.loco/notes/...`). \
+content tiny — root ≤400 bytes (summary 1-2 lines + ≤3 routes); dir ≤300 bytes \
+(role 1 line + ≤3 entrypoints). No file lists, no templates, no long prose. \
+thought: one short fragment.";
+
+/// Heuristic: truncated or failed assistant text looks like a notes tool call.
+pub fn looks_like_notes_output(s: &str) -> bool {
+    s.contains("update_repo_notes")
+        || s.contains("## summary")
+        || s.contains("## role")
+        || s.contains("## routes")
+        || s.contains("## entrypoints")
+        || s.contains(".loco/notes")
+        || s.contains("\"path\": \"_root\"")
+        || s.contains("\"path\":\"_root\"")
+        || s.contains("\"path\": \"src\"")
+        || s.contains("\"path\":\"src\"")
+}
+
 pub struct UpdateRepoNotes;
 
 #[derive(Deserialize)]
@@ -229,6 +252,18 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains(NOTES_SCHEMA_REJECT_PREFIX), "{msg}");
         assert!(msg.contains("## role"), "dir template: {msg}");
+    }
+
+    #[test]
+    fn looks_like_notes_output_detects_partial_json() {
+        // Avoid r#" ... "##  which ends the raw string early at `"#`.
+        assert!(looks_like_notes_output(
+            "{\"action\":{\"args\":{\"path\":\"_root\",\"content\":\"## summary\\n"
+        ));
+        assert!(looks_like_notes_output("update_repo_notes something"));
+        assert!(!looks_like_notes_output(
+            "{\"thought\":\"x\",\"action\":{\"tool\":\"grep\",\"args\":{}}}"
+        ));
     }
 
     #[test]

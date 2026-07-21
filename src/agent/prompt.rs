@@ -31,6 +31,9 @@ Respond with exactly ONE JSON object per turn and nothing else:\n\
 \n\
 Rules:\n\
 - One tool call per turn. All tool parameters go inside \"args\".\n\
+- `thought`: one short fragment only - drop filler (sure/basically/happy to help). Keep full technical accuracy.\n\
+- In tool args, paths, commands, code, and error strings must stay exact - compress wording, never mangle substance.\n\
+- Prefer small args: short search/replace blocks; never dump whole files into JSON.\n\
 - Never repeat a tool call that already returned a result - reuse that result. As soon as you have enough information, call `finish`.\n\
 - To change an existing file, prefer `edit_file` with a small unique search block. Copy `search` text exactly from the latest read_file output. Use `write_file` only for new files or full rewrites.\n\
 - After changing files, verify with run_command (e.g. `cargo test`) before finish.\n\
@@ -84,6 +87,10 @@ mod tests {
         assert!(p.contains("Copy `search` text exactly"), "정확 복사 규칙");
         assert!(p.contains("\"tool\": \"edit_file\""), "edit_file 예시");
         assert!(p.contains("\"tool\": \"run_command\""), "run_command 예시");
+        assert!(
+            p.contains("one short fragment"),
+            "brevity contract for thought: {p}"
+        );
         assert!(
             !p.contains("update_repo_notes"),
             "flag false: no notes SYSTEM pointer"

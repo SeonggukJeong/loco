@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 use super::path::{ancestor_keys, dirty_key, ROOT_KEY};
 use super::schema::validate;
-use super::templates::{DIR_TEMPLATE, ROOT_TEMPLATE};
 
 /// Marker prefix for mut-gate rejections (exp_metrics `notes_mut_gate`).
 pub const NOTES_MUT_GATE_MARK: &str = "repo notes mut gate:";
@@ -113,7 +112,8 @@ impl NotesState {
         self.dirty.remove(key);
     }
 
-    /// Mut-gate rejection body: mark + reason + thrifty templates.
+    /// Mut-gate rejection body: mark + short prescription (no full templates —
+    /// long templates drove length-cutoff loops when models pasted them into notes).
     pub fn mut_gate_body(&self, code_path: &str) -> String {
         let mut missing = Vec::new();
         if !self.certified.contains(ROOT_KEY) {
@@ -135,9 +135,9 @@ impl NotesState {
         };
         format!(
             "{NOTES_MUT_GATE_MARK} code edit of `{code_path}` blocked — need certified {need}. \
-             Call `update_repo_notes` first (root summary+routes; dirs role+entrypoints).\n\n\
-             {ROOT_TEMPLATE}\n\
-             {DIR_TEMPLATE}"
+             Next: `update_repo_notes` with key `_root` and/or dir key only (not `.loco/notes/...`). \
+             Keep content tiny: root = short summary + ≤3 routes; dir = 1-line role + ≤3 entrypoints. \
+             No file lists, no pasted templates."
         )
     }
 }
@@ -232,12 +232,18 @@ mod tests {
     }
 
     #[test]
-    fn mut_gate_body_starts_with_mark_and_templates() {
+    fn mut_gate_body_starts_with_mark_and_stays_short() {
         let s = NotesState::default();
         let body = s.mut_gate_body("src/main.rs");
         assert!(body.starts_with(NOTES_MUT_GATE_MARK), "{body}");
-        assert!(body.contains("## summary"));
-        assert!(body.contains("## role"));
+        assert!(body.contains("update_repo_notes"), "{body}");
+        assert!(body.contains("_root"), "{body}");
+        assert!(
+            !body.contains("## summary"),
+            "no full root template: {body}"
+        );
+        assert!(!body.contains("## role\n(one line"), "no full dir template: {body}");
+        assert!(body.len() < 500, "mut-gate body must stay short: {}", body.len());
     }
 
     #[test]
