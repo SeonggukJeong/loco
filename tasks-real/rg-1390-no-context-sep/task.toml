@@ -1,0 +1,7 @@
+prompt = " `--context-separator=\"\"` still adds a new line separator, and changing\r\n that would be a breaking change.\r\n\r\n This new option has clear intent, and preserves backward compatibility."
+check = "cargo test --test integration no_context_sep"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/feature.rs"]

@@ -1,0 +1,5 @@
+repo = "ripgrep"
+issue_url = "https://github.com/BurntSushi/ripgrep/issues/1159"
+fix_sha = "f3164f2615ce18d3ea7b5ce122dfe2a381d1b3f4"
+parent_sha = "31d3e241306f305c1cb94e1882511da2b48dcd36"
+oracle_files = ["src/args.rs", "src/main.rs", "src/messages.rs", "src/subject.rs"]

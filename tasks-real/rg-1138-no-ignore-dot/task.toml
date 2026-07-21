@@ -1,0 +1,7 @@
+prompt = "#### What version of ripgrep are you using?\r\nripgrep 0.10.0\r\n-SIMD -AVX (compiled)\r\n+SIMD +AVX (runtime)\r\n\r\n#### How did you install ripgrep?\r\n\r\npacman\r\n\r\n#### What operating system are you using ripgrep on?\r\n\r\nArch linux\r\n\r\n#### Describe your question, feature request, or bug.\r\n\r\nI would like to have a flag that allows ignoring of .ignore files, but still ignore the files in .gitignore. The reason for me is that I have two main uses for `rg`. \r\n1. Searching files for content.\r\n2. Very quickly creating a list of all files in the current directory that I might want to open. I pass the output of `rg --files --hidden --ignore-file ~/.vim/fzf_ignore` to to FZF in vim. This allows me to fuzzy search all the file names in the current repo that are not ignored by git. `~/.vim/fzf_ignore` contains a file with stuff like `.git/` and `.svn/`.\r\n\r\nThe problem I keep running into is that I add some files to the .ignore file that I don't want to search. But then I also cannot open them with the fuzzy search anymore. The reason I add them to .ignore is because they are big files that will often match my search, such as csv files, a dev database dump or a vendored minified js file. \r\n\r\nThe addition of a `--no-ignore-dot-ignore` flag would solve this problem for me."
+check = "cargo test --test integration f1138_no_ignore_dot"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/feature.rs"]

@@ -1,0 +1,7 @@
+prompt = "When using `ripgrep`, the `--no-ignore` flag does not negate a previous `--ignore-file` argument.  There does not seem to be a way to \"ignore\" a manually-added `--ignore-file`.\r\n\r\n```\r\n$ cat .gitignore\r\n*\r\n\r\n$ cat rg-ignore-file\r\n*Test*\r\n\r\n$ rg --no-ignore Foo\r\nFileA.c\r\n1:Foo\r\n\r\nFileTestA.c\r\n1:Foo\r\n\r\n$ rg --ignore-file=rg-ignore-file --no-ignore Foo\r\nFileA.c\r\n1:Foo\r\n```"
+check = "cargo test --test integration f1466_no_ignore_files"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/feature.rs"]
