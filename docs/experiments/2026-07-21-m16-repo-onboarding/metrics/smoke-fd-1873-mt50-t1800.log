@@ -1,0 +1,7 @@
+[fd-1873-path-sep] 1/1 실행 중… (시드 0)
+[fd-1873-path-sep] 1/1 — 실패 (RepetitionStop, 18턴, 337.4s)
+과제                                통과      엄격      평균 턴      평균 시간
+fd-1873-path-sep                 0/1     0/1      18.0     337.4s
+전체 통과율 0.0% (0/1) · 엄격 0.0% (0/1) · 거짓 성공 finish 0 · 평균 337.4s/런 (시드 0부터, timeout×3)
+
+리포트: /Users/sgj/develop/loco/.loco/eval/20260721T135116Z/report.json

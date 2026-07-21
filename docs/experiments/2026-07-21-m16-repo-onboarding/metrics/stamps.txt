@@ -1,0 +1,5 @@
+approval_commit b230fb1
+HEAD b230fb1c0f7f41795853ebf5182ca5c1fac4e8a7
+date_utc 2026-07-21T131029Z
+control_batch_launch 2026-07-21T131440Z
+user_pause 2026-07-21T131555Z

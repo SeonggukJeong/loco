@@ -1,0 +1,19 @@
+=== fixture target / .loco ===
+=== config ===
+# M16 control arm — pre-registration §2-2
+context_tokens = 8192
+max_output_tokens = 4096
+command_timeout_secs = 60
+base_url = "http://localhost:8080/v1"
+repo_notes = false
+task_toml_count=17
+=== verify tasks ===
+=== verify tasks-large ===
+=== verify tasks-real ===
+serve_pid=17871
+server_ready_after_3s
+=== models ===
+{"models":[{"name":"ornith","model":"ornith","modified_at":"","size":"","digest":"","type":"model","description":"","tags":[""],"capabilities":["completion"],"parameters":"","details":{"parent_model":"","format":"gguf","family":"","families":[""],"parameter_size":"","quantization_level":""}}],"object":"list","data":[{"id":"ornith","aliases":["ornith"],"tags":[],"object":"model","created":1784639670,"owned_by":"llamacpp","meta":{"vocab_type":2,"n_vocab":248320,"n_ctx":37632,"n_ctx_train":262144,"n_embd":4096,"n_params":8953803264,"size":5618141184,"ftype":"Q4_K - Medium"}}]}=== n_ctx_slot ===
+0.02.773.707 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 37632, kv_unified = 'false'
+=== json_schema ===
+json_schema_http=200

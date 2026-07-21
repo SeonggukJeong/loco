@@ -1,0 +1,8 @@
+arm=control batch_start 2026-07-21T131440Z
+HEAD b230fb1c0f7f41795853ebf5182ca5c1fac4e8a7
+config:
+context_tokens = 8192
+max_output_tokens = 4096
+base_url = "http://localhost:8080/v1"
+repo_notes = false
+=== start control-B1 2026-07-21T131440Z ===

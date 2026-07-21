@@ -1,0 +1,7 @@
+[delta-1089-whole-file-commit] 1/1 실행 중… (시드 0)
+[delta-1089-whole-file-commit] 1/1 — 실패 (Timeout, 11턴, 605.0s)
+과제                                통과      엄격      평균 턴      평균 시간
+delta-1089-whole-file-commit     0/1     0/1      11.0     605.0s
+전체 통과율 0.0% (0/1) · 엄격 0.0% (0/1) · 거짓 성공 finish 0 · 평균 605.0s/런 (시드 0부터, timeout×1)
+
+리포트: /Users/sgj/develop/loco/.loco/eval/20260721T132632Z/report.json

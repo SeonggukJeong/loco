@@ -1,0 +1,23 @@
+smoke_start 2026-07-21T131901Z HEAD=3edeb88
+smoke_end rc=0 stamp=[20260721T131902Z] 2026-07-21T132450Z
+STAMP=20260721T131902Z
+smoke_start delta-1089-whole-file-commit 2026-07-21T132631Z
+smoke_end delta-1089-whole-file-commit rc=0 stamp=[20260721T132632Z] 2026-07-21T133706Z
+diag_maxturns_start 2026-07-21T133939Z HEAD=c9ffe36
+diag_maxturns_end rc=0 stamp=[20260721T133940Z] 2026-07-21T134947Z
+diag_t1800_start 2026-07-21T135115Z HEAD=e4ae3ed
+diag_t1800_end rc=0 stamp=[20260721T135116Z] 2026-07-21T135656Z
+smoke_thrifty_start 2026-07-21T140557Z HEAD=b3e3af1
+smoke_thrifty_end rc=0 stamp=[20260721T140558Z] 2026-07-21T143611Z
+smoke_brevity_start 2026-07-21T145614Z HEAD=ccce7c1
+smoke_brevity_end rc=0 stamp=[20260721T145615Z] 2026-07-21T150110Z
+smoke_b1b2_start 20260721T151515Z HEAD=e4c3b54
+smoke_b1b2_end rc= stamp=[20260721T151524Z] 20260721T154536Z
+smoke_length_salvage_start 20260721T155200Z HEAD=d12756d
+smoke_length_salvage_end rc= stamp=[20260721T155209Z] 20260721T160806Z
+smoke_length_cap_start 20260721T161021Z HEAD=14c57c3
+smoke_length_cap_end rc= stamp=[20260721T161025Z] 20260721T161640Z
+smoke_notes_path_start 20260721T162005Z HEAD=a4494a3
+smoke_notes_path_end rc= stamp=[20260721T162009Z] 20260721T162516Z
+smoke_stutter_cap_start 20260721T162602Z HEAD=84ed9a9
+smoke_stutter_cap_end rc= stamp=[20260721T162606Z] 20260721T162934Z

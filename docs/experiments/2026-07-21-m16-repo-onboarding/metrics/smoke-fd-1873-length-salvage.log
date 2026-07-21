@@ -1,0 +1,4 @@
+   Compiling loco v0.1.0 (/Users/sgj/develop/loco)
+    Finished `release` profile [optimized] target(s) in 3.83s
+     Running `target/release/loco eval tasks-real --repeats 1 --seed 0 --timeout-scale 3 --filter fd-1873-path-sep`
+[fd-1873-path-sep] 1/1 실행 중… (시드 0)
