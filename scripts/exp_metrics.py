@@ -75,6 +75,16 @@ MARKS = {
     # **분모** 역할이다(CLAUDE.md 명시). 문자열은 tools/diff.rs에서 문자 그대로
     # 복사(수동 미러 — 자동 검출 없음, 위 length_retry·args_tool_key/switch와 같은 사정)
     "model_diff_trunc": "[diff truncated]",
+    # M16 T5 — repo notes 장치 마커. 문자열은 Rust 상수에서 문자 그대로 복사
+    # (드리프트 감시 대상 — 위 args_tool_key/switch·length_retry와 같은 사정):
+    #   notes_schema_reject → tools/update_repo_notes.rs::NOTES_SCHEMA_REJECT_PREFIX
+    #   notes_mut_gate      → notes/state.rs::NOTES_MUT_GATE_MARK
+    #   notes_stale_finish  → notes/state.rs::NOTES_STALE_MARK
+    #   notes_updates       → tools/update_repo_notes.rs::NOTES_UPDATE_OK_PREFIX
+    "notes_schema_reject": "repo notes schema:",
+    "notes_mut_gate": "repo notes mut gate:",
+    "notes_stale_finish": "repo notes stale:",
+    "notes_updates": "repo notes updated:",
 }
 COLS = ["run", "outcome", "passed"] + list(MARKS) + [
     "sr_recovered", "sr_recovery_denom", "finish_missing_maxrun", "perturb_turns", "stop_cause",
@@ -94,6 +104,10 @@ COLS = ["run", "outcome", "passed"] + list(MARKS) + [
     # ("몇 번 훑었나") — 단위가 다르다. 배치 집계는 reads/greps/lists 모두 합
     # (est_ratio_max만 최대다)
     "nav_hit", "fix_hit", "reads", "greps", "lists",
+    # M16 T5 — 인증 notes 파일 길이의 런 중 최댓값(§5-3). 출처 우선순위:
+    # transcript extra kind `notes_bytes_max`(session.record_extra) → 성공
+    # `repo notes updated: … (N bytes)` 줄 파싱 max → flag-off/부재 시 "-"
+    "notes_bytes_max",
 ]
 
 # M12 §3-1 badargs_streak()이 세는 "missing field" BadArgs 접두 — tools/mod.rs
@@ -248,6 +262,11 @@ def run_metrics(events):
     # 고치는 자리에서 재발하지 않도록 여기서 함께 선언한다)
     read_set, edit_set = set(), set()   # T15 Step 1이 touch 이벤트로 채운다
     grep_calls, list_calls = 0, 0
+    # M16 T5 — notes_bytes_max. extra 가 있으면 **마지막** 유효 값(Rust가
+    # scan/write 때마다 현재 bytes_max()를 다시 기록하므로 last == 런 종료 시점
+    # 값). 없으면 성공 줄 `(N bytes)` 파싱값의 max. 둘 다 없으면 "-" (flag off).
+    notes_bytes_from_extra = None   # int | None — 마지막 유효 extra
+    notes_bytes_from_success = None  # int | None — success 줄 max
     for e in events:
         kind, content = e.get("kind"), e.get("content") or ""
         if kind == "assistant":
@@ -256,6 +275,21 @@ def run_metrics(events):
         # 아니라 별도 user 이벤트로 남는다 (baselines.md 추출 레시피)
         for k, m in MARKS.items():
             counts[k] += content.count(m)
+        # 성공 update_repo_notes 본문에서 바이트 수 폴백 파싱
+        # (형식: "repo notes updated: .loco/notes/_root.md (420 bytes)")
+        if content.startswith(MARKS["notes_updates"]) and content.endswith(" bytes)"):
+            open_paren = content.rfind("(")
+            if open_paren >= 0:
+                num = content[open_paren + 1: -len(" bytes)")]
+                try:
+                    n = int(num)
+                except ValueError:
+                    n = None
+                if n is not None:
+                    notes_bytes_from_success = (
+                        n if notes_bytes_from_success is None
+                        else max(notes_bytes_from_success, n)
+                    )
         if kind == "usage":
             u = json.loads(content)
             p, est = u.get("prompt_tokens"), u.get("estimate_tokens")
@@ -304,6 +338,14 @@ def run_metrics(events):
                 grep_calls += 1
             elif tool == "list_files":
                 list_calls += 1
+            continue
+        # M16 T5 — kind 는 notes/state.rs::NOTES_BYTES_MAX_KIND ("notes_bytes_max")
+        # 와 문자 일치. last_body 오염 방지를 위해 반드시 continue (usage/pack 선례).
+        if kind == "notes_bytes_max":
+            try:
+                notes_bytes_from_extra = int(content.strip())
+            except ValueError:
+                pass
             continue
         last_body = content
         # finish 인자누락 연속 스트릭(스펙 §7-3): tool_result가 끼면 리셋
@@ -375,6 +417,13 @@ def run_metrics(events):
             pending.append(2)
             p = str(args.get("path") or "?")
             sr_files[p] = sr_files.get(p, 0) + 1
+    # M16 T5: extra 우선, 없으면 성공 줄 max, 둘 다 없으면 "-" (flag off / 미기록)
+    if notes_bytes_from_extra is not None:
+        notes_bytes_max = str(notes_bytes_from_extra)
+    elif notes_bytes_from_success is not None:
+        notes_bytes_max = str(notes_bytes_from_success)
+    else:
+        notes_bytes_max = "-"
     tok = {
         "max_prompt": max_prompt, "max_est": max_est,
         "est_ratio_max": est_ratio_max, "budget_ratio_max": budget_ratio_max,
@@ -384,6 +433,7 @@ def run_metrics(events):
         "usage_rows": usage_rows,          # §5-3 회귀 입력
         "read_set": read_set, "edit_set": edit_set,   # T15가 채운다
         "grep_calls": grep_calls, "list_calls": list_calls,
+        "notes_bytes_max": notes_bytes_max,  # M16 T5 — 튜플 arity 안 건드림
     }
     return (counts, recovered, denom, fin_max, perturb_turns, last_body,
             first_mut_turn, cargo_after_mut, status_in_args, sr_files, perturb_ext,
@@ -531,7 +581,9 @@ def process(stamp_dir):
                 str(tok["inline_sys_turns"]), str(protected_edits)]
         # reads=집합 크기(고유 파일 수), greps/lists=호출 수 — 단위가 다르다(브리프 Step 2)
         row += [nav_hit, fix_hit, str(len(tok["read_set"])),
-                str(tok["grep_calls"]), str(tok["list_calls"])]
+                str(tok["grep_calls"]), str(tok["list_calls"]),
+                # M16 T5 — 이미 str ("-" | "N"); 튜플 폭 변경 없이 tok 경유
+                tok["notes_bytes_max"]]
         print("\t".join(row))
         batch_max_prompt = max(batch_max_prompt, tok["max_prompt"])
         batch_ratio = max(batch_ratio, tok["est_ratio_max"])
@@ -1435,6 +1487,96 @@ def selftest():
     assert "r_obs=1.3000" in session_out, session_out
     assert "first_turn_prompt_tokens=1000" in session_out, session_out
     assert "pack_fired=1" in session_out, session_out
+
+    # ── M16 T5 — notes MARKS 4종 + notes_bytes_max 컬럼 ──────────────────
+    # 문자열은 Rust 상수와 문자 그대로 일치해야 한다:
+    #   NOTES_SCHEMA_REJECT_PREFIX / NOTES_UPDATE_OK_PREFIX (tools/update_repo_notes.rs)
+    #   NOTES_MUT_GATE_MARK / NOTES_STALE_MARK / NOTES_BYTES_MAX_KIND (notes/state.rs)
+    # 교정·게이트 노트는 user/tool_result로 남고, notes_bytes_max 는
+    # session.record_extra 의 kind=notes_bytes_max extra 이벤트다.
+    events_notes = [
+        ev("notes_bytes_max", "0"),  # start-scan empty → 0 기록
+        ev("tool_result",
+           "repo notes schema: missing required section `summary`\n\n# root template…",
+           "update_repo_notes"),
+        ev("tool_result",
+           "repo notes mut gate: code edit of `src/a.rs` blocked — need certified `_root`. "
+           "Call `update_repo_notes` first (root summary+routes; dirs role+entrypoints).",
+           "edit_file"),
+        ev("user",
+           "repo notes stale: you edited code but did not update notes for: src. "
+           "Call update_repo_notes on each listed key, then finish."),
+        ev("tool_result",
+           "repo notes updated: .loco/notes/_root.md (420 bytes)",
+           "update_repo_notes"),
+        ev("notes_bytes_max", "420"),  # post-write recompute — prefer last extra
+    ]
+    counts_notes = run_metrics(events_notes)[0]
+    assert counts_notes["notes_schema_reject"] == 1, counts_notes
+    assert counts_notes["notes_mut_gate"] == 1, counts_notes
+    assert counts_notes["notes_stale_finish"] == 1, counts_notes
+    assert counts_notes["notes_updates"] == 1, counts_notes
+    assert run_metrics(events_notes)[12]["notes_bytes_max"] == "420", \
+        run_metrics(events_notes)[12]
+
+    # prefer transcript extra over success-line parse (extra=50 wins over success 999)
+    events_prefer = [
+        ev("tool_result",
+           "repo notes updated: .loco/notes/src.md (999 bytes)",
+           "update_repo_notes"),
+        ev("notes_bytes_max", "50"),
+    ]
+    assert run_metrics(events_prefer)[12]["notes_bytes_max"] == "50"
+
+    # no extra → max of success-line byte counts
+    events_fallback = [
+        ev("tool_result",
+           "repo notes updated: .loco/notes/_root.md (100 bytes)",
+           "update_repo_notes"),
+        ev("tool_result",
+           "repo notes updated: .loco/notes/src.md (250 bytes)",
+           "update_repo_notes"),
+    ]
+    assert run_metrics(events_fallback)[12]["notes_bytes_max"] == "250"
+
+    # flag-off / missing → "-"
+    assert run_metrics([ev("tool_result", "ok", "read_file")])[12]["notes_bytes_max"] == "-"
+
+    # notes_bytes_max extra must continue (not pollute last_body / stop_cause)
+    events_nbm_last = [
+        ev("tool_result", sr, "edit_file"),
+        ev("notes_bytes_max", "77"),
+    ]
+    last_nbm = run_metrics(events_nbm_last)[5]
+    assert last_nbm == sr, last_nbm
+    assert stop_cause("repetition_stop", last_nbm) == "sr", last_nbm
+
+    # process() 실경로 — 이름 기반 컬럼 접근(헤더/행 폭 불일치 방지, M15 선례)
+    with tempfile.TemporaryDirectory() as stamp_dir:
+        report = {"tasks": [{"name": "notes-demo", "runs": [
+            {"repeat": 0, "outcome": "finished", "passed": True, "protected_edits": 0},
+        ]}]}
+        with open(os.path.join(stamp_dir, "report.json"), "w") as f:
+            json.dump(report, f)
+        with open(os.path.join(stamp_dir, "run-notes-demo-0.jsonl"), "w") as f:
+            for e in events_notes:
+                f.write(json.dumps(e) + "\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            process(stamp_dir)
+        out_lines = buf.getvalue().rstrip("\n").split("\n")
+        header = out_lines[1].split("\t")
+        assert header == COLS, (len(header), len(COLS),
+                                [a for a, b in zip(header, COLS) if a != b]
+                                or f"len {len(header)} vs {len(COLS)}")
+        row = out_lines[2].split("\t")
+        assert len(row) == len(COLS), (len(row), len(COLS))
+        col = {name: i for i, name in enumerate(header)}
+        assert row[col["notes_schema_reject"]] == "1", row
+        assert row[col["notes_mut_gate"]] == "1", row
+        assert row[col["notes_stale_finish"]] == "1", row
+        assert row[col["notes_updates"]] == "1", row
+        assert row[col["notes_bytes_max"]] == "420", row
 
     print("selftest ok")
 
