@@ -97,9 +97,26 @@ Your previous response was cut off by the output token limit — it was prose or
 Output ONLY one JSON object and stop (no analysis, no markdown fences). \
 {\"thought\":\"<≤12 words>\",\"action\":{\"tool\":\"<name>\",\"args\":{...}}}. Keep args tiny.";
 
-/// unsalvaged length 직후 일시 출력 상한 — 4096 토큰 산문 루프가 벽시계를 태우는 것을 막는다.
-/// 성공 턴(비-length 파싱 또는 salvage)에서 원복.
+/// unsalvaged length / JSON stutter salvage 직후 일시 출력 상한 — 4096 토큰
+/// 산문·동일 JSON 복붙 루프가 벽시계를 태우는 것을 막는다.
+/// 비-length 정상 턴에서 원복.
 const LENGTH_OUTPUT_CAP: u32 = 1024;
+
+/// length salvage 직후 — 모델이 동일 JSON을 max_tokens까지 복붙한 경우.
+pub(crate) const LENGTH_STUTTER_NOTE: &str = "\
+You repeated the same JSON turn many times until the output limit. \
+Next turn: emit that one JSON object **once**, then stop. Do not paste it again.";
+
+/// length blob이 salvage compact보다 훨씬 크거나 `"action"` 키가 여러 번이면
+/// JSON stutter(동일 턴 복붙)로 본다.
+fn is_json_stutter(blob: &str, compact: &str) -> bool {
+    let action_hits = blob.matches("\"action\"").count();
+    if action_hits >= 2 {
+        return true;
+    }
+    let floor = compact.len().saturating_mul(3).max(600);
+    blob.len() >= floor
+}
 
 /// §4-2(c) 하한 — max_output_tokens가 context_tokens를 넘겨도 예산이 0이 되지
 /// 않게 한다. 0이면 pack()이 시스템 프롬프트와 마지막 메시지만 남긴다
@@ -401,8 +418,6 @@ impl<C: LlmClient> Agent<C> {
                 session.record_extra("assistant", blob);
                 if let Ok(turn) = parse_turn(blob) {
                     // salvage 성공 — 히스토리에는 **한 턴분**만 (반복 blob 전체 X)
-                    length_fail_streak = 0;
-                    self.max_output_tokens = base_max_output_tokens;
                     let compact = serde_json::json!({
                         "thought": turn.thought,
                         "action": {
@@ -411,12 +426,32 @@ impl<C: LlmClient> Agent<C> {
                         }
                     })
                     .to_string();
+                    // 동일 JSON이 max_tokens까지 복붙된 stutter?
+                    // (smoke: 한 줄 grep 턴 × 수십 회 → 15KB blob)
+                    let stutter = is_json_stutter(blob, &compact);
+                    length_fail_streak = 0;
+                    if stutter {
+                        // 성공 salvage라도 상한은 유지 — 다음 요청이 다시 4096을
+                        // 태우며 같은 어트랙터에 빠지지 않게 한다
+                        self.max_output_tokens = base_max_output_tokens.min(LENGTH_OUTPUT_CAP);
+                        session.push_recovery_notice(LENGTH_STUTTER_NOTE);
+                        notice_recorded!(
+                            session,
+                            on_event,
+                            format!(
+                                "(응답 잘림 — 첫 JSON 회수·stutter, max_tokens≤{})",
+                                self.max_output_tokens
+                            )
+                        );
+                    } else {
+                        self.max_output_tokens = base_max_output_tokens;
+                        notice_recorded!(
+                            session,
+                            on_event,
+                            "(응답 잘림 — 첫 JSON 턴 회수)".to_string()
+                        );
+                    }
                     session.push(ChatMessage::assistant(compact));
-                    notice_recorded!(
-                        session,
-                        on_event,
-                        "(응답 잘림 — 첫 JSON 턴 회수)".to_string()
-                    );
                     length_salvaged = Some(turn);
                 } else {
                     // unsalvaged: 산문/불완전 JSON — 스트릭 + 출력 상한 + 교정 문구
@@ -1618,7 +1653,7 @@ mod tests {
     #[tokio::test]
     async fn length_stutter_salvages_first_complete_json_turn() {
         // M16 forensic: model repeats one complete short turn until max_tokens.
-        // Salvage the first object instead of LENGTH_RECOVERY loop.
+        // Salvage the first object instead of LENGTH_RECOVERY loop; keep max_tokens capped.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
         let one = r#"{"thought": "read it", "action": {"tool": "read_file", "args": {"path": "a.txt"}}}"#;
@@ -1628,13 +1663,19 @@ mod tests {
             ok(&finish("done")),
         ]);
         let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        agent.max_output_tokens = 4096;
         let mut session = new_session(&agent);
         let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
         assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
         // no LENGTH_RECOVERY — salvage proceeded
         assert!(
-            !session.messages().iter().any(|m| m.content.contains("cut off")),
-            "should not inject LENGTH_RECOVERY when first JSON is a full turn:\n{:?}",
+            !session.messages().iter().any(|m| m.content.contains("cut off by the output token limit. Respond")),
+            "should not inject plain LENGTH_RECOVERY when first JSON is a full turn:\n{:?}",
+            session.messages()
+        );
+        assert!(
+            session.messages().iter().any(|m| m.content.contains("repeated the same JSON")),
+            "stutter note missing: {:?}",
             session.messages()
         );
         // history holds compact single turn, not the full stutter blob
@@ -1653,6 +1694,15 @@ mod tests {
             session.messages().iter().any(|m| m.content.contains("hi") || m.content.contains("a.txt")),
             "read_file should have run: {:?}",
             session.messages()
+        );
+        // request after salvage is capped (2nd LLM call)
+        let reqs = script.requests.lock().unwrap();
+        assert!(reqs.len() >= 2, "need ≥2 requests");
+        assert_eq!(
+            reqs[1].max_tokens,
+            Some(LENGTH_OUTPUT_CAP),
+            "stutter salvage must cap next max_tokens: {:?}",
+            reqs.iter().map(|r| r.max_tokens).collect::<Vec<_>>()
         );
     }
 
