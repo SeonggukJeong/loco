@@ -139,7 +139,15 @@ fill_cache() {
   # 된다. 대상 4레포 중 ripgrep(HomebrewFormula)·just(www/man/{en,zh})가 심링크를
   # 가지므로 **조달 자체가 불가능해진다** — 그리고 그것은 T3의 "심링크는 스킵한다"
   # 정책과 이 스크립트 자신의 symlinks.txt 주석과도 정면으로 모순이다
-  git -C "$git_dir" ls-tree -r --name-only "$sha" | LC_ALL=C sort > "$meta/tree-paths"
+  # 비교용 ls-tree 경로 집합. ⚠ **gitlink(mode 160000, 서브모듈)는 제외한다** —
+  # `git archive`는 서브모듈 내용을 펼치지 않고 gitlink 항목도 아카이브에 안 넣는다.
+  # 그래서 bat 같은 서브모듈 다수 레포에서 export-ignore 0건인데도 전 서브모듈 경로가
+  # "의심"으로 잡혀 조달이 죽었다(M15 T21 재실사 실측). gitlink ≠ export-ignore.
+  # 심링크(120000)는 아카이브에 남으므로 그대로 포함(아래 extracted와 대칭).
+  git -C "$git_dir" ls-tree -r "$sha" \
+    | grep -v '^160000 ' \
+    | cut -f2 \
+    | LC_ALL=C sort > "$meta/tree-paths"
   # 비교용: 일반 파일 **+ 심링크**. 트리에는 메타가 없으므로 이름 필터가 불필요하다
   ( cd "$tree" && find . \( -type f -o -type l \) | sed 's|^\./||' | LC_ALL=C sort ) \
       > "$meta/extracted"
