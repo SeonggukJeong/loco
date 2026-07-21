@@ -141,6 +141,30 @@ mod tests {
     }
 
     #[test]
+    fn storage_prefix_path_writes_under_single_notes_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = UpdateRepoNotes
+            .run(
+                &serde_json::json!({
+                    "path": ".loco/notes/_root",
+                    "content": valid_root()
+                }),
+                &ctx(&dir),
+            )
+            .unwrap();
+        assert!(out.contains(".loco/notes/_root.md"), "{out}");
+        assert!(
+            !out.contains(".loco/notes/.loco/notes/"),
+            "must not dual-prefix: {out}"
+        );
+        assert!(dir.path().join(".loco/notes/_root.md").is_file());
+        assert!(!dir
+            .path()
+            .join(".loco/notes/.loco/notes/_root.md")
+            .exists());
+    }
+
+    #[test]
     fn schema_fail_prefixes_and_includes_template() {
         let dir = tempfile::tempdir().unwrap();
         let err = UpdateRepoNotes

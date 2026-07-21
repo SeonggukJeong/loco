@@ -24,6 +24,9 @@ impl std::error::Error for PathError {}
 /// Normalize a notes key (tool `path` arg).
 ///
 /// Allowed: collapse `//`, strip leading `./`, `\`→`/`, strip trailing `.md`.
+/// Models often pass a storage-relative path (`.loco/notes/_root`); strip that
+/// prefix so the key is `_root` / `src`, not `.loco/notes/_root` (which would
+/// write under `.loco/notes/.loco/notes/` and never satisfy the mut-gate).
 /// Rejected: `.`/`..` segments, NUL, absolute/escape, empty.
 /// Only `_root` is the root key — bare `root` stays the ordinary key `"root"`.
 pub fn normalize_key(raw: &str) -> Result<String, PathError> {
@@ -47,6 +50,13 @@ pub fn normalize_key(raw: &str) -> Result<String, PathError> {
         return Err(PathError::Invalid(format!(
             "absolute notes key not allowed: {raw}"
         )));
+    }
+    // Strip storage prefix (once, after ./ collapse). Case-sensitive on purpose.
+    for prefix in [".loco/notes/", "loco/notes/"] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            s = rest.to_string();
+            break;
+        }
     }
     if let Some(stripped) = s.strip_suffix(".md") {
         s = stripped.to_string();
@@ -195,6 +205,18 @@ mod tests {
         assert_eq!(normalize_key("src\\walk").unwrap(), "src/walk");
         assert_eq!(normalize_key("src/walk.md").unwrap(), "src/walk");
         assert_eq!(normalize_key("_root.md").unwrap(), "_root");
+    }
+
+    #[test]
+    fn normalize_strips_loco_notes_storage_prefix() {
+        // Smoke regression: model passed path=".loco/notes/_root" → dual-dir write + dead cert
+        assert_eq!(normalize_key(".loco/notes/_root").unwrap(), "_root");
+        assert_eq!(normalize_key(".loco/notes/src").unwrap(), "src");
+        assert_eq!(normalize_key(".loco/notes/src/walk.md").unwrap(), "src/walk");
+        assert_eq!(normalize_key("./.loco/notes/_root.md").unwrap(), "_root");
+        assert_eq!(normalize_key("loco/notes/src").unwrap(), "src");
+        // bare key still works
+        assert_eq!(normalize_key("_root").unwrap(), "_root");
     }
 
     #[test]
