@@ -84,9 +84,11 @@ Do not call finish with empty args again.";
 /// 가설의 개입값, 0단계 확정). 스트릭이 끊기면 즉시 원복, 래치 없음
 const SR_PERTURB_TEMPERATURE: f32 = 0.7;
 
-/// length 턴 회복 문구 (M9~M13에서 문자열 동일 — 상수로 승격해 중복 제거가 참조한다)
+/// length 턴 회복 문구 (M9~M13 핵심 마커 `cut off by the output token limit` 유지 —
+/// exp_metrics `length_retry` 부분문자열). M16: stutter 루프에 한 줄 추가.
 pub(crate) const LENGTH_RECOVERY: &str = "Your previous response was cut off by the output token limit. \
-                                          Respond again with exactly one, much shorter JSON turn.";
+Respond again with exactly one short JSON turn (one thought fragment + one tool call). \
+Do not paste the same JSON object more than once. Keep args tiny.";
 
 /// §4-2(c) 하한 — max_output_tokens가 context_tokens를 넘겨도 예산이 0이 되지
 /// 않게 한다. 0이면 pack()이 시스템 프롬프트와 마지막 메시지만 남긴다
@@ -365,18 +367,16 @@ impl<C: LlmClient> Agent<C> {
                 session.record_extra("finish_reason", fr);
             }
 
-            // 출력 잘림은 파싱 실패와 구분해 교정한다 (스펙 §9). 같은 요청 재시도는
-            // 같은 지점에서 다시 잘리므로 "더 짧게"를 지시. 턴을 소모해 max_turns가
-            // length 반복의 상한이 되게 한다 (스펙 §3 사각지대)
-            if resp.finish_reason() == Some("length") {
-                // §4-2(b): 절단 blob을 **히스토리에 push하지 않는다**. 예산 초과를
-                // 만드는 것이 이 blob이고, 초과가 쌍 삭제를 부르면 사용자 과제가
-                // 함께 사라진다(M13 세션 Z1). 트랜스크립트에는 남긴다 —
-                // M13의 디코딩 퇴화 분석이 전부 이 blob을 읽어 만들어졌다
-                // §4-2-2: 최종 상태는 "히스토리에 push 안 함 + 트랜스크립트에만".
-                // B-1은 그 트랜스크립트 레코드의 **내용**을 "(empty)"에서 추론 꼬리로
-                // 바꾼다 — content가 비어도 모델은 예산을 추론에 다 쓴 것이지
-                // 아무것도 안 낸 것이 아니다
+            // 출력 잘림 (finish_reason=length). 기본 정책은 스펙 §9: blob은
+            // 히스토리에 안 넣고 "더 짧게" 교정. 단 M16 forensic: 모델이 **완성된
+            // 짧은 JSON 턴을 max_tokens까지 반복**하는 stutter가 흔하다 — 그 경우
+            // first_json_object salvage로 턴을 살리고 회복 루프를 타지 않는다.
+            // 살리지 못하면 기존 recovery + 턴 소모(max_turns 상한).
+            let length_cut = resp.finish_reason() == Some("length");
+            let mut length_salvaged: Option<protocol::ModelTurn> = None;
+            if length_cut {
+                // §4-2(b)/(§4-2-2): 절단 blob은 히스토리 push 금지·트랜스크립트만.
+                // 비어 있으면 reasoning 꼬리(진단용) — 히스토리에는 여전히 안 넣음.
                 let t = resp.text();
                 let blob = if !t.is_empty() {
                     t
@@ -385,92 +385,113 @@ impl<C: LlmClient> Agent<C> {
                     if r.is_empty() { "(empty)" } else { r }
                 };
                 session.record_extra("assistant", blob);
-                // push가 아니라 push_recovery_notice: ① assistant를 건너뛰었으므로
-                // 꼬리가 user다 — 병합해야 role 교대가 유지되는데 교정 담당
-                // merge_adjacent_same_role는 pack()의 쌍 삭제 루프 안에서만 돌고
-                // (b)의 목적이 바로 pack 미발동이라 영영 교정되지 않는다
-                // ② 연속 주입 중복은 pack()이 회수할 수 없는 자리에 쌓인다
-                // M16: notes-shaped cut or post-mut-gate → thrifty notes recovery once
-                let notes_cut = self.repo_notes
-                    && !notes_output_corrected
-                    && (saw_mut_gate
-                        || crate::tools::update_repo_notes::looks_like_notes_output(blob));
-                if notes_cut {
-                    notes_output_corrected = true;
-                    session.push_recovery_notice(
-                        crate::tools::update_repo_notes::NOTES_OUTPUT_CORRECTION,
-                    );
+                if let Ok(turn) = parse_turn(blob) {
+                    // salvage 성공 — 히스토리에는 **한 턴분**만 (반복 blob 전체 X)
+                    let compact = serde_json::json!({
+                        "thought": turn.thought,
+                        "action": {
+                            "tool": turn.action.tool,
+                            "args": turn.action.args,
+                        }
+                    })
+                    .to_string();
+                    session.push(ChatMessage::assistant(compact));
                     notice_recorded!(
                         session,
                         on_event,
-                        "(응답 잘림 — notes thrifty 교정 주입)".to_string()
+                        "(응답 잘림 — 첫 JSON 턴 회수)".to_string()
                     );
+                    length_salvaged = Some(turn);
                 } else {
-                    session.push_recovery_notice(LENGTH_RECOVERY);
-                    notice_recorded!(
-                        session,
-                        on_event,
-                        "(응답이 잘림 — 더 짧게 다시 요청)".to_string()
-                    );
+                    // push_recovery_notice: assistant를 건너뛰므로 꼬리 user 병합 필요.
+                    // M16: notes-shaped cut or post-mut-gate → thrifty notes recovery once
+                    let notes_cut = self.repo_notes
+                        && !notes_output_corrected
+                        && (saw_mut_gate
+                            || crate::tools::update_repo_notes::looks_like_notes_output(blob));
+                    if notes_cut {
+                        notes_output_corrected = true;
+                        session.push_recovery_notice(
+                            crate::tools::update_repo_notes::NOTES_OUTPUT_CORRECTION,
+                        );
+                        notice_recorded!(
+                            session,
+                            on_event,
+                            "(응답 잘림 — notes thrifty 교정 주입)".to_string()
+                        );
+                    } else {
+                        session.push_recovery_notice(LENGTH_RECOVERY);
+                        notice_recorded!(
+                            session,
+                            on_event,
+                            "(응답이 잘림 — 더 짧게 다시 요청)".to_string()
+                        );
+                    }
+                    let _ = status.on_turn(&status_note::TurnCtx {
+                        turn: turns + 1,
+                        max_turns: self.max_turns,
+                        mutation_ok: false,
+                        has_note_channel: false, // record_extra+push_recovery_notice 경로 — 이월
+                        mutated_since_verify,
+                    });
+                    turns += 1;
+                    continue;
                 }
-                let _ = status.on_turn(&status_note::TurnCtx {
-                    turn: turns + 1,
-                    max_turns: self.max_turns,
-                    mutation_ok: false,
-                    has_note_channel: false, // record_extra+push_recovery_notice 경로 — 이월
-                    mutated_since_verify,
-                });
-                turns += 1;
-                continue;
             }
 
             // 파싱 실패는 에러를 되먹여 턴당 총 PARSE_ATTEMPTS회 시도 (스펙 §9).
             // 되먹임(assistant 원문 + user 피드백)은 히스토리에 남는다 — 모델이
             // 자기 실패를 문맥으로 보는 것이 의도. max_turns에는 계상하지 않는다
-            let mut text = resp.text().to_string();
-            let mut attempts = 1;
-            let mut turn = loop {
-                match parse_turn(&text) {
-                    Ok(t) => break t,
-                    Err(feedback) => {
-                        // 빈 assistant content를 거부하는 템플릿이 있어 자리표시자로 대체
-                        session.push(ChatMessage::assistant(if text.is_empty() {
-                            "(empty)".to_string()
-                        } else {
-                            text.clone()
-                        }));
-                        if attempts >= PARSE_ATTEMPTS {
-                            return Ok(AgentOutcome::ParseFailed(text));
+            // length salvage면 재파싱 없이 그 턴으로 진행 (assistant는 위에서 push됨)
+            let mut turn = if let Some(t) = length_salvaged {
+                t
+            } else {
+                let mut text = resp.text().to_string();
+                let mut attempts = 1;
+                let parsed = loop {
+                    match parse_turn(&text) {
+                        Ok(t) => break t,
+                        Err(feedback) => {
+                            // 빈 assistant content를 거부하는 템플릿이 있어 자리표시자로 대체
+                            session.push(ChatMessage::assistant(if text.is_empty() {
+                                "(empty)".to_string()
+                            } else {
+                                text.clone()
+                            }));
+                            if attempts >= PARSE_ATTEMPTS {
+                                return Ok(AgentOutcome::ParseFailed(text));
+                            }
+                            attempts += 1;
+                            on_event(AgentEvent::Notice(format!(
+                                "(응답 파싱 실패 — 재시도 {attempts}/{PARSE_ATTEMPTS})"
+                            )));
+                            // M16: notes-shaped broken JSON → thrifty correction once
+                            let fb = if self.repo_notes
+                                && !notes_output_corrected
+                                && crate::tools::update_repo_notes::looks_like_notes_output(&text)
+                            {
+                                notes_output_corrected = true;
+                                format!(
+                                    "{feedback}\n\n{}",
+                                    crate::tools::update_repo_notes::NOTES_OUTPUT_CORRECTION
+                                )
+                            } else {
+                                feedback.to_string()
+                            };
+                            session.push(ChatMessage::user(fb));
+                            // NOTE (M3 known gap): unlike the primary chat call above, this parse-retry is
+                            // NOT wrapped by the context-overflow shrink-retry loop. An overflow 400 here
+                            // propagates directly (clean error + rollback). Deferred to M4 — extract a
+                            // shared `chat_packed` helper wrapping both call sites. (plan-scoped: the plan
+                            // wrapped only "the turn's chat call".)
+                            let retry = self.chat_with_fallback(session.messages(), on_event).await?;
+                            text = retry.text().to_string();
                         }
-                        attempts += 1;
-                        on_event(AgentEvent::Notice(format!(
-                            "(응답 파싱 실패 — 재시도 {attempts}/{PARSE_ATTEMPTS})"
-                        )));
-                        // M16: notes-shaped broken JSON → thrifty correction once
-                        let fb = if self.repo_notes
-                            && !notes_output_corrected
-                            && crate::tools::update_repo_notes::looks_like_notes_output(&text)
-                        {
-                            notes_output_corrected = true;
-                            format!(
-                                "{feedback}\n\n{}",
-                                crate::tools::update_repo_notes::NOTES_OUTPUT_CORRECTION
-                            )
-                        } else {
-                            feedback.to_string()
-                        };
-                        session.push(ChatMessage::user(fb));
-                        // NOTE (M3 known gap): unlike the primary chat call above, this parse-retry is
-                        // NOT wrapped by the context-overflow shrink-retry loop. An overflow 400 here
-                        // propagates directly (clean error + rollback). Deferred to M4 — extract a
-                        // shared `chat_packed` helper wrapping both call sites. (plan-scoped: the plan
-                        // wrapped only "the turn's chat call".)
-                        let retry = self.chat_with_fallback(session.messages(), on_event).await?;
-                        text = retry.text().to_string();
                     }
-                }
+                };
+                session.push(ChatMessage::assistant(text));
+                parsed
             };
-            session.push(ChatMessage::assistant(text));
             on_event(AgentEvent::Thought(&turn.thought));
 
             // 최종 리뷰 Minor 3(의도된 동작, 문서화만): finish 분기가 아래 M12 §3-2
@@ -1555,6 +1576,47 @@ mod tests {
         assert!(matches!(outcome, AgentOutcome::Finished(_)));
         // 파싱 재시도 피드백이 아니라 "잘렸으니 더 짧게" 교정 (스펙 §9)
         assert!(session.messages().iter().any(|m| m.role == "user" && m.content.contains("cut off")));
+    }
+
+    #[tokio::test]
+    async fn length_stutter_salvages_first_complete_json_turn() {
+        // M16 forensic: model repeats one complete short turn until max_tokens.
+        // Salvage the first object instead of LENGTH_RECOVERY loop.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hi").unwrap();
+        let one = r#"{"thought": "read it", "action": {"tool": "read_file", "args": {"path": "a.txt"}}}"#;
+        let stutter = format!("{one}\n{one}\n{one}");
+        let script = Scripted::new(vec![
+            ok_with_reason(&stutter, "length"),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
+        // no LENGTH_RECOVERY — salvage proceeded
+        assert!(
+            !session.messages().iter().any(|m| m.content.contains("cut off")),
+            "should not inject LENGTH_RECOVERY when first JSON is a full turn:\n{:?}",
+            session.messages()
+        );
+        // history holds compact single turn, not the full stutter blob
+        let asst: Vec<_> = session
+            .messages()
+            .iter()
+            .filter(|m| m.role == "assistant")
+            .map(|m| m.content.as_str())
+            .collect();
+        assert!(
+            asst.iter().any(|c| c.contains("read_file") && c.matches("read_file").count() == 1),
+            "compact assistant expected, got {asst:?}"
+        );
+        // tool actually ran
+        assert!(
+            session.messages().iter().any(|m| m.content.contains("hi") || m.content.contains("a.txt")),
+            "read_file should have run: {:?}",
+            session.messages()
+        );
     }
 
     #[tokio::test]
