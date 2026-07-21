@@ -70,6 +70,13 @@ COLS = ["run", "outcome", "passed"] + list(MARKS) + [
     "first_mut_turn", "cargo_after_mut", "zero_mut_end", "status_in_args", "sr_files",
     "verify_failed", "sr_corr_total", "perturb_turns_ext", "parse_fail_first",
     "finish_nudge_total", "pipe_unreleased",
+    # M15 축 C (§5-2 ①~⑤). est_ratio_max가 §4-1-1의 r_obs이고, 그 정의는
+    # **턴별 비율의 최댓값**이다(평균이 아니다 — 오버플로를 결정하는 것은 최대 턴)
+    "max_prompt", "max_est", "est_ratio_max", "budget_ratio_max",
+    "pack_turns", "pack_elided", "pack_dropped",
+    "overflow_shrink", "overflow_giveup", "inline_sys_turns",
+    # M15 H7 — report.json에서 온다(트랜스크립트에 없다)
+    "protected_edits",
 ]
 
 # M12 §3-1 badargs_streak()이 세는 "missing field" BadArgs 접두 — tools/mod.rs
@@ -203,6 +210,27 @@ def run_metrics(events):
     sr_latched = set()      # 이미 교정을 발화한 파일 (파일별 래치)
     sr_correction_count = 0  # 런당 총 발화 수
     sr_corr_total = 0        # 파일별 누적 단독 귀속 발화 수 (신규 컬럼)
+    # M15 §5-2 ①~⑤ 축 C 누산기. MARKS와 달리 부분문자열 계수가 아니라
+    # 구조화 JSON(session.rs::pack / agent/mod.rs의 usage)을 읽는다 —
+    # 키 이름이 Rust의 serde_json::json! 리터럴과 문자 그대로 같아야 하고
+    # 자동 드리프트 검출이 없다(MARKS 문자열과 같은 사정)
+    max_prompt = 0        # 턴별 서버 실측 입력 토큰의 최댓값
+    max_est = 0           # 같은 턴들의 estimate_tokens 최댓값
+    est_ratio_max = 0.0   # r_obs = max(prompt/estimate) — §4-1-1의 정의(평균 아님)
+    budget_ratio_max = 0.0
+    last_budget = 0
+    pack_turns, pack_elided, pack_dropped = 0, 0, 0
+    inline_sys_turns = 0
+    overflow_shrink, overflow_giveup = 0, 0
+    usage_rows = []       # (prompt, est, messages, inline_system) — §5-3 회귀 입력
+    # ⚠ **아래 넷은 T15가 채우지만 선언은 여기다**. `tok`이 이들을 참조하므로
+    # T14만 적용한 상태에서도 정의돼 있어야 한다 — 선언을 T15로 미루고 참조만
+    # 여기 두면 T14 단독 적용 시 모든 run_metrics 호출이
+    # `NameError: name 'read_set' is not defined`로 죽는다(1R Critical 5와
+    # 같은 형태 — 튜플을 바꾸고 소비자를 전수로 안 갱신한 것 — 가 그 Critical을
+    # 고치는 자리에서 재발하지 않도록 여기서 함께 선언한다)
+    read_set, edit_set = set(), set()   # T15 Step 1이 touch 이벤트로 채운다
+    grep_calls, list_calls = 0, 0
     for e in events:
         kind, content = e.get("kind"), e.get("content") or ""
         if kind == "assistant":
@@ -211,6 +239,37 @@ def run_metrics(events):
         # 아니라 별도 user 이벤트로 남는다 (baselines.md 추출 레시피)
         for k, m in MARKS.items():
             counts[k] += content.count(m)
+        if kind == "usage":
+            u = json.loads(content)
+            p, est = u.get("prompt_tokens"), u.get("estimate_tokens")
+            last_budget = u.get("budget") or last_budget
+            if u.get("inline_system"):
+                inline_sys_turns += 1
+            # prompt_tokens는 서버가 안 주면 None이다 — 0으로 대체하면 §5-3
+            # 회귀가 원점을 지나는 거짓 관측을 얻는다(H12 주석과 같은 사정)
+            if p is not None and est:
+                usage_rows.append((p, est, u.get("messages") or 0, bool(u.get("inline_system"))))
+                max_prompt = max(max_prompt, p)
+                max_est = max(max_est, est)
+                # r_obs는 **턴별 비율의 최댓값**이지 최댓값끼리의 비가 아니다
+                est_ratio_max = max(est_ratio_max, p / est)
+                if last_budget:
+                    budget_ratio_max = max(budget_ratio_max, p / last_budget)
+            continue
+        if kind == "pack":
+            pk = json.loads(content)
+            pack_turns += 1
+            pack_elided += pk.get("elided") or 0
+            pack_dropped += pk.get("dropped") or 0
+            continue
+        if kind == "notice":
+            # 축소 재시도는 M14가, 최종 포기는 M15 H14가 기록한다 — 둘은
+            # 다른 사건이므로 절대 합산하지 않는다(전자는 회복, 후자는 사망)
+            if "히스토리 절삭 후 재시도" in content:
+                overflow_shrink += 1
+            elif "컨텍스트 초과 — context_tokens" in content:
+                overflow_giveup += 1
+            continue
         last_body = content
         # finish 인자누락 연속 스트릭(스펙 §7-3): tool_result가 끼면 리셋
         if MARKS["finish_missing"] in content:
@@ -281,9 +340,19 @@ def run_metrics(events):
             pending.append(2)
             p = str(args.get("path") or "?")
             sr_files[p] = sr_files.get(p, 0) + 1
+    tok = {
+        "max_prompt": max_prompt, "max_est": max_est,
+        "est_ratio_max": est_ratio_max, "budget_ratio_max": budget_ratio_max,
+        "pack_turns": pack_turns, "pack_elided": pack_elided, "pack_dropped": pack_dropped,
+        "overflow_shrink": overflow_shrink, "overflow_giveup": overflow_giveup,
+        "inline_sys_turns": inline_sys_turns,
+        "usage_rows": usage_rows,          # §5-3 회귀 입력
+        "read_set": read_set, "edit_set": edit_set,   # T15가 채운다
+        "grep_calls": grep_calls, "list_calls": list_calls,
+    }
     return (counts, recovered, denom, fin_max, perturb_turns, last_body,
             first_mut_turn, cargo_after_mut, status_in_args, sr_files, perturb_ext,
-            sr_corr_total)
+            sr_corr_total, tok)
 
 
 def stop_cause(outcome, last_result):
@@ -300,6 +369,9 @@ def stop_cause(outcome, last_result):
 
 
 def report_index(stamp_dir):
+    """run 이름 → (outcome, passed, protected_edits, task_name). M15에서
+    protected_edits(H7)와 과제 이름이 추가됐다 — 후자는 §6-4-19①의 과제 단위
+    층화 집계에 필요하다(T15)."""
     idx = {}
     path = os.path.join(stamp_dir, "report.json")
     if not os.path.exists(path):
@@ -307,7 +379,10 @@ def report_index(stamp_dir):
     rep = json.load(open(path))
     for t in rep.get("tasks", []):
         for r in t.get("runs", []):
-            idx[f"run-{t['name']}-{r['repeat']}"] = (r.get("outcome", "?"), r.get("passed"))
+            idx[f"run-{t['name']}-{r['repeat']}"] = (
+                r.get("outcome", "?"), r.get("passed"),
+                r.get("protected_edits", 0), t["name"],
+            )
     return idx
 
 
@@ -321,13 +396,18 @@ def process(stamp_dir):
     zero_mut = {"max_turns": 0, "finished": 0, "other": 0}
     mut_runs, cargo_runs = 0, 0
     parse_fail_total = 0
+    # M15 축 C 배치 수준 누산기. est_ratio_max/max_prompt는 런별 값의 최댓값
+    # (§4-1-1의 r_obs 정의 — 평균이 아니다), 나머지는 배치 총합이다
+    batch_max_prompt = 0
+    batch_ratio = 0.0
+    batch_pack, batch_shrink, batch_giveup, batch_prot = 0, 0, 0, 0
     for path in sorted(glob.glob(os.path.join(stamp_dir, "run-*.jsonl"))):
         events = [json.loads(l) for l in open(path)]
         (counts, rec, den, fin_max, perturb, last,
          first_mut, cargo_mut, st_args, sr_files, perturb_ext,
-         sr_corr_total) = run_metrics(events)
+         sr_corr_total, tok) = run_metrics(events)
         name = os.path.basename(path).removesuffix(".jsonl")
-        outcome, passed = idx.get(name, ("?", None))
+        outcome, passed, protected_edits, _task_name = idx.get(name, ("?", None, 0, "?"))
         cause = stop_cause(outcome, last)
         if cause != "-":
             stops[cause] += 1
@@ -382,7 +462,18 @@ def process(stamp_dir):
                 str(first_mut), str(cargo_mut), zme, str(st_args), files_col,
                 str(verify_failed), str(sr_corr_total), str(perturb_ext), str(pff),
                 str(finish_nudge_total), str(pipe_unreleased)]
+        row += [str(tok["max_prompt"]), str(tok["max_est"]),
+                f"{tok['est_ratio_max']:.4f}", f"{tok['budget_ratio_max']:.4f}",
+                str(tok["pack_turns"]), str(tok["pack_elided"]), str(tok["pack_dropped"]),
+                str(tok["overflow_shrink"]), str(tok["overflow_giveup"]),
+                str(tok["inline_sys_turns"]), str(protected_edits)]
         print("\t".join(row))
+        batch_max_prompt = max(batch_max_prompt, tok["max_prompt"])
+        batch_ratio = max(batch_ratio, tok["est_ratio_max"])
+        batch_pack += tok["pack_turns"]
+        batch_shrink += tok["overflow_shrink"]
+        batch_giveup += tok["overflow_giveup"]
+        batch_prot += protected_edits
     marks = " ".join(f"{k}={totals[k]}" for k in MARKS)
     # M14 T10 Step 1 — 이전엔 "parse_fail_first(총): N  <- 0이 아니면 ..." 형태의
     # 한글 키+서술문이었다. 다른 전 필드처럼 key=value 한 항목으로: 의미(0이 아니면
@@ -394,6 +485,12 @@ def process(stamp_dir):
           f"zero_mut max_turns={zero_mut['max_turns']} finished={zero_mut['finished']} "
           f"other={zero_mut['other']} cargo_after_mut={cargo_runs}/{mut_runs} "
           f"parse_fail_first={parse_fail_total}")
+    # M15 축 C 배치 요약. ⚠ est_ratio_max는 런별 값의 최댓값이다(평균이
+    # 아니다) — §4-1-1이 r_obs를 그렇게 정의했고 T22의 분기 판정이 이 숫자를
+    # 그대로 쓴다
+    print(f"# tokens max_prompt={batch_max_prompt} est_ratio_max={batch_ratio:.4f} "
+          f"pack_turns={batch_pack} overflow_shrink={batch_shrink} "
+          f"overflow_giveup={batch_giveup} protected_edits={batch_prot}")
 
 
 def selftest():
@@ -414,8 +511,7 @@ def selftest():
         ev("tool_result", "wrote file", "write_file"),
         ev("tool_result", "exit code: 0\nok", "run_command"),
     ]
-    (counts, rec, den, fin_max, perturb, _,
-     _, _, _, _, _, _) = run_metrics(events)
+    (counts, rec, den, fin_max, perturb, *_) = run_metrics(events)
     assert counts["sr_error"] == 2, counts
     assert (rec, den) == (2, 2), (rec, den)  # 두 오류 모두 다음 시도(성공)로 회복
     assert fin_max == 0, fin_max
@@ -427,12 +523,12 @@ def selftest():
         ev("tool_result", "Denied: policy", "edit_file"),
         ev("tool_result", sr, "edit_file"),
     ]
-    _, _, _, _, perturb2, _, _, _, _, _, _, _ = run_metrics(events2)
+    _, _, _, _, perturb2, *_ = run_metrics(events2)
     assert perturb2 == 1, perturb2  # Denied 턴 1회만 섭동 하 — 리셋 후 재축적 전
     # finish 정지 분류 (리뷰 I-2): FINISH_ERR는 user 이벤트로 남는다
     fin = "Error: finish requires a string `summary` argument, e.g. ..."
     events3 = [ev("tool_result", sr, "edit_file"), ev("user", fin), ev("user", fin)]
-    _, _, _, fin_max3, _, last3, _, _, _, _, _, _ = run_metrics(events3)
+    _, _, _, fin_max3, _, last3, *_ = run_metrics(events3)
     assert fin_max3 == 2, fin_max3
     assert stop_cause("repetition_stop", last3) == "finish"
     assert stop_cause("repetition_stop", sr) == "sr"
@@ -448,7 +544,7 @@ def selftest():
         ev("tool_result", "Error: edit failed: something else", "edit_file",
            {"path": "b.rs", "search": "[status] files edited", "replace": "y"}),
     ]
-    (c4, _, _, _, _, _, fm4, cm4, sa4, sf4, _, _) = run_metrics(events4)
+    (c4, _, _, _, _, _, fm4, cm4, sa4, sf4, *_) = run_metrics(events4)
     assert c4["status_note"] == 1, c4
     assert c4["pipe_note"] == 1, c4
     assert fm4 == 2, fm4          # 첫 성공 뮤테이션은 두 번째 tool_result(write_file)
@@ -456,7 +552,7 @@ def selftest():
     assert sa4 == 1, sa4          # args 내 [status] 복사 오염 1건
     assert sf4 == {"src/a.rs": 1}, sf4  # S/R 오류 파일 귀속
     # 뮤테이션 0회 런: first_mut_turn == 0 (zero_mut 분류는 process가 outcome으로)
-    (_, _, _, _, _, _, fm5, cm5, _, _, _, _) = run_metrics([ev("tool_result", "x", "read_file")])
+    (_, _, _, _, _, _, fm5, cm5, *_) = run_metrics([ev("tool_result", "x", "read_file")])
     assert (fm5, cm5) == (0, 0), (fm5, cm5)
 
     # M12 §4-1: perturb_turns_ext 확대 — 파일별 비연속 누적(cum>=2)이 섭동을
@@ -728,12 +824,30 @@ def selftest():
     # M14 T10: 같은 이유로 finish_nudge_total·pipe_unreleased도 여기서 process()의
     # 실 출력으로 검증한다(events10을 같은 스탬프에 합친다 — verify_failed·
     # sr_corr_total이 보는 마커와 겹치지 않아 두 기존 단언에 영향 없음).
+    # M15 H15 — 축 C 이벤트 3종. 키 이름은 Rust의 serde_json::json! 리터럴과
+    # 문자 그대로 같아야 한다(session.rs::pack, agent/mod.rs의 usage/notice)
+    events_tokens = [
+        ev("usage", json.dumps({"prompt_tokens": 1000, "completion_tokens": 20,
+                                "estimate_tokens": 800, "messages": 5,
+                                "budget": 25804, "inline_system": False,
+                                "overflow_shrinks": 0})),
+        ev("usage", json.dumps({"prompt_tokens": 2600, "completion_tokens": 30,
+                                "estimate_tokens": 2000, "messages": 9,
+                                "budget": 25804, "inline_system": True,
+                                "overflow_shrinks": 1})),
+        ev("pack", json.dumps({"budget": 25804, "before": 30000, "after": 25000,
+                               "elided": 2, "dropped": 0})),
+        ev("notice", "(컨텍스트 초과로 보임 — 히스토리 절삭 후 재시도 1/2)"),
+        ev("notice", "(컨텍스트 초과 — context_tokens 설정과 서버 로드 설정을 확인하세요)"),
+    ]
     with tempfile.TemporaryDirectory() as stamp_dir:
-        report = {"tasks": [{"name": "demo", "runs": [{"repeat": 0, "outcome": "finished", "passed": True}]}]}
+        report = {"tasks": [{"name": "demo", "runs": [
+            {"repeat": 0, "outcome": "finished", "passed": True, "protected_edits": 2},
+        ]}]}
         with open(os.path.join(stamp_dir, "report.json"), "w") as f:
             json.dump(report, f)
         with open(os.path.join(stamp_dir, "run-demo-0.jsonl"), "w") as f:
-            for e in events7 + events8b + events10:
+            for e in events7 + events8b + events10 + events_tokens:
                 f.write(json.dumps(e) + "\n")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -746,6 +860,38 @@ def selftest():
         assert row[col["sr_corr_total"]] == "1", row        # process()가 run_metrics의 실 반환값을 그대로 쓰는지
         assert row[col["finish_nudge_total"]] == "2", row   # finish_nudge(1) + finish_nudge_pipe(1)의 합산식
         assert row[col["pipe_unreleased"]] == "1", row       # pipe_note를 그대로 미러하는 파생값
+        # M15 H15 — 축 C(§5-2 ①~⑤) 토큰 회계 컬럼.
+        # max_prompt=2600, max_est=2000 → est_ratio_max = 2600/2000 = 1.30
+        # (§4-1-1의 r_obs 정의 = 턴별 prompt_tokens/estimate_tokens의 **최댓값**.
+        #  평균이 아니다 — 오버플로를 결정하는 것은 최대 턴이다)
+        # ⚠ 기존 selftest는 `row`를 **리스트**로 두고 `row[col["verify_failed"]]`로
+        #    접근한다. 그 형태를 따를 것 — `row["max_prompt"]`는 리스트 첨자라 TypeError다
+        assert row[col["max_prompt"]] == "2600", row
+        assert row[col["max_est"]] == "2000", row
+        assert row[col["est_ratio_max"]] == "1.3000", row
+        assert row[col["budget_ratio_max"]] == "0.1008", row   # 2600/25804
+        assert row[col["pack_turns"]] == "1", row
+        assert row[col["pack_elided"]] == "2", row
+        assert row[col["overflow_shrink"]] == "1", row
+        assert row[col["overflow_giveup"]] == "1", row
+        assert row[col["inline_sys_turns"]] == "1", row
+        # ⚠ H7 — 축 C 일곱 항목의 ⑦. **셀프테스트 없이 두면 안 된다**:
+        #    report_index의 `r.get("protected_edits", 0)`이 필드 부재 시 조용히 0을
+        #    주고, 이 컬럼은 §5-2 ⑦이 "리워드 해킹의 **유일한** 기계 관측 발자국"으로
+        #    지정한 것이라 0이 "해킹 없음"으로 읽힌다 — 정확히 fail-open이다.
+        assert row[col["protected_edits"]] == "2", row
+
+    # M15 H15 Trap 3 회귀: notice 분기에 continue가 빠지면 last_body가 notice
+    # 본문으로 덮여, 뒤이은 RepetitionStop의 stop_cause가 sr → other로
+    # 오분류된다(브리프 경고, 재현 확인) — notice가 마지막 이벤트여도 last_body는
+    # 그 직전 tool_result(SR 오류)여야 한다.
+    events_notice_last = [
+        ev("tool_result", sr, "edit_file"),
+        ev("notice", "(컨텍스트 초과 — context_tokens 설정과 서버 로드 설정을 확인하세요)"),
+    ]
+    last_notice = run_metrics(events_notice_last)[5]
+    assert last_notice == sr, last_notice
+    assert stop_cause("repetition_stop", last_notice) == "sr", last_notice
 
     # M13 — parse_fail_first: 첫 assistant가 유효 턴이 아니면 1 (C1형 조용한 실패 포착)
     broken = [
