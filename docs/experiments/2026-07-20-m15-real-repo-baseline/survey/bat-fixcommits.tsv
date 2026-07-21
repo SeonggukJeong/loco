@@ -1,0 +1,194 @@
+5f952066fb6196c33862d39e7fdf9f0f5960f5a2	3735	fix: only offer language names in zsh tab completion for `-l`
+a0c95618c4bf6d3de9e932d1a3ec85b261b629fc	3733	fix: pass --color=never --decorations=never in zsh completions
+cbe791945138acffd8a21b40b04f201bef02f8b6	3228	docs(README): list available --style components in Output style section
+f39d63b85d5b4bc675c718ef7832d786ed38a9a1	2897	fix(zsh): use newline-splitting for language completions to fix word-splitting on names with spaces
+ea7fafca1e6191dbfc4c55f039930e350b4412b2	3634	windows: statically link the CRT to remove vcruntime dependency
+52763e0205f00b9b4f388e9f994aebe0fa0b41b5	3513	feat: add tclsh, wish, and expect shebang detection for Tcl syntax
+89f3d2d31afe5487c89a7d14b48717b56758f243	3536	docs: add instructions for removing fish help abbreviations
+ca3ef28d56a2b010f2ddf8fa01be64aec905ab4f	3611	fix: use correct Debian architecture name for i686 .deb package
+780fdeb88845644b7e8b890416e7c6fa0a4292dc	3575	Merge pull request #3576 from vorburger/patch-2
+fc94a0ec49dcea3d5c022d38299f82b1f894f844	3631	fix: account for caret notation width in text wrapping
+2a3ed948ecc1f98dc7347ddf170ffcd384139ca1	3630	feat: preserve change markers when combining --diff with --plain
+618d7340bb63fa6168615585075c6debb7240a82	3482	fix: consistent .deb MUSL package names
+f49641a6c320a8fafa72f200d39432d5158fa04b	1001	Fix syntax highlighting for symlinked files by resolving target path
+9cce9e04d2a5754d8cfae9d1595bece8999b3ce3	3589	Fix BAT_CONFIG_DIR pointing at system config dir causing duplicate flag errors
+a1a10c777f8389d2a6997556bf96f0673de35d40	2376	Docs: clarify PATH requirement and explain highlighted outputs (Fixes… (#3610)
+fd67095cff7f96b4a82ee157e09e3b3792cee680	3449	Fix panic in BuiltinPager drop when pager thread panics
+790bed3a2d513f7f225de7677a3b9fce4fba4e29	3587	fix: respect --wrap=never flag when paging is enabled
+ba97230b9854da12cb6b861d9a7823c667e51d21	3575	feat: Map BUILD to Python (Starlark) for Bazel (fixes #3575)
+6c75acfffcf63ca8df7a3e4b2808f64ceb13cdf2	3528	Replace deprecated cargo_bin with cargo_bin! macro
+fca5502f21451fc40c1d1e7b26e76c8f549ad83f	3518	Fix bat crash with BusyBox less on Windows - Retrieve less version earlier in src/output.rs. - Skip -K argument if less is detected as BusyBox version. - Reuses the version check for the existing --no-init logic. - Fixes #3518.
+70ec3fc24e46cae8f0054a03f92ecfd53c7b98d6	1587	feat: add paging to '-h' and '--help' (#3478)
+9776ebfa0fbb9bfb4acc0075def45edc31779f3e	2561	Send errors to stderr (#3336)
+091898424975ad6b941485c05bdda5a75f92fa90	3286	Update Lean.sublime-syntax from Lean 3 to Lean 4
+17e6952ab891853b954c53ae7d46f7a494e1f991	3314	Fix UTF-8 BOM file type detection for first-line syntax patterns - Fixes #3314
+9090fb75e0ae7772aa09b698a10a4f5fb04a4143	2940	Make .debdiff imply .diff using syntax_mapping toml
+ed7789d9b75cf55a6b598b2157bf634cfccb8e1c	3083	Associate GeoJSON `.geojson` files with `json` syntax (fixes #3083)
+23fd20048272922c87ea4759f5b7a52ceb8e6d1a	3036	Associate JSON-LD `.jsonld` files with `json` syntax (fixes #3036)
+56d2823b0e1307f77e7af63c89bf6fbda9daa812	3043	Merge pull request #3045 from cyqsimon/time
+c34bdb5e66015e65ceecaa637b9e7316a5db92c0	3043	Bump time to 0.3.36 (fixes #3043)
+ff71e32c0f1cf70a404329e64a964acee1c084cc	2542	Update the Protobuf sobmodule (fixes #2542)
+63aaa030138bcf94328a8ee8102d2939ea1fd98e	2359	Update the ssh-config submodule (#2697)
+9ba3b6ed13ef1269b7dca6372ab2f18a89d0887f	2643	No duplicate keys test, fixes #2643 (#2647)
+82664e3c82492ddfde41533a829859dd129125d6	2570	Bump MSRV to 1.70.0
+7929179a74e81f34c4b055f36e87f8953f448cc5	2378	Make `PrettyPrinter::header` an alias for `header_filename`
+f215d07366dac50aa7068e9c3f8d5f46b09b4c1a	2353	Improve Manpage.sublime-syntax, Fix #2353 (#2364)
+06b403aa92a36060e9595abfa6cfac1a77d0e1a3	1300	Add syntax support for Ada
+abd69f2debc4e292e555708222a6d2f161b6c32a	1919	Add `bat::PrettyPrinter::clear_highlights` (fixes #1919)
+6db64cf050f0425d059d5c8bf3dfd9fdd98d9976	2106	Use cross to build x86_64-unknown-linux-gnu executables
+7334ab45422882686212ed31df2d95c02e7585f1	915,951,1846,1854	Bump to syntect 5.0.0 to e.g. start lazy-loading syntaxes (#2181)
+4e36a56014cd8615c6142999191d4a097f9b9310	2026	Expose syntect theme and syntax sets (#2030)
+3f7bff90ba1d8748ba52c280a28903bfb1c67cf8	1913	Add note regarding options passed to less by default in manpage
+f89869b5b2cb145e072346a443d3567f986814f3	1989	README.md: Add 'control characters' to Garbled output section
+47283f226a828b0573f6a771d05139861f1c3e36	1733	Add bash completion to deb package
+8ecd23eab4f30dc02e3954c6ff05fa18a5b81e34	1742	Make --style docs reflect that 'full' is default
+ccf456357366f488d902232faf495d09b246a130	1753	Make loading of cached assets closer in performance to integrated assets
+589df6792fe406f91b00db5e24d35393c6527e6b	1473	Add note on vulnerability reporting, closes #1473
+3da46515692c3c3ebfd979c107e83393df85478b	1692	Update Julia syntax, closes #1692
+c8dd32802de64ecb889bee34fe3e2211c092aac3	1666	README.md: Mention that PAGER is ignored if set to more or most
+ca60937c2e0b6b3de3d3e379fd419cdac9daecd6	1550	Do not ignore non-existent BAT_CONFIG_PATH
+94496df3b01dc874071b7e23fe52bd0aec332b74	1510	Fix broken resolv.conf highlighting
+7eabb5e05a975e7e6b54d8a57ce683b5f6c61eba	1515	Highlight *.pac files as JavaScript
+dd0d44bbb3608618427153515a71cdc11c041988	1413	Fix #1413 Can't use `bat` at all! (Error: Use of bat as a pager is disallowed...)
+b0e5828d3f6d9daa667055afd12801a182fe4a95	953	Add comment regarding use of bat as a library, closes #953
+b7d499d1be0dfa2e18a409596a89c45fbb15c1dd	1434	Add 'batcat' comment in MANPAGER suggestion, closes #1434
+252e5a6b1360bab10b90f59926e7fa784c1b7f9d	1063	Merge pull request #1402 from Enselic/fix-1063
+4c523af1ab4b0fdbb403ae31423bb6cf1dc7f65f	1431	Add gnuplot syntax
+8e4b0b4377d5cb33e635d6e2c9ddee061e327597	1149,1477	Update dependencies
+05e9da390fbb9a595b15df4860f61efde81ea9d2	614	bat cache --build: Print syntect error message for themes if any
+29ea396c311d9f1992c5e876752f2c50f05316c2	1064	Improve VimL regex highlighting
+47bb4a9c0f3e8cf5af92ce5741f9f0c3d810cf45	1063	Introduce bat_warning! helper macro
+60e00d49a99f33eb90397c6932c770d82fd481ec	1443	Fix #1443 macOS: regression_test.sh: mktemp: illegal option (#1444)
+68d525cd8b350b40e2c990c70625eba4e82f746d	1438	Don't add artificial newline to last line if --style=plain
+c3fc1b88fea5e4f4aee2e02ee7426180031a0081	1438	replace_nonprintable: Keep \n around
+986d0e9777a77b309ffc55de24fcb665adfa3bb7	1063	Ignore PAGER=most by default with a warning to stderr
+6d75540d4e95c57ba89d5810d271bc687761763e	1383	Merge pull request #1389 from nstickney/master
+c4bbf2886240148979f65d88f1adf548c3e5be4d	1292	Highlight ebuild/eclass files with shell syntax
+bbef2f41ec0c670dcc54a78ac5b497a084c2557b	1255	Add `-S` flag to less when `--wrap=never` (closes #1255)
+5e0b7f013ac636bb6e37b3bfcb4769c8bdf5b406	1259	Add support for comments after section headers (closes #1259)
+4bd1b157aef209b516f7de7bdd955df61ef3801c	1145	Add comment about Mandoc, closes #1145
+e4df5643dc86ae5c2d2f89bcd9c7359a761f92e3	1073	Highlight crypttab files with fstab highlighting, closes #1073
+32d22f464d512d22b4feeb49059e094b585ffeff	1146	Improve --style help text, closes #1146
+57aa88a13a76434e3ab2d4a8065f6d8e208e5a3e	1109	Improve --file-name help text, closes #1109
+fca83bf79a9a96fab871fea54df1d090eec7d88b	1028	Clarify stdin syntax highlighting in the README
+bd17fd571f99d52b4d76a24aee719dcd89a0244d	1022	Switch from path-absolutize to path_abs
+943b1f82b63506faff4f5d2e74c99d17de0b8535	1001	Fix syntax detection for symlinks
+c4031ad65c72650938039dce9be5dcc0672a3d8a	1008	Fix syntax detection for files called 'rails'
+d08d1f8c4599e96a96a821499aeb46383619ce89	983	Merge pull request #985 from eth-p/string-input
+48441b99efb2670127460cebe0609eddfce9ec50	963	Patch Markdown syntax
+94310af30c6d3b005786b84f98461c53d9294c3c	957	Add Fortran syntax, closes #957
+682b4209f2ffd36c350af903d44ede1c541dcf23	941	Update solarized themes to braver/Solarized, closes #941
+48a7ce3bf23edee81274e6448cf98288ec6f7d31	946	Write error messages to pager, if attached
+82e7786e747b1fcfac1f963ae6415a22ec9caae1	23	Implementation of 'bat --diff'
+7a87315b940ae7b8a38e83bddedd8f8b908c4c7c	937	Fix #937
+319ab779ee6bc8954e7beb2ae34c43d9f327322e	865	Use 4-bit ANSI codes for base16 theme
+864656bd11d4f96235408e026f7ac68d86995919	887	Pass --no-init on Windows if less version < 559
+72618db179e75f41c2df5303c4106c0c2443524b	882	Add metadata information to cached assets
+47abb192bc7476379986b13834d7c02406ed6a6b	924	Patch Rust syntax file
+c386cb35fb5f5fd2d2d3dedcb841812982728c2d	904	Pass '--mouse' to less versions >= 551
+a3f8140fbe89d4980014e8af4e34469202ce2799	891	Use --file-name to detect syntax highlighting
+0ecc94956b88beed27ca13a130c8ba09f1a220d8	750	Add performance patch for Makefile syntax
+61e47e0c13390e0433779f7ae5161c574a6fcc74	915	Add Stylus syntax (#917)
+7b87af1748c315627ea0246cc8fecb95abe5022f	476	Update dependencies, closes #476
+376c5568628c6d95a8b0b16ddf99055c8ea93e89	870	Add option to generate a default config file, fixes #870
+8adce9fae8eb9ceb5dac44546a35c592378607fc	654	Implement --file-name<name> option
+32346612b7ae6902601bf9b2faf110f4dde04723	874	Move syntaxes, fixes #874
+517be5c7bcb034bda56ba8572f2e5f103163bf58	654	Implement --file-name<name> option
+4e40d4c7204f7f966bbf798f180a1793f22b9258	573	Major update for the man page, closes #573
+61e39158de87b764b8f3bb549b5a224fda52f322	651	Install fish completions into 'vendor_completions.d', fixes #651
+147503bd568e254464b47e0ec42582c83ff908ef	833	Add CoffeeScript syntax, closes #833
+1225e65299ceee6f6eda0d144f38c309cab59be3	798	Fix #798
+7779d9f6221b3e98c43a43ceb5596ba285fdf4f8	225	Allow for non-unicode filenames, closes #225
+67fe8042567254d21c82ecda9f116745e2438fc2	749	Do not pass '--no-init' on newer less versions
+126729f87a686fdca37e63e727801723e1549366	719	Enable LTO
+20ba984c6d73e59cfeb315c1d17962a10fc64e9c	713	Update help text, closes #713
+37f7c94ba4b33ba2fd6e70ffac124250dde66032	721	Properly add Twig submodule, closes #721
+0a42d2b89788956345c7979803498a9571e8c36a	542	Add Nim syntax, closes #542
+b9c07e52e8aaf87ecf0473d3e8e2ad038dcedd76	323	doc: Add Ubuntu/Debian bat package to Readme
+a84c598e2c5e8bc6bf57f02eda67bab22b98662f	649	cmake and libz are not needed to install bat
+f5d359927ad6176d5bd8b9f2cf938f58c5f51575	666	Fix 'bat cache other-arg', closes #666
+4ba45e2ba24b84dceeed0da05b371c00638bd931	523	Add first version of 'man page' syntax, closes #523
+2e7114680173acd906e53ef5c3dd6e7b77014113	584	Fix another instance of the 'bat cache' bug, closes #584
+83a213bae7de12d2674153d7aa27eec417eee32e	599	Add 'strace' syntax, closes #599
+3967e28dedea1dc26cddbe55aadd013541117a31	637	Add SCSS and Sass syntax, closes #637
+2dc2a3712a84122b2f535354210b2ed1e56e757c	616	Add Verilog syntax, closes #616
+10e0f9efb0dfe6e68eda74c2c3ac06f378b48035	554	Install fish completions in DEB package, closes #554
+187a3b9341f3965425e64c84b349769cf1eaffc6	574	Use consistent syntax for command-line options
+76c615a30416c4a0bea07fc7df4f5f1e88ddf6e0	611	Allow leading minus in '--terminal-width <value>'
+d86b7cf7e071f5cabe52af9ad43c99dbe0575da4	586	Add Alpine Linux installation instructions
+c9d7e3652bb0be4becdecfd8d2e7d4e795071c83	576	Enforce the creation of the full cache dir path
+0a1e08da9679cdccadf111273c05defdb136875c	535	Extend help text for --terminal-width and --wrap, closes #535
+72152296c79dc1e758bcd8c3111c0c3e475c4bbe	557	Fix accidental printing of files named 'cache'
+0ad09df7abfb253dd9d6f55615db62e84b57337b	551	Improved logic when encountering ANSI in character wrap mode
+f0771d65329d1c01b22e5545f8201bd51d603b1f	509	Do not replace arguments to pager when --pager is used, closes #509
+fee57d71d97591b79b461afa03941dee2b09216d	379	Print ANSI-reset code before newline
+397def13204cbd983cab9ea6edff41a452406f79	387	Omit launching of pager if NO file exists
+98ee5f7400a42b84129010e7988a00065e415c3a	429	Add vimpager to alternatives, closes #429
+dda27b253be828c9c52f040c815e3a5f45d80010	376	Allow offset values in `--terminal-width`
+78f26d0caf2cb9fe58fcbe29bf80de01a2a4f43c	372	Temporarily disable shipping of shell completions
+10965a6122e3ca6ad847871ec41eb01f0f595945	169	Implement syntax mapping
+e956225b4d4298528a59551c943201d1c1c94fb0	314	Update syntect to 3.0.1
+ad7b634ee60ad0fc3a5c72f6291deaa543382553	328	Fixes #328 - adds info for light backgrounds.
+897b9e7030b91087b780490b0812831b7be0ebb4	331	Add Docker instructions, closes #331
+ce96df00b6e77841f7c77fdc50e5b6e5b944e375	248	Do not display binary files in interactive mode
+0502a3bd4a3b70958e920e1a49511e2968c00a2c	205	Add first-line detection for all input types
+f140f6da4629b2d3ab9f2424552d96c8739eae6b	273	Fixes #273 - describes 'musl' builds.
+b39e28d2c855be1cbb560dd2c6dd65e337b4e218	309	Add support for wildcards in Windows CMD (#329)
+886a5b3d240e0c94ff239d887fb55f7b0cbb770b	246,312	Document the situation with less and scrolling
+238482e5f3990c1f5ef22a7875066822f10857f8	314	Update syntax-set, fixes #314
+20b02e72b32d419fc1d9627542ea62b00b9c23f4	289	Disable wrapping when `--style` is plain
+e098eb43a28f55942f3185033ebe3e09d86198d7	292	Do not show file header for directories
+97129ab9d8b249611b31740ad597452079458afc	306	Add PowerShell syntax, closes #306
+52d0d6ca30085192bc0dd523a0ee4c583fa3f457	166,184	Merge pull request #302 from eth-p/feature-tabs
+f0d936763c552c3c5ca913333c0aef3a9d43900d	280	provide armhf deb packages (#301)
+e1ecc17f69f1d84fb127203a45e4abd88babab07	299	print additional newline if last line in input file was not terminated with a newline (fixes #299)
+acde83af311190e6a5f597f620236d93a97c448b	242	Add note about 'lesspipe', closes #242
+021a68eb2186b6299fb94781bb4d62965aa5f8b5	284	Add F# syntax, closes #284
+f88eba647611dcbddae327b7cba050744029e4a5	229	Add section concerning missing zlib-devel
+1d9e7ac4c2f2b4230b081702ad76ddd096d0f406	271	Support "(/usr)/bin/less" as PAGER too
+7b803a50af9ed4eeebd2f48f62c878c181c07a3e	252	Ignore enable_ansi_support errors
+67ec5fe2b7156b7ee5358e7f6c4995451ef1bbff	256	Add OneHalf themes, closes #256
+3447ed4def7bee1172f8885cba0cc55440d96a5f	254	Add CSV syntax, closes #254
+1088455702e698263e6c5191b67bd1900d5a5263	215,216,217,218	Add syntaxes for Elm, Kotlin, Puppet, TypeScript
+2df3305b94ff85878b61415d6136c8a5b2d3e439	206	Add new '--blank' option for 'bat cache --init'
+25083232640dfe06334c929cb16333a9bd873195	178	Extract grid and line-number color from theme
+1dddce3aa11818fd641542f5f79c20e5ecb5b837	172	Separate syntax set and theme set
+d179693d1d4a571d6b5ec3279d09390d6115b39c	158	Use BAT_PAGER and PAGER environment variables, closes #158
+34811b8161cabb8667a87212cdb6e74d7dd665d8	182	Fix #182
+52877c6d671d21cfbd515542158c25be668c98f5	180	Add Nix syntax, closes #180
+455de98a892234732abd9a47a7b2eadb7cc9bb2c	183	Update sublimehq/Packages, closes #183
+c9f7a0c1268781676d21cd430ef4a8e2bd106b9e	161	Use separate Git repository for snapshot testing
+86c17772053b10431531101686aec64d76a08122	161	Skip snapshot test if Git is not available
+9d92350cbb732a7f022d1031bbad5a6ad9179cd6	157	Use default Markdown syntax, closes #157
+2a9f5a24edb1a24a1b17065bfaa460a297c7452f	17	Permissive error handling, closes #17
+96cc391f2d5865ba256d61b823c50225fc12e7e2	97	Skip '--quit-if-one-screen' for --paging=always
+54a331d162c8f2fa872f223102508753e3ba9939	99,106	Add syntax docu, add VimL, CMake, INI, LESS syntax
+486e6a19cd3b569a0098046194a614ed6e0cf03f	124	Fixed #124
+9aa97b6c222c11a99e12fc7e273a93f265e6eb13	100	Update to latest syntect, closes #100
+f7890870ea4fb582c5d3ec5d749b1509695bc5ab	101	Add syntax for Dockerfiles
+9af1d2b8917710e3c2ce0a591af5f8bdd0101635	41	Add FreeBSD installation instructions
+2eee68599df671f7fd067a1121a4d01039c49d8e	54	Merge pull request #102 from eth-p/master
+900f61032d36eb896a0fc3baf5bd630e38c04a0d	117	Fix #117
+b9c780c8c80d1c9bcef7c8e651ed84857f2b9e0d	91	Ignore errors when clearing cache, closes #91
+22c8978fcad508bd8c367306f5eb127e601c6e42	89	add theme option (#95)
+6343535eb2f23416431bb8e5a00e4fd734df78ba	84	Add 32bit support (#87)
+13a53d230b32a46ecc95db9e9b80b4e6810b252d	33	Add MacOS install instructions, closes #33
+f90b9d1accac7ba429cd541c1af7312b088d27de	80	Do not peek at FIFOs, closes #80
+ef7c39b159e920d30badf69a4c869e8527432d9a	44	Improve cache subcommand
+7e2e0c82ac44583119a5e61cd438b28e9f89d409	2	Add support for reading from stdin, closes #2
+179bd4f525b0afa640ccf1df495e26fbdc251368	57	Mention cmake in build instructions, closes #57
+23d92d7641ed81d92fc3d758bb7351a8f29964fa	37	Add TOML sublime syntax, closes #37
+cbdf5c50c475c3a5720fca36547697f846dbe063	22	Fix bug where git modification markers would not be shown if directory was not cwd
+9dca3126b330c654c3958f6d9af1b53cf6ef99f2	5	Hide everything but content for plain option style
+7df9a5fe82ddae93190530709c888bfe2367bc75	5	Add --style option to disable line numbers and git markers (#43)
+b7bc2d54baa770e4784b189163b7eddfc68473b4	46	Add statically-linked version of bat, closes #46
+51b57ccdb7c63665bccea2b87b79be27fd2ad1ef	25,28	Update syntax_set, closes #25, fixes #28
+50be143c6294bfff2773c798a2ec83437a8e6333	16	Update install instructions, closes #16
+f81e38618ccaf7c3c7b0ef953d2f472695e01ade	21	Implement SyntaxSet and ThemeSet caching
+64de2a44d56615c24115566ac75634c257c3fa6b	15	Print error if Default.tmTheme is not available
+58ca1f66d6599118003eb478bd9f9e92f4f1d0d6	14	Add minimum required rust version
+86dcb3c165e7171ac981ac874e44a1302c47d98d	13	Fix #13
+a7232a6ecc3daaad2d558f3a594baf652128f8e8	10	Support for custom syntaxes, add 'Markdown extended' theme, closes #10
+38762c34d9180ca9e34302bf7f666a9f73a41618	11	Enable 8 bit color support, closes #11
+1f2bcf57baf92c83f8668f7908532d2b849e83ee	9	Handle broken pipes, closes #9
+a979608f37241fbc41c42fe9326d397658b92ffe	8	Add Git support, closes #8

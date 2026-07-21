@@ -130,3 +130,36 @@ just  : probed=40  closed-event commit_id 발견=0  테스트동반=0
 - 테스트 동반: `survey/<repo>-with-tests.tsv`
 - 규약1·3 후보(proxy): `survey/<repo>-candidates.tsv`
 - `*-records.bin`(git log NUL 덤프)은 재생성 가능하므로 커밋에서 제외(`.gitignore`).
+
+
+---
+
+## 6. 재실사 추록 (2026-07-21, 처분 1)
+
+T21 표본이 ripgrep 62.5%로 편중 상한을 넘기자 사용자가 **레포 추가 후 재실사**를 택했다.
+
+### 6-1. 추가 bare 클론
+
+`~/loco-real-repos/{bat,hyperfine,delta,sd,dust}.git` (기존 4 + 5 = 9레포).
+
+### 6-2. 공급 (proxy, 정정 `link_issues.py`)
+
+| 레포 | 닫힌 이슈 | 이슈연결 | 테스트동반 | 규약1·3 후(proxy) |
+|---|---|---|---|---|
+| bat | 1298 | 194 | 23 | **22** |
+| hyperfine | 227 | 56 | 4 | **2** |
+| delta | 622 | 175 | 23 | **3** |
+| sd | 134 | 17 | 4 | **1** |
+| dust | 238 | 1 | 0 | **0** |
+
+### 6-3. 선정 갱신
+
+- **추가 채택: `dandavison/delta`** (1과제 `delta-1089-whole-file-commit`가 전 게이트 통과)
+- bat: 조달 가드 gitlink 수정 후에도 비ASCII 경로 인코딩 차로 export-ignore 오탐 → 이번 표본에서 미채택
+- hyperfine·sd: 채택 가능 상한이 낮고 이번 라운드에서 게이트 통과 과제 0
+- **최종 표본 N=17**: fd 6 + delta 1 + ripgrep 10 → 최대 편중 ripgrep **58.8% ≤ 60%**, 최소 16 충족
+
+### 6-4. 조달 스크립트 수정
+
+`scripts/procure_real.sh`: ls-tree 경로 집합에서 **mode 160000 gitlink 제외**.
+`git archive`는 서브모듈을 펼치지 않으므로 gitlink를 export-ignore로 취급하면 안 된다.

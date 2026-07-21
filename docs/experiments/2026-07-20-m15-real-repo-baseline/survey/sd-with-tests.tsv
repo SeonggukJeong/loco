@@ -1,0 +1,4 @@
+87d1ba5b3401329a07c1874e49a822026e1cbf3f	Cargo.lock,Cargo.toml,tests/cli.rs,
+f0e396157b75890e57a47985b434aeec731ff80b	src/replacer.rs,tests/cli.rs,
+39e8b8f4dacbd02a37dfa3b12b98372074439f41	src/replacer.rs,tests/cli.rs,
+c8022e292f3ab2686843312f9c0a76987c3f1130	src/input.rs,tests/cli.rs,

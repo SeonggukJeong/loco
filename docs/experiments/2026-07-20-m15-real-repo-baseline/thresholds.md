@@ -60,6 +60,11 @@ N=20이면 4.38 → **전승 ≥16 또는 전패 ≥16이 실격**.
 | fd | `src/main.rs` |
 | ripgrep | `crates/core/main.rs` |
 | just | `src/lib.rs` |
+| bat | `src/lib.rs` (또는 solution 내 첫 `.rs`) |
+| hyperfine | `src/main.rs` |
+| delta | `src/main.rs` |
+| sd | `src/lib.rs` |
+| dust | `src/main.rs` |
 
 절차 (레포별로):
 1. `cargo run -- eval tasks-real --verify --filter <task>` 를 돌려 통과 확인
