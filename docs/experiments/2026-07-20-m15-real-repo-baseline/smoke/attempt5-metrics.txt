@@ -1,0 +1,4 @@
+# session /Users/sgj/develop/loco/docs/experiments/2026-07-20-m15-real-repo-baseline/smoke/attempt5-rg-1868-max100.jsonl
+r_obs=1.2587 max_prompt=32011 max_est=25760 first_turn_prompt_tokens=2111 pack_fired=9 budget_ratio_max=1.2405 overflow_shrink=0 overflow_giveup=0
+# estimator inline_system=False {'slope_per_est_token': 0.9751198940792256, 'intercept_per_message': 49.71073128713918, 'n': 63}
+# estimator inline_system=True None

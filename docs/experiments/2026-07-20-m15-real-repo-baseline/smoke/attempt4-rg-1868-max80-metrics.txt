@@ -1,0 +1,5 @@
+# session /var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmp.SskxbxWjk8/smoke/.loco/sessions/20260721T032742Z.jsonl
+r_obs=1.1978 max_prompt=16684 max_est=14031 first_turn_prompt_tokens=2111 pack_fired=0 budget_ratio_max=0.6466 overflow_shrink=0 overflow_giveup=0
+# estimator inline_system=False {'slope_per_est_token': 1.1816518544424903, 'intercept_per_message': -0.4562019100606771, 'n': 19}
+# estimator inline_system=True None
+# WARN pack 미발동 — 예산점에 못 닿았다. §4-1-1 도달 조건 미충족이므로 세션을 더 길게 돌릴 것 (§5-3 회귀가 3배 외삽이 된다)

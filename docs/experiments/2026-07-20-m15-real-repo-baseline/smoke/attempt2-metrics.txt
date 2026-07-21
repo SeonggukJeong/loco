@@ -1,0 +1,5 @@
+# session /Users/sgj/develop/loco/docs/experiments/2026-07-20-m15-real-repo-baseline/smoke/attempt2-fd-1873-max60.jsonl
+r_obs=1.0899 max_prompt=8411 max_est=7776 first_turn_prompt_tokens=1285 pack_fired=0 budget_ratio_max=0.3260 overflow_shrink=0 overflow_giveup=0
+# estimator inline_system=False {'slope_per_est_token': 1.0758724056240083, 'intercept_per_message': 2.031174213227436, 'n': 13}
+# estimator inline_system=True None
+# WARN pack 미발동 — 예산점에 못 닿았다. §4-1-1 도달 조건 미충족이므로 세션을 더 길게 돌릴 것 (§5-3 회귀가 3배 외삽이 된다)
