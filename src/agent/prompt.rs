@@ -8,7 +8,8 @@ const TREE_DEPTH: usize = 3;
 
 /// SYSTEM pointer when `repo_notes` is on (M16 §3-4). Flag-off must not include this.
 pub const REPO_NOTES_SYSTEM_POINTER: &str = "\
-Maintain hierarchical repo notes via `update_repo_notes` (keys `_root` / `src` — not `.loco/notes/...` paths). \
+Maintain hierarchical repo notes via `update_repo_notes` (keys `_root` / `src` - not `.loco/notes/...` paths). \
+Notes are a short map to understand the project, not a place to restate the bug or the patch. \
 Root ≤1200 bytes (summary + routes); dir ≤800 (role + few entrypoints). \
 Do not paste file bodies, test logs, issue text, or rejection templates; shorten in place, do not split topics into extra files.";
 
@@ -36,7 +37,8 @@ Rules:\n\
 - Prefer small args: short search/replace blocks; never dump whole files into JSON.\n\
 - Never repeat a tool call that already returned a result - reuse that result. As soon as you have enough information, call `finish`.\n\
 - To change an existing file, prefer `edit_file` with a small unique search block. Copy `search` text exactly from the latest read_file output. Use `write_file` only for new files or full rewrites.\n\
-- After changing files, verify with run_command (e.g. `cargo test`) before finish.\n\
+- After changing files, verify with run_command before finish. Prefer a single command with no shell pipe (no `| tail`) so the exit code is the test runner's, not a pager's.\n\
+- If tests fail, grep for the failed test names from the log to open the right lines. Do not re-read the same file offset hoping the body changes.\n\
 - File paths are relative to the project root. Explore with list_files or grep before reading whole files.\n\
 - When you know the answer (or cannot proceed), call `finish`. Its `summary` is the ONLY text shown to the user - put the complete answer there, written in the user's language.\n\
 \n\
@@ -91,6 +93,8 @@ mod tests {
             p.contains("one short fragment"),
             "brevity contract for thought: {p}"
         );
+        assert!(p.contains("no shell pipe") || p.contains("no `| tail`"), "B2 verify: {p}");
+        assert!(p.contains("grep for the failed test"), "B1 nav: {p}");
         assert!(
             !p.contains("update_repo_notes"),
             "flag false: no notes SYSTEM pointer"

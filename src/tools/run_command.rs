@@ -58,6 +58,30 @@ fn empty_test_note(body: &str, exit_code: &str) -> Option<String> {
     })
 }
 
+/// M16 B1 — 실패 테스트 이름 → grep 항해 (같은 offset 재read 금지).
+/// `parse_test_summary`가 인식하는 요약 포맷에서만 발화(현재 Rust libtest).
+/// exit code와 무관 — `… test … | tail`은 exit 0이어도 본문에 실패가 남을 수 있다.
+fn failed_test_nav_note(body: &str) -> Option<String> {
+    let s = crate::test_summary::parse_test_summary(body)?;
+    if s.failed == 0 {
+        return None;
+    }
+    let names = if s.failed_names.is_empty() {
+        "the failing test names printed above".to_string()
+    } else {
+        s.failed_names
+            .iter()
+            .map(|n| format!("`{n}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    Some(format!(
+        "note: {} test(s) failed ({names}). Use grep for those names to open the right file/lines — \
+         do not re-read the same offset. Prefer re-running the failing test(s) without a shell pipe.",
+        s.failed
+    ))
+}
+
 impl Tool for RunCommand {
     fn name(&self) -> &'static str {
         "run_command"
@@ -94,8 +118,19 @@ impl Tool for RunCommand {
                     out.push_str(
                         "\nnote: this command is a pipeline - the exit code reflects only the last command in the pipe",
                     );
+                    // B2: verification with `| tail` hides the runner's exit code
+                    if args.command.contains("test") {
+                        out.push_str(
+                            "; for verification, drop the pipe so the exit code is the test runner's",
+                        );
+                    }
                 }
                 if let Some(note) = empty_test_note(&out, &code) {
+                    out.push('\n');
+                    out.push_str(&note);
+                }
+                // B1: failed tests → navigate by name (grep), not random read offsets
+                if let Some(note) = failed_test_nav_note(&out) {
                     out.push('\n');
                     out.push_str(&note);
                 }
@@ -200,6 +235,26 @@ mod tests {
         }
 
         #[test]
+        fn test_pipeline_adds_drop_pipe_hint() {
+            let (_d, ctx) = ctx();
+            // shell pipeline only — no language-specific runner required
+            let out = RunCommand
+                .run(
+                    &serde_json::json!({"command": "echo 'test result: FAILED. 0 passed; 1 failed' | cat"}),
+                    &ctx,
+                )
+                .unwrap();
+            assert!(out.contains("note: this command is a pipeline"), "{out}");
+            assert!(out.contains("drop the pipe"), "B2 hint: {out}");
+            assert!(
+                out.contains("test runner"),
+                "language-neutral wording: {out}"
+            );
+            assert!(!out.contains("cargo"), "must not name a specific runner: {out}");
+            assert!(!out.contains("libtest"), "must not name a specific runner: {out}");
+        }
+
+        #[test]
         fn non_pipeline_commands_get_no_note() {
             let (_d, ctx) = ctx();
             for cmd in ["echo hi", "grep -c 'a\\|b' /dev/null || true", "true || false"] {
@@ -232,6 +287,21 @@ mod tests {
         assert!(!super::has_unquoted_pipe("a || b"), "OR 연산자는 파이프가 아님");
         assert!(super::has_unquoted_pipe("a | b || c"), "혼합 — 실파이프가 있으면 참");
         assert!(!super::has_unquoted_pipe("echo x"));
+    }
+
+    #[test]
+    fn failed_test_nav_note_names_failures_and_urges_grep() {
+        let body = "exit code: 101\n\
+running 2 tests\n\
+test path::sep_is_rejected ... FAILED\n\
+test path::full_path_ok ... FAILED\n\
+\n\
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n";
+        let note = super::failed_test_nav_note(body).expect("failed tests → note");
+        assert!(note.contains("path::sep_is_rejected"), "{note}");
+        assert!(note.contains("grep"), "{note}");
+        assert!(note.contains("offset"), "{note}");
+        assert!(super::failed_test_nav_note("exit code: 0\nok\n").is_none());
     }
 
     #[test]
