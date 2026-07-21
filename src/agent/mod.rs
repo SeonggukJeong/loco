@@ -136,6 +136,8 @@ pub struct Agent<C: LlmClient> {
     /// S/R 스트릭 중 일시 temperature 상향 (M10 §5). run() 지역 수명 —
     /// 진입 시 리셋해 REPL의 다음 런으로 새지 않는다 (리뷰 2R M-1)
     temperature_override: Option<f32>,
+    /// M16 hierarchical repo notes — from `config.repo_notes`, not registry inference.
+    repo_notes: bool,
 }
 
 /// 진단 가치가 있는 Notice는 트랜스크립트에도 남긴다 (M14 C-2).
@@ -179,6 +181,7 @@ impl<C: LlmClient> Agent<C> {
             inline_system: false,
             seed: None,
             temperature_override: None,
+            repo_notes: config.repo_notes,
         }
     }
 
@@ -187,6 +190,7 @@ impl<C: LlmClient> Agent<C> {
         vec![ChatMessage::system(prompt::system_prompt(
             &self.registry.docs(),
             &self.ctx.root,
+            self.repo_notes,
         ))]
     }
 
@@ -275,6 +279,18 @@ impl<C: LlmClient> Agent<C> {
         let mut finish_missing_streak: usize = 0;
         let mut finish_args_corrected = false;
         let mut status = status_note::StatusNote::new();
+        // M16: certified/dirty only when flag on — no start-scan / mut-gate / STALE when off
+        let mut notes_state = if self.repo_notes {
+            let ns = crate::notes::NotesState::scan(&self.ctx.root);
+            // Always record after scan (0 if empty) — §5-3 notes_bytes_max source
+            session.record_extra(
+                crate::notes::NOTES_BYTES_MAX_KIND,
+                &ns.bytes_max().to_string(),
+            );
+            Some(ns)
+        } else {
+            None
+        };
         while turns < self.max_turns {
             // 취소 신호 후에는 새 LLM 호출을 만들지 않는다 — run_bounded의 유예가
             // 이 경로로 빠르게 끝난다 (설계 §1). 진행 중이던 run_command는 자체
@@ -427,6 +443,7 @@ impl<C: LlmClient> Agent<C> {
             if turn.action.tool == "finish" {
                 match turn.action.args.get("summary").and_then(|v| v.as_str()) {
                     Some(s) => {
+                        // M16 §3-6 finish order: VERIFY (once) → NOTES_STALE (once) → accept
                         if mutated_since_verify && !verify_nudged {
                             verify_nudged = true;
                             let nudge = if unreleased_due_to_pipe { VERIFY_NUDGE_PIPE } else { VERIFY_NUDGE };
@@ -439,6 +456,28 @@ impl<C: LlmClient> Agent<C> {
                                 max_turns: self.max_turns,
                                 mutation_ok: false,
                                 has_note_channel: false, // session.push 경로 — 이월
+                                mutated_since_verify,
+                            });
+                            turns += 1;
+                            continue;
+                        }
+                        if let Some(ref mut notes) = notes_state
+                            && !notes.dirty.is_empty()
+                            && !notes.notes_stale_nudged
+                        {
+                            notes.notes_stale_nudged = true;
+                            let body = crate::notes::notes_stale_nudge(&notes.dirty);
+                            on_event(AgentEvent::Notice(
+                                "(notes 미갱신 — stale finish 반려)".to_string(),
+                            ));
+                            session.push(tool_result_message("finish", &body));
+                            finish_missing_streak = 0;
+                            let _ = finish_nudge.on_turn(finish_nudge::TurnEvent::FinishAttempt);
+                            let _ = status.on_turn(&status_note::TurnCtx {
+                                turn: turns + 1,
+                                max_turns: self.max_turns,
+                                mutation_ok: false,
+                                has_note_channel: false,
                                 mutated_since_verify,
                             });
                             turns += 1;
@@ -513,6 +552,75 @@ impl<C: LlmClient> Agent<C> {
                 tool: &turn.action.tool,
                 args: &turn.action.args,
             });
+
+            // M16 §3-5 mut-gate hard order (after args.tool salvage, before preview/approve):
+            // 1) ban edit/write under `.loco/notes/**`
+            // 2) if repo_notes && !gate_ok → reject every time (not once-latch)
+            // 3) else existing preview → approve → dispatch
+            if matches!(turn.action.tool.as_str(), "edit_file" | "write_file") {
+                let path = turn
+                    .action
+                    .args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let ban_or_gate = if !path.is_empty()
+                    && crate::notes::is_under_notes_dir(&self.ctx.root, std::path::Path::new(path))
+                {
+                    Some(crate::notes::notes_path_ban_body(&turn.action.tool))
+                } else if let Some(ref notes) = notes_state {
+                    if path.is_empty() || !notes.gate_ok(path) {
+                        let p = if path.is_empty() { "<missing path>" } else { path };
+                        Some(notes.mut_gate_body(p))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(body) = ban_or_gate {
+                    finish_missing_streak = 0;
+                    let ev = finish_nudge::TurnEvent::MutationAttempt;
+                    let (mut note, stop) =
+                        self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
+                    self.update_perturb(&tracker, on_event);
+                    if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
+                        let nudge = if unreleased_due_to_pipe && nudge == finish_nudge::FINISH_NUDGE
+                        {
+                            finish_nudge::FINISH_NUDGE_PIPE
+                        } else {
+                            nudge
+                        };
+                        on_event(AgentEvent::Notice(
+                            "(검증 완료 후 재확인 반복 — finish 유도 주입)".to_string(),
+                        ));
+                        note = merge_note(note, nudge);
+                    }
+                    if !stop
+                        && let Some(s) = status.on_turn(&status_note::TurnCtx {
+                            turn: turns + 1,
+                            max_turns: self.max_turns,
+                            mutation_ok: false,
+                            has_note_channel: true,
+                            mutated_since_verify,
+                        })
+                    {
+                        session.remove_status_note();
+                        note = merge_note(note, &s);
+                    }
+                    session.push_tool_result(
+                        &turn.action.tool,
+                        &turn.action.args,
+                        &body,
+                        note.as_deref(),
+                    );
+                    if stop {
+                        return Ok(AgentOutcome::RepetitionStop);
+                    }
+                    turns += 1;
+                    continue;
+                }
+            }
 
             // 확인 게이트 (스펙 §5): mutating이고 미리보기가 가능할 때만.
             // preview Err → 게이트 생략, 아래 디스패치가 같은 에러를 되먹인다
@@ -639,7 +747,9 @@ impl<C: LlmClient> Agent<C> {
                     }
                     unreleased_due_to_pipe = !released && is_piped;
                     status.record_command_result(cmd_exit.clone(), cmd_summary.clone(), is_piped);
-                } else if self.registry.get(&turn.action.tool).is_some_and(|t| t.is_mutating()) {
+                } else if matches!(turn.action.tool.as_str(), "edit_file" | "write_file") {
+                    // M16 §3-3 VERIFY whitelist: only edit_file|write_file re-arm VERIFY.
+                    // `update_repo_notes` is is_mutating but must NOT set mutated_since_verify.
                     mutated_since_verify = true;
                     unreleased_due_to_pipe = false; // 뮤테이션이 원인을 갈아치운다
                 }
@@ -647,7 +757,30 @@ impl<C: LlmClient> Agent<C> {
                     status.record_mutation(&turn.action.args);
                     if let Some(p) = turn.action.args.get("path").and_then(|v| v.as_str()) {
                         tracker.record_mutation_ok(p);
+                        if let Some(ref mut notes) = notes_state {
+                            notes.mark_dirty_for_path(p);
+                        }
                     }
+                }
+                // M16: successful notes update → certify + exact dirty clear + bytes extra
+                if turn.action.tool == "update_repo_notes"
+                    && let Some(ref mut notes) = notes_state
+                    && let Some(raw) = turn.action.args.get("path").and_then(|v| v.as_str())
+                    && let Ok(key) = crate::notes::normalize_key(raw)
+                {
+                    let nbytes = turn
+                        .action
+                        .args
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.len())
+                        .unwrap_or(0);
+                    notes.certify(&key, nbytes);
+                    notes.clear_dirty_key(&key);
+                    session.record_extra(
+                        crate::notes::NOTES_BYTES_MAX_KIND,
+                        &notes.bytes_max().to_string(),
+                    );
                 }
                 // M15 H10·§5-4: 항해/수선 지표의 원자료. **툴별로 분리**한다 —
                 // 셋을 한 집합으로 합치면 §1-1 축의 근거인 M8 실패 분석의
@@ -3044,6 +3177,362 @@ mod tests {
         assert!(
             !warning.contains("0 토큰"),
             "경고에 하한 미적용 값(0)이 나오면 안 된다: {warning}"
+        );
+    }
+
+    // ── M16 T3: certified mut-gate · NOTES_STALE · VERIFY whitelist ──────────
+
+    fn make_notes_agent(
+        script: &Scripted,
+        root: std::path::PathBuf,
+        max_turns: usize,
+    ) -> Agent<&Scripted> {
+        let config = Config {
+            max_turns,
+            repo_notes: true,
+            ..Default::default()
+        };
+        Agent::new(
+            script,
+            Registry::guided(true),
+            ToolCtx::new(root),
+            "test-model".into(),
+            &config,
+        )
+    }
+
+    fn valid_root_notes() -> String {
+        crate::notes::ROOT_TEMPLATE.to_string()
+    }
+
+    fn valid_dir_notes() -> String {
+        crate::notes::DIR_TEMPLATE.to_string()
+    }
+
+    fn notes_update(key: &str, content: &str) -> String {
+        turn(
+            "update_repo_notes",
+            serde_json::json!({"path": key, "content": content}),
+        )
+    }
+
+    /// Certify root (+ optional dir) via scripted tool turns, then run remaining script.
+    #[tokio::test]
+    async fn finish_scenario_a_verify_then_stale_then_accept() {
+        // A: code mut → finish → VERIFY → finish → STALE → finish → accept
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname=\"t\"\nversion=\"0.1.0\"\nedition=\"2021\"\n").unwrap();
+        let root_body = valid_root_notes();
+        let script = Scripted::new(vec![
+            ok(&notes_update("_root", &root_body)),
+            ok(&turn(
+                "write_file",
+                serde_json::json!({"path": "Cargo.toml", "content": "[package]\nname=\"t\"\nversion=\"0.1.1\"\nedition=\"2021\"\n"}),
+            )),
+            ok(&finish("done")),  // VERIFY
+            ok(&finish("done2")), // STALE
+            ok(&finish("done3")), // accept
+        ]);
+        let mut agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(ref s) if s == "done3"));
+        let finish_bodies: Vec<_> = session
+            .messages()
+            .iter()
+            .filter(|m| m.content.contains("<tool_result name=\"finish\""))
+            .map(|m| m.content.clone())
+            .collect();
+        assert_eq!(finish_bodies.len(), 2, "two rejected finishes before accept: {finish_bodies:?}");
+        assert!(
+            finish_bodies[0].contains(VERIFY_NUDGE),
+            "1st reject is VERIFY: {}",
+            finish_bodies[0]
+        );
+        assert!(
+            finish_bodies[1].contains(crate::notes::NOTES_STALE_MARK),
+            "2nd reject is STALE: {}",
+            finish_bodies[1]
+        );
+        assert!(
+            finish_bodies[1].contains("repo notes stale: you edited code but did not update notes for: _root."),
+            "exact STALE shape: {}",
+            finish_bodies[1]
+        );
+    }
+
+    #[tokio::test]
+    async fn finish_scenario_b_stale_only_after_verify_cleared() {
+        // B: code mut → run_command verify clear → finish → STALE only → finish accept
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "x\n").unwrap();
+        let root_body = valid_root_notes();
+        let script = Scripted::new(vec![
+            ok(&notes_update("_root", &root_body)),
+            ok(&turn(
+                "write_file",
+                serde_json::json!({"path": "a.rs", "content": "y\n"}),
+            )),
+            ok(&turn("run_command", serde_json::json!({"command": "true"}))),
+            ok(&finish("almost")), // STALE only (verify already clear)
+            ok(&finish("final")),  // accept
+        ]);
+        let mut agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(ref s) if s == "final"));
+        let finish_bodies: Vec<_> = session
+            .messages()
+            .iter()
+            .filter(|m| m.content.contains("<tool_result name=\"finish\""))
+            .map(|m| m.content.clone())
+            .collect();
+        assert_eq!(finish_bodies.len(), 1, "only STALE, no VERIFY: {finish_bodies:?}");
+        assert!(
+            finish_bodies[0].contains(crate::notes::NOTES_STALE_MARK),
+            "{}",
+            finish_bodies[0]
+        );
+        assert!(
+            !finish_bodies[0].contains(VERIFY_NUDGE),
+            "VERIFY must not fire when verify cleared"
+        );
+    }
+
+    #[tokio::test]
+    async fn notes_update_after_green_test_does_not_set_mutated_since_verify() {
+        // Green test clears VERIFY; notes update must not re-arm it.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "x\n").unwrap();
+        let root_body = valid_root_notes();
+        let script = Scripted::new(vec![
+            ok(&notes_update("_root", &root_body)),
+            ok(&turn(
+                "write_file",
+                serde_json::json!({"path": "a.rs", "content": "y\n"}),
+            )),
+            ok(&turn("run_command", serde_json::json!({"command": "true"}))),
+            // update notes for dirty key after green verify
+            ok(&notes_update("_root", &root_body)),
+            ok(&finish("done")), // must accept — no VERIFY re-arm from notes
+        ]);
+        let mut agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(ref s) if s == "done"));
+        assert!(
+            !session_contains(&session, VERIFY_NUDGE),
+            "notes update must not re-arm VERIFY"
+        );
+        assert!(
+            !session_contains(&session, crate::notes::NOTES_STALE_MARK),
+            "dirty cleared by exact-key notes update"
+        );
+        assert!(session_contains(
+            &session,
+            crate::tools::update_repo_notes::NOTES_UPDATE_OK_PREFIX
+        ));
+    }
+
+    #[tokio::test]
+    async fn mut_gate_blocks_edit_without_cert() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "x\n").unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn(
+                "write_file",
+                serde_json::json!({"path": "a.rs", "content": "y\n"}),
+            )),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        assert!(
+            session_contains(&session, crate::notes::NOTES_MUT_GATE_MARK),
+            "gate must fire"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.rs")).unwrap(),
+            "x\n",
+            "file must not be written"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_only_cargo_toml_with_only_root_cert() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "v1\n").unwrap();
+        let root_body = valid_root_notes();
+        let script = Scripted::new(vec![
+            ok(&notes_update("_root", &root_body)),
+            ok(&turn(
+                "write_file",
+                serde_json::json!({"path": "Cargo.toml", "content": "v2\n"}),
+            )),
+            ok(&turn("run_command", serde_json::json!({"command": "true"}))),
+            ok(&notes_update("_root", &root_body)), // clear dirty
+            ok(&finish("ok")),
+        ]);
+        let mut agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("Cargo.toml")).unwrap(),
+            "v2\n"
+        );
+        assert!(!session_contains(&session, crate::notes::NOTES_MUT_GATE_MARK));
+    }
+
+    #[tokio::test]
+    async fn nested_src_x_rs_needs_src_certified() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/x.rs"), "x\n").unwrap();
+        let root_body = valid_root_notes();
+        let dir_body = valid_dir_notes();
+        // Only _root → still blocked for src/x.rs
+        let script = Scripted::new(vec![
+            ok(&notes_update("_root", &root_body)),
+            ok(&turn(
+                "write_file",
+                serde_json::json!({"path": "src/x.rs", "content": "blocked\n"}),
+            )),
+            ok(&notes_update("src", &dir_body)),
+            ok(&turn(
+                "write_file",
+                serde_json::json!({"path": "src/x.rs", "content": "ok\n"}),
+            )),
+            ok(&turn("run_command", serde_json::json!({"command": "true"}))),
+            ok(&notes_update("src", &dir_body)),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        assert!(session_contains(&session, crate::notes::NOTES_MUT_GATE_MARK));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("src/x.rs")).unwrap(),
+            "ok\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_notes_false_edit_succeeds_and_prompt_lacks_pointer() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "x\n").unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn(
+                "write_file",
+                serde_json::json!({"path": "a.rs", "content": "y\n"}),
+            )),
+            ok(&turn("run_command", serde_json::json!({"command": "true"}))),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        assert!(
+            !session.messages()[0]
+                .content
+                .contains(prompt::REPO_NOTES_SYSTEM_POINTER),
+            "flag false: no SYSTEM notes pointer"
+        );
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.rs")).unwrap(),
+            "y\n"
+        );
+        assert!(!session_contains(&session, crate::notes::NOTES_MUT_GATE_MARK));
+        assert!(!session_contains(&session, crate::notes::NOTES_STALE_MARK));
+    }
+
+    #[tokio::test]
+    async fn mut_gate_reject_never_calls_approver() {
+        // NonInteractiveApprover denies all mutations — if gate runs first we get
+        // NOTES_MUT_GATE_MARK, never "mutating tools are unavailable".
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "x\n").unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn(
+                "write_file",
+                serde_json::json!({"path": "a.rs", "content": "y\n"}),
+            )),
+            ok(&finish("d")),
+        ]);
+        let mut agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        let outcome = agent
+            .run(
+                &mut session,
+                "x",
+                &mut crate::agent::approval::NonInteractiveApprover,
+                &mut |_| {},
+            )
+            .await
+            .unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)));
+        assert!(session_contains(&session, crate::notes::NOTES_MUT_GATE_MARK));
+        assert!(
+            !session_contains(&session, "mutating tools are unavailable"),
+            "approver must not run on mut-gate reject"
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_under_notes_dir_is_banned() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![
+            ok(&turn(
+                "write_file",
+                serde_json::json!({
+                    "path": ".loco/notes/_root.md",
+                    "content": "hijack"
+                }),
+            )),
+            ok(&finish("d")),
+        ]);
+        // Flag off still bans notes path (option A) without mut-gate
+        let mut agent = make_guided_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(session_contains(&session, "update_repo_notes"));
+        assert!(!dir.path().join(".loco/notes/_root.md").exists());
+    }
+
+    #[tokio::test]
+    async fn start_scan_records_notes_bytes_max_zero_when_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpath = dir.path().join("t.jsonl");
+        let script = Scripted::new(vec![ok(&finish("d"))]);
+        let mut agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session =
+            Session::new(agent.initial_history(), Transcript::create_at(&tpath).unwrap());
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let extras: Vec<_> = std::fs::read_to_string(&tpath)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .filter(|v| v["kind"] == crate::notes::NOTES_BYTES_MAX_KIND)
+            .collect();
+        assert!(
+            extras.iter().any(|e| e["content"] == "0"),
+            "empty scan records 0: {extras:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn notes_flag_on_system_prompt_has_pointer() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Scripted::new(vec![]);
+        let agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let hist = agent.initial_history();
+        assert!(
+            hist[0].content.contains(prompt::REPO_NOTES_SYSTEM_POINTER),
+            "flag true: SYSTEM pointer present"
         );
     }
 }

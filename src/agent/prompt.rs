@@ -6,10 +6,22 @@ use crate::tools::list_files::walk_entries;
 const TREE_MAX_ENTRIES: usize = 100;
 const TREE_DEPTH: usize = 3;
 
+/// SYSTEM pointer when `repo_notes` is on (M16 §3-4). Flag-off must not include this.
+pub const REPO_NOTES_SYSTEM_POINTER: &str = "\
+Maintain hierarchical repo notes under `.loco/notes/` via `update_repo_notes`. \
+Keep root short (summary + routes); deeper dirs hold role/entrypoints. \
+Do not paste file bodies, test logs, or issue text.";
+
 /// 에이전트 시스템 프롬프트 (영어 — 소형 모델의 지시 이행률, 스펙 §4).
-/// 매 턴 JSON 하나, 답변 채널은 finish.summary, few-shot 1개 포함
-pub fn system_prompt(tool_docs: &str, root: &Path) -> String {
+/// 매 턴 JSON 하나, 답변 채널은 finish.summary, few-shot 1개 포함.
+/// `repo_notes`: when true, append a 2–3 sentence notes pointer (M16 §3-4).
+pub fn system_prompt(tool_docs: &str, root: &Path, repo_notes: bool) -> String {
     let tree = project_tree(root);
+    let notes_block = if repo_notes {
+        format!("\n\n{REPO_NOTES_SYSTEM_POINTER}\n")
+    } else {
+        String::new()
+    };
     format!(
         "You are loco, a coding agent working inside the user's project directory. \
 You interact with the project ONLY by calling tools.\n\
@@ -33,7 +45,7 @@ Example turns:\n\
 {{\"thought\": \"I need to find where the config is loaded.\", \"action\": {{\"tool\": \"grep\", \"args\": {{\"pattern\": \"fn load\", \"path\": \"src\"}}}}}}\n\
 {{\"thought\": \"Replace the todo with the real body.\", \"action\": {{\"tool\": \"edit_file\", \"args\": {{\"path\": \"src/lib.rs\", \"search\": \"fn add(a: i32, b: i32) -> i32 {{\\n    todo!()\\n}}\", \"replace\": \"fn add(a: i32, b: i32) -> i32 {{\\n    a + b\\n}}\"}}}}}}\n\
 {{\"thought\": \"Verify my edit compiles and tests pass.\", \"action\": {{\"tool\": \"run_command\", \"args\": {{\"command\": \"cargo test\"}}}}}}\n\
-\n\
+{notes_block}\
 Project files (partial, gitignore respected):\n\
 {tree}"
     )
@@ -60,7 +72,7 @@ mod tests {
     #[test]
     fn prompt_states_protocol_and_finish_channel() {
         let dir = tempfile::tempdir().unwrap();
-        let p = system_prompt("- read_file(path): Read a file.", dir.path());
+        let p = system_prompt("- read_file(path): Read a file.", dir.path(), false);
         assert!(p.contains("\"thought\""), "프로토콜 형태 명시");
         assert!(p.contains("- read_file(path)"), "툴 목록 주입");
         assert!(p.contains("finish"), "답변 채널 명시 (스펙 §4)");
@@ -72,6 +84,20 @@ mod tests {
         assert!(p.contains("Copy `search` text exactly"), "정확 복사 규칙");
         assert!(p.contains("\"tool\": \"edit_file\""), "edit_file 예시");
         assert!(p.contains("\"tool\": \"run_command\""), "run_command 예시");
+        assert!(
+            !p.contains("update_repo_notes"),
+            "flag false: no notes SYSTEM pointer"
+        );
+        assert!(!p.contains(REPO_NOTES_SYSTEM_POINTER));
+    }
+
+    #[test]
+    fn prompt_includes_notes_pointer_when_flag_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = system_prompt("- t", dir.path(), true);
+        assert!(p.contains(REPO_NOTES_SYSTEM_POINTER));
+        assert!(p.contains("update_repo_notes"));
+        assert!(p.contains(".loco/notes/"));
     }
 
     #[test]
