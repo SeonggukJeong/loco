@@ -1,0 +1,935 @@
+
+running 3 tests
+test feature::no_context_sep ... FAILED
+test feature::no_context_sep_overridden ... FAILED
+test feature::no_context_sep_overrides ... FAILED
+
+failures:
+
+---- feature::no_context_sep stdout ----
+
+thread 'feature::no_context_sep' (15943319) panicked at tests/util.rs:406:13:
+
+
+==========
+command failed but expected success!
+
+command: cd "/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/no_context_sep/0" && env -u RIPGREP_CONFIG_PATH "/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/target/debug/deps/../rg" "--path-separator" "/" "-A1" "--no-context-separator" "foo" "test"
+cwd: /var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/no_context_sep/0
+
+status: exit status: 2
+
+stdout: 
+
+stderr: error: Found argument '--no-context-separator' which wasn't expected, or isn't valid in this context
+	Did you mean --context-separator?
+
+USAGE:
+    
+    rg [OPTIONS] PATTERN [PATH ...]
+    rg [OPTIONS] [-e PATTERN ...] [-f PATTERNFILE ...] [PATH ...]
+    rg [OPTIONS] --files [PATH ...]
+    rg [OPTIONS] --type-list
+    command | rg [OPTIONS] PATTERN
+
+For more information try --help
+
+
+
+==========
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- feature::no_context_sep_overridden stdout ----
+
+thread 'feature::no_context_sep_overridden' (15943388) panicked at tests/util.rs:406:13:
+
+
+==========
+command failed but expected success!
+
+command: cd "/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/no_context_sep_overridden/1" && env -u RIPGREP_CONFIG_PATH "/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/target/debug/deps/../rg" "--path-separator" "/" "-A1" "--no-context-separator" "--context-separator" "AAA" "foo" "test"
+cwd: /var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/no_context_sep_overridden/1
+
+status: exit status: 2
+
+stdout: 
+
+stderr: error: Found argument '--no-context-separator' which wasn't expected, or isn't valid in this context
+	Did you mean --context-separator?
+
+USAGE:
+    
+    rg [OPTIONS] PATTERN [PATH ...]
+    rg [OPTIONS] [-e PATTERN ...] [-f PATTERNFILE ...] [PATH ...]
+    rg [OPTIONS] --files [PATH ...]
+    rg [OPTIONS] --type-list
+    command | rg [OPTIONS] PATTERN
+
+For more information try --help
+
+
+
+==========
+
+
+---- feature::no_context_sep_overrides stdout ----
+
+thread 'feature::no_context_sep_overrides' (15943390) panicked at tests/util.rs:406:13:
+
+
+==========
+command failed but expected success!
+
+command: cd "/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/no_context_sep_overrides/2" && env -u RIPGREP_CONFIG_PATH "/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/target/debug/deps/../rg" "--path-separator" "/" "-A1" "--context-separator" "AAA" "--no-context-separator" "foo" "test"
+cwd: /var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/ripgrep-tests/no_context_sep_overrides/2
+
+status: exit status: 2
+
+stdout: 
+
+stderr: error: Found argument '--no-context-separator' which wasn't expected, or isn't valid in this context
+	Did you mean --context-separator?
+
+USAGE:
+    
+    rg [OPTIONS] PATTERN [PATH ...]
+    rg [OPTIONS] [-e PATTERN ...] [-f PATTERNFILE ...] [PATH ...]
+    rg [OPTIONS] --files [PATH ...]
+    rg [OPTIONS] --type-list
+    command | rg [OPTIONS] PATTERN
+
+For more information try --help
+
+
+
+==========
+
+
+
+failures:
+    feature::no_context_sep
+    feature::no_context_sep_overridden
+    feature::no_context_sep_overrides
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 238 filtered out; finished in 0.52s
+
+
+warning: /private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/ignore/Cargo.toml: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+warning: /private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/grep-cli/Cargo.toml: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+warning: /private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/grep-matcher/Cargo.toml: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+warning: /private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/grep-printer/Cargo.toml: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+warning: /private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/grep-searcher/Cargo.toml: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+warning: /private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/grep-regex/Cargo.toml: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+warning: /private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/grep/Cargo.toml: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+warning: /private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/globset/Cargo.toml: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+warning: /private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/tmpx0xc0jko/x/grep-pcre2/Cargo.toml: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> grep-matcher/src/interpolate.rs:95:30
+   |
+95 | fn find_cap_ref(replacement: &[u8]) -> Option<CaptureRef> {
+   |                              ^^^^^            ^^^^^^^^^^ the same lifetime is hidden here
+   |                              |
+   |                              the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+95 | fn find_cap_ref(replacement: &[u8]) -> Option<CaptureRef<'_>> {
+   |                                                         ++++
+
+warning: `grep-matcher` (lib) generated 1 warning (run `cargo fix --lib -p grep-matcher` to apply 1 suggestion)
+warning: field `pat` is never read
+   --> globset/src/glob.rs:110:5
+    |
+108 | pub struct GlobMatcher {
+    |            ----------- field in this struct
+109 |     /// The underlying pattern.
+110 |     pat: Glob,
+    |     ^^^
+    |
+    = note: `GlobMatcher` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `config` is never read
+  --> grep-searcher/src/searcher/glue.rs:91:5
+   |
+90 | pub struct SliceByLine<'s, M: 's, S> {
+   |            ----------- field in this struct
+91 |     config: &'s Config,
+   |     ^^^^^^
+   |
+   = note: `SliceByLine` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `line_term` is never read
+   --> grep-searcher/src/sink.rs:434:16
+    |
+433 | pub struct SinkContext<'b> {
+    |            ----------- field in this struct
+434 |     pub(crate) line_term: LineTerminator,
+    |                ^^^^^^^^^
+    |
+    = note: `SinkContext` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: `globset` (lib) generated 1 warning
+warning: `grep-searcher` (lib) generated 2 warnings
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> grep-printer/src/jsont.rs:18:10
+   |
+18 | #[derive(Serialize)]
+   |          ^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `base64`, `default`, `serde`, `serde1`, `serde_derive`, and `serde_json`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Serialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> grep-printer/src/jsont.rs:28:10
+   |
+28 | #[derive(Serialize)]
+   |          ^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `base64`, `default`, `serde`, `serde1`, `serde_derive`, and `serde_json`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Serialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> grep-printer/src/jsont.rs:34:10
+   |
+34 | #[derive(Serialize)]
+   |          ^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `base64`, `default`, `serde`, `serde1`, `serde_derive`, and `serde_json`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Serialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> grep-printer/src/jsont.rs:42:10
+   |
+42 | #[derive(Serialize)]
+   |          ^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `base64`, `default`, `serde`, `serde1`, `serde_derive`, and `serde_json`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Serialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> grep-printer/src/jsont.rs:53:10
+   |
+53 | #[derive(Serialize)]
+   |          ^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `base64`, `default`, `serde`, `serde1`, `serde_derive`, and `serde_json`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Serialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> grep-printer/src/jsont.rs:64:10
+   |
+64 | #[derive(Serialize)]
+   |          ^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `base64`, `default`, `serde`, `serde1`, `serde_derive`, and `serde_json`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Serialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> grep-printer/src/jsont.rs:80:45
+   |
+80 | #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize)]
+   |                                             ^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `base64`, `default`, `serde`, `serde1`, `serde_derive`, and `serde_json`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Serialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> grep-printer/src/stats.rs:11:39
+   |
+11 | #[cfg_attr(feature = "serde1", derive(Serialize))]
+   |                                       ^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `base64`, `default`, `serde`, `serde1`, `serde_derive`, and `serde_json`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Serialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> grep-printer/src/json.rs:809:17
+    |
+809 |     fn as_slice(&self) -> &[jsont::SubMatch] {
+    |                 ^^^^^     ^^^^^^^^^^^^^^^^^^
+    |                 |         | |
+    |                 |         | the same lifetime is hidden here
+    |                 |         the same lifetime is elided here
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+809 |     fn as_slice(&self) -> &[jsont::SubMatch<'_>] {
+    |                                            ++++
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> grep-printer/src/jsont.rs:18:10
+   |
+18 | #[derive(Serialize)]
+   |          ^--------
+   |          |
+   |          `Serialize` is not local
+   |          move the `impl` block outside of this constant `_IMPL_SERIALIZE_FOR_Message`
+...
+21 | pub enum Message<'a> {
+   |          ------- `Message` is not local
+   |
+   = note: the derive macro `Serialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Serialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: `#[warn(non_local_definitions)]` on by default
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> grep-printer/src/jsont.rs:28:10
+   |
+28 | #[derive(Serialize)]
+   |          ^--------
+   |          |
+   |          `Serialize` is not local
+   |          move the `impl` block outside of this constant `_IMPL_SERIALIZE_FOR_Begin`
+29 | pub struct Begin<'a> {
+   |            ----- `Begin` is not local
+   |
+   = note: the derive macro `Serialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Serialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> grep-printer/src/jsont.rs:34:10
+   |
+34 | #[derive(Serialize)]
+   |          ^--------
+   |          |
+   |          `Serialize` is not local
+   |          move the `impl` block outside of this constant `_IMPL_SERIALIZE_FOR_End`
+35 | pub struct End<'a> {
+   |            --- `End` is not local
+   |
+   = note: the derive macro `Serialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Serialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> grep-printer/src/jsont.rs:42:10
+   |
+42 | #[derive(Serialize)]
+   |          ^--------
+   |          |
+   |          `Serialize` is not local
+   |          move the `impl` block outside of this constant `_IMPL_SERIALIZE_FOR_Match`
+43 | pub struct Match<'a> {
+   |            ----- `Match` is not local
+   |
+   = note: the derive macro `Serialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Serialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> grep-printer/src/jsont.rs:53:10
+   |
+53 | #[derive(Serialize)]
+   |          ^--------
+   |          |
+   |          `Serialize` is not local
+   |          move the `impl` block outside of this constant `_IMPL_SERIALIZE_FOR_Context`
+54 | pub struct Context<'a> {
+   |            ------- `Context` is not local
+   |
+   = note: the derive macro `Serialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Serialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> grep-printer/src/jsont.rs:64:10
+   |
+64 | #[derive(Serialize)]
+   |          ^--------
+   |          |
+   |          `Serialize` is not local
+   |          move the `impl` block outside of this constant `_IMPL_SERIALIZE_FOR_SubMatch`
+65 | pub struct SubMatch<'a> {
+   |            -------- `SubMatch` is not local
+   |
+   = note: the derive macro `Serialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Serialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> grep-printer/src/jsont.rs:80:45
+   |
+80 | #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize)]
+   |                                             ^--------
+   |                                             |
+   |                                             `Serialize` is not local
+   |                                             move the `impl` block outside of this constant `_IMPL_SERIALIZE_FOR_Data`
+81 | #[serde(untagged)]
+82 | enum Data<'a> {
+   |      ---- `Data` is not local
+   |
+   = note: the derive macro `Serialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Serialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> grep-printer/src/jsont.rs:91:26
+   |
+91 |     fn from_bytes(bytes: &[u8]) -> Data {
+   |                          ^^^^^     ^^^^ the same lifetime is hidden here
+   |                          |
+   |                          the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+91 |     fn from_bytes(bytes: &[u8]) -> Data<'_> {
+   |                                        ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> grep-printer/src/jsont.rs:99:24
+   |
+99 |     fn from_path(path: &Path) -> Data {
+   |                        ^^^^^     ^^^^ the same lifetime is hidden here
+   |                        |
+   |                        the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+99 |     fn from_path(path: &Path) -> Data<'_> {
+   |                                      ++++
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> grep-printer/src/stats.rs:11:39
+   |
+11 | #[cfg_attr(feature = "serde1", derive(Serialize))]
+   |                                       ^--------
+   |                                       |
+   |                                       `Serialize` is not local
+   |                                       move the `impl` block outside of this constant `_IMPL_SERIALIZE_FOR_Stats`
+12 | pub struct Stats {
+   |            ----- `Stats` is not local
+   |
+   = note: the derive macro `Serialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Serialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `avx-accel`
+   --> src/app.rs:124:13
+    |
+124 |     if cfg!(feature = "avx-accel") {
+    |             ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pcre2` and `simd-accel`
+    = help: consider adding `avx-accel` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: field `0` is never read
+  --> ignore/src/dir.rs:31:28
+   |
+31 | pub struct IgnoreMatch<'a>(IgnoreMatchInner<'a>);
+   |            -----------     ^^^^^^^^^^^^^^^^^^^^
+   |            |
+   |            field in this struct
+   |
+   = help: consider removing this field
+   = note: `IgnoreMatch` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `0` is never read
+  --> ignore/src/dir.rs:37:14
+   |
+37 |     Override(overrides::Glob<'a>),
+   |     -------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+37 -     Override(overrides::Glob<'a>),
+37 +     Override(()),
+   |
+
+warning: field `0` is never read
+  --> ignore/src/dir.rs:38:15
+   |
+38 |     Gitignore(&'a gitignore::Glob),
+   |     --------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+38 -     Gitignore(&'a gitignore::Glob),
+38 +     Gitignore(()),
+   |
+
+warning: field `0` is never read
+  --> ignore/src/dir.rs:39:11
+   |
+39 |     Types(types::Glob<'a>),
+   |     ----- ^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+39 -     Types(types::Glob<'a>),
+39 +     Types(()),
+   |
+
+warning: field `0` is never read
+  --> ignore/src/overrides.rs:24:21
+   |
+24 | pub struct Glob<'a>(GlobInner<'a>);
+   |            ----     ^^^^^^^^^^^^^
+   |            |
+   |            field in this struct
+   |
+   = help: consider removing this field
+   = note: `Glob` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `0` is never read
+  --> ignore/src/overrides.rs:31:13
+   |
+31 |     Matched(&'a gitignore::Glob),
+   |     ------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `GlobInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+31 -     Matched(&'a gitignore::Glob),
+31 +     Matched(()),
+   |
+
+warning: fields `which` and `negated` are never read
+   --> ignore/src/types.rs:357:9
+    |
+353 |     Matched {
+    |     ------- fields in this variant
+...
+357 |         which: usize,
+    |         ^^^^^
+358 |         /// Whether the selection was negated or not.
+359 |         negated: bool,
+    |         ^^^^^^^
+    |
+    = note: `GlobInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> ignore/src/dir.rs:451:20
+    |
+451 |     pub fn parents(&self) -> Parents {
+    |                    ^^^^^     ^^^^^^^ the same lifetime is hidden here
+    |                    |
+    |                    the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+451 |     pub fn parents(&self) -> Parents<'_> {
+    |                                     ++++
+
+warning: `grep-printer` (lib) generated 19 warnings (run `cargo fix --lib -p grep-printer` to apply 3 suggestions)
+warning: `ripgrep` (build script) generated 1 warning
+warning: `ignore` (lib) generated 8 warnings (run `cargo fix --lib -p ignore` to apply 1 suggestion)
+warning: unexpected `cfg` condition value: `cargo-clippy`
+ --> tests/json.rs:9:24
+  |
+9 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+  |                        ^^^^^^^^^^^
+  |
+  = note: expected values for `feature` are: `pcre2` and `simd-accel`
+  = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+  = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+  = note: `#[warn(unexpected_cfgs)]` on by default
+  = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> tests/json.rs:57:24
+   |
+57 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pcre2` and `simd-accel`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> tests/json.rs:62:24
+   |
+62 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pcre2` and `simd-accel`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> tests/json.rs:69:24
+   |
+69 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pcre2` and `simd-accel`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> tests/json.rs:75:24
+   |
+75 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pcre2` and `simd-accel`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> tests/json.rs:84:24
+   |
+84 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pcre2` and `simd-accel`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+  --> tests/json.rs:93:24
+   |
+93 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `pcre2` and `simd-accel`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+   --> tests/json.rs:101:24
+    |
+101 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+    |                        ^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pcre2` and `simd-accel`
+    = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+   --> tests/json.rs:115:24
+    |
+115 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+    |                        ^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pcre2` and `simd-accel`
+    = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `cargo-clippy`
+   --> tests/json.rs:126:24
+    |
+126 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+    |                        ^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `pcre2` and `simd-accel`
+    = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `Deserialize` crate for guidance on how handle this unexpected cfg
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> tests/json.rs:9:24
+   |
+ 9 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^----------
+   |                        |
+   |                        `Deserialize` is not local
+   |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_Message`
+...
+12 | enum Message {
+   |      ------- `Message` is not local
+   |
+   = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: `#[warn(non_local_definitions)]` on by default
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> tests/json.rs:57:24
+   |
+57 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^----------
+   |                        |
+   |                        `Deserialize` is not local
+   |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_Begin`
+58 | struct Begin {
+   |        ----- `Begin` is not local
+   |
+   = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> tests/json.rs:62:24
+   |
+62 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^----------
+   |                        |
+   |                        `Deserialize` is not local
+   |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_End`
+63 | struct End {
+   |        --- `End` is not local
+   |
+   = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> tests/json.rs:69:24
+   |
+69 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^----------
+   |                        |
+   |                        `Deserialize` is not local
+   |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_Summary`
+70 | struct Summary {
+   |        ------- `Summary` is not local
+   |
+   = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> tests/json.rs:75:24
+   |
+75 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^----------
+   |                        |
+   |                        `Deserialize` is not local
+   |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_Match`
+76 | struct Match {
+   |        ----- `Match` is not local
+   |
+   = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> tests/json.rs:84:24
+   |
+84 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^----------
+   |                        |
+   |                        `Deserialize` is not local
+   |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_Context`
+85 | struct Context {
+   |        ------- `Context` is not local
+   |
+   = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+  --> tests/json.rs:93:24
+   |
+93 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+   |                        ^----------
+   |                        |
+   |                        `Deserialize` is not local
+   |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_SubMatch`
+94 | struct SubMatch {
+   |        -------- `SubMatch` is not local
+   |
+   = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+   = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+   = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+   = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+   = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+   --> tests/json.rs:101:24
+    |
+101 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+    |                        ^----------
+    |                        |
+    |                        `Deserialize` is not local
+    |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_Data`
+102 | #[serde(untagged)]
+103 | enum Data {
+    |      ---- `Data` is not local
+    |
+    = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+    = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+    = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+    = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+    = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+   --> tests/json.rs:115:24
+    |
+115 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+    |                        ^----------
+    |                        |
+    |                        `Deserialize` is not local
+    |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_Stats`
+116 | struct Stats {
+    |        ----- `Stats` is not local
+    |
+    = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+    = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+    = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+    = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+    = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: non-local `impl` definition, `impl` blocks should be written at the same level as their item
+   --> tests/json.rs:126:24
+    |
+126 | #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+    |                        ^----------
+    |                        |
+    |                        `Deserialize` is not local
+    |                        move the `impl` block outside of this constant `_IMPL_DESERIALIZE_FOR_Duration`
+127 | struct Duration {
+    |        -------- `Duration` is not local
+    |
+    = note: the derive macro `Deserialize` defines the non-local `impl`, and may need to be changed
+    = note: the derive macro `Deserialize` may come from an old version of the `serde_derive` crate, try updating your dependency with `cargo update -p serde_derive`
+    = note: an `impl` is never scoped, even when it is nested inside an item, as it may impact type checking outside of that item, which can be the case if neither the trait or the self type are at the same nesting level as the `impl`
+    = note: items in an anonymous const item (`const _: () = { ... }`) are treated as in the same scope as the anonymous const's declaration for the purpose of this lint
+    = note: this warning originates in the derive macro `Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: field `value_name` is never read
+   --> src/app.rs:224:9
+    |
+220 |     Positional {
+    |     ---------- field in this variant
+...
+224 |         value_name: &'static str,
+    |         ^^^^^^^^^^
+    |
+    = note: `RGArgKind` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `long` is never read
+   --> src/app.rs:239:9
+    |
+237 |     Switch {
+    |     ------ field in this variant
+238 |         /// The long name of a flag. This is always non-empty.
+239 |         long: &'static str,
+    |         ^^^^
+    |
+    = note: `RGArgKind` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: fields `long` and `value_name` are never read
+   --> src/app.rs:261:9
+    |
+259 |     Flag {
+    |     ---- fields in this variant
+260 |         /// The long name of a flag. This is always non-empty.
+261 |         long: &'static str,
+    |         ^^^^
+...
+268 |         value_name: &'static str,
+    |         ^^^^^^^^^^
+    |
+    = note: `RGArgKind` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+    --> src/args.rs:1681:21
+     |
+1681 |     fn values_of_os(&self, name: &str) -> Option<clap::OsValues> {
+     |                     ^^^^^                        ^^^^^^^^^^^^^^ the same lifetime is hidden here
+     |                     |
+     |                     the lifetime is elided here
+     |
+     = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+     = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+     |
+1681 |     fn values_of_os(&self, name: &str) -> Option<clap::OsValues<'_>> {
+     |                                                                ++++
+
+warning: `ripgrep` (test "integration") generated 20 warnings
+warning: `ripgrep` (bin "rg") generated 5 warnings (1 duplicate) (run `cargo fix --bin "rg" -p ripgrep` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running tests/tests.rs (target/debug/deps/integration-9ff4b4272ba02abc)
+error: test failed, to rerun pass `--test integration`

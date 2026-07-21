@@ -1,0 +1,82 @@
+[
+  {
+    "task": "fd-1873-path-sep",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "fd-1727-ignore-contain",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "fd-615-hidden-dot-pattern",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "fd-535-prune",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "fd-404-min-exact-depth",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "fd-250-invalid-utf8",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "fd-89-excludes",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "fd-675-number-parse-error",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "rg-2664-sortr-path",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "rg-1868-passthru-context",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "rg-1176-fixed-strings-file",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "rg-1159-exit-status",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "rg-693-contextless-sep",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "rg-568-leading-hyphen",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "rg-483-quiet-files",
+    "rc": 0,
+    "status": "PASS"
+  },
+  {
+    "task": "rg-99-empty-lines",
+    "rc": 101,
+    "status": "FAIL"
+  }
+]

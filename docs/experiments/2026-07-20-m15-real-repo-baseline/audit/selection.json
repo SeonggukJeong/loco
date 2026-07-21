@@ -1,0 +1,328 @@
+[
+  {
+    "task": "fd-1873-path-sep",
+    "repo": "fd",
+    "issue": 1873,
+    "title": "[BUG] The 'pattern contains path separator' error is only shown when pattern is an existing directory",
+    "fix": "ed4766419152120bb0b21516f581b4a4ac71f531",
+    "parent": "90e73d72df258db32bad7a4d11154a936b05ea92",
+    "check": "cargo test --test tests test_pattern_with_forward_slash_is_rejected",
+    "protected": [
+      "tests/tests.rs"
+    ],
+    "oracle": [
+      "src/main.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "",
+    "issue_url": "https://github.com/sharkdp/fd/issues/1873",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "fd-615-hidden-dot-pattern",
+    "repo": "fd",
+    "issue": 615,
+    "title": "Print warning if --hidden is not set and search pattern starts with a dot",
+    "fix": "cadaef3f076fb0bebeb4b72813361b7e6aa5f186",
+    "parent": "17bd256ae6e4a8322552024e7d70644927912650",
+    "check": "cargo test --test tests test_error_if_hidden_not_set_and_pattern_starts_with_dot",
+    "protected": [
+      "tests/tests.rs"
+    ],
+    "oracle": [
+      "src/main.rs",
+      "src/regex_helper.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "",
+    "issue_url": "https://github.com/sharkdp/fd/issues/615",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "fd-535-prune",
+    "repo": "fd",
+    "issue": 535,
+    "title": "`-prune` options",
+    "fix": "ec4cc981fcf47dbf5eb654ece3950543605ef383",
+    "parent": "06eb231fbd6481956fea95800f04169d119c802c",
+    "check": "cargo test --test tests test_prune",
+    "protected": [
+      "tests/tests.rs"
+    ],
+    "oracle": [
+      "src/app.rs",
+      "src/main.rs",
+      "src/options.rs",
+      "src/walk.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "",
+    "issue_url": "https://github.com/sharkdp/fd/issues/535",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "fd-404-min-exact-depth",
+    "repo": "fd",
+    "issue": 404,
+    "title": "Add --min-depth option",
+    "fix": "d63c63be8cf8b6ecf75c1b5b8a2033ec7bb899f9",
+    "parent": "47974b64795996dfe0adc06dadfe791efca25416",
+    "check": "cargo test --test tests test_min_depth",
+    "protected": [
+      "tests/tests.rs"
+    ],
+    "oracle": [
+      "src/app.rs",
+      "src/main.rs",
+      "src/options.rs",
+      "src/walk.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "",
+    "issue_url": "https://github.com/sharkdp/fd/issues/404",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "fd-675-number-parse-error",
+    "repo": "fd",
+    "issue": 675,
+    "title": "Invalid option values are silently ignored",
+    "fix": "e0adb45d082d8318ab284e208d59b8e3b53fc2d8",
+    "parent": "ec4cc981fcf47dbf5eb654ece3950543605ef383",
+    "check": "cargo test --test tests test_number_parsing_errors",
+    "protected": [
+      "tests/testenv/mod.rs",
+      "tests/tests.rs"
+    ],
+    "oracle": [
+      "src/main.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "Cargo.lock churn excluded from solution (format-only, not dep policy)",
+    "issue_url": "https://github.com/sharkdp/fd/issues/675",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "rg-1868-passthru-context",
+    "repo": "ripgrep",
+    "issue": 1868,
+    "title": "Context output options (-A, -B, and -C) do not override the \"--passthru\" option",
+    "fix": "a77b914e7ac9fe83602d7e43f8c2187cb5b03dc1",
+    "parent": "2e2af50a4df0bd424c3a06eabf42fa0ea0aad1bc",
+    "check": "cargo test --test integration r1868_context_passthru_override",
+    "protected": [
+      "tests/regression.rs"
+    ],
+    "oracle": [
+      "crates/core/app.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1868",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "rg-1176-fixed-strings-file",
+    "repo": "ripgrep",
+    "issue": 1176,
+    "title": "rg does not respect -F when used with -f",
+    "fix": "0df71240ff19fe8fa278b64d8776725f0253bcf9",
+    "parent": "f3164f2615ce18d3ea7b5ce122dfe2a381d1b3f4",
+    "check": "cargo test --test integration r1176",
+    "protected": [
+      "tests/regression.rs"
+    ],
+    "oracle": [
+      "src/args.rs"
+    ],
+    "nav_label": "단축됨",
+    "note": "",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1176",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "rg-1159-exit-status",
+    "repo": "ripgrep",
+    "issue": 1159,
+    "title": "Should use exit code to distinguish between no results and an invocation error",
+    "fix": "f3164f2615ce18d3ea7b5ce122dfe2a381d1b3f4",
+    "parent": "31d3e241306f305c1cb94e1882511da2b48dcd36",
+    "check": "cargo test --test integration r1159",
+    "protected": [
+      "tests/regression.rs"
+    ],
+    "oracle": [
+      "src/args.rs",
+      "src/main.rs",
+      "src/messages.rs",
+      "src/subject.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1159",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "rg-568-leading-hyphen",
+    "repo": "ripgrep",
+    "issue": 568,
+    "title": "Combined options",
+    "fix": "6dce04963d4ee2d1bd6c17559d237f6dc88e048e",
+    "parent": "d4b790fd8d979591cee058e7014957b9f579380d",
+    "check": "cargo test --test integration regression_568_leading_hyphen_option_arguments",
+    "protected": [
+      "tests/tests.rs"
+    ],
+    "oracle": [
+      "src/app.rs"
+    ],
+    "nav_label": "단축됨",
+    "note": "",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/568",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "rg-740-passthru",
+    "repo": "ripgrep",
+    "issue": 740,
+    "title": "Add support for `--passthr{u,ough}` flag",
+    "fix": "58bdc366ec292653124699940190432ae30a6732",
+    "parent": "34c0b1bc709f74678d7c1a24046c26571c25eaec",
+    "check": "cargo test --test integration feature_740_passthru",
+    "protected": [
+      "tests/tests.rs"
+    ],
+    "oracle": [
+      "src/app.rs",
+      "src/args.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "replacement for rg-99 (old rustc-serialize unbuildable on current rustc)",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/740",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "fd-898-strip-cwd-exec",
+    "repo": "fd",
+    "issue": 898,
+    "title": "[BUG] `--strip-cwd-prefix` does nothing",
+    "fix": "4ffc34956f9a00d3d5279758feabb5862f5dc9c4",
+    "parent": "5039d2db99149dfe44380dbb8e3cc8f4ddd3e25f",
+    "check": "cargo test --test tests test_exec",
+    "protected": [
+      "tests/tests.rs"
+    ],
+    "oracle": [
+      "src/app.rs",
+      "src/dir_entry.rs",
+      "src/exec/job.rs",
+      "src/main.rs",
+      "src/output.rs",
+      "src/walk.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "replacement for fd-1727 (issue↔commit misalign: prune-parent vs ignore-contain)",
+    "issue_url": "https://github.com/sharkdp/fd/issues/898",
+    "leak": "지목되지 않음"
+  },
+  {
+    "task": "rg-1138-no-ignore-dot",
+    "repo": "ripgrep",
+    "issue": 1138,
+    "title": "Feature request: being able to ignore .ignore files, but not .gitignore",
+    "fix": "12a6ca45f9dad30864715dfecd917bb571b687d4",
+    "parent": "9d703110cfe01782d2d0b03a340f5983da215e68",
+    "check": "cargo test --test integration f1138_no_ignore_dot",
+    "protected": [
+      "tests/feature.rs"
+    ],
+    "oracle": [
+      "src/app.rs",
+      "src/args.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "replacement for rg-2664(named)/rg-693(FAIL0)",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1138",
+    "leak": "지목되지 않음 (verify 통과 후 재조달; 원 출력 audit/<task>-check.txt 참조)"
+  },
+  {
+    "task": "rg-1293-glob-case-insensitive",
+    "repo": "ripgrep",
+    "issue": 1293,
+    "title": "For to --iglob even if -g",
+    "fix": "c2cb0a4de4597c8f911c8ebece6aa0435ef5da6f",
+    "parent": "adb9332f52b884c8b872d1c969a7841188fe3089",
+    "check": "cargo test --test integration glob_always_case_insensitive",
+    "protected": [
+      "tests/misc.rs"
+    ],
+    "oracle": [
+      "src/app.rs",
+      "src/args.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "replacement for rg-2664(named)/rg-693(FAIL0)",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1293",
+    "leak": "지목되지 않음 (verify 통과 후 재조달; 원 출력 audit/<task>-check.txt 참조)"
+  },
+  {
+    "task": "rg-1466-no-ignore-files",
+    "repo": "ripgrep",
+    "issue": 1466,
+    "title": "--no-ignore does not negate --ignore-file",
+    "fix": "c4c43c733ee9a44d3a48aa7f22284a6db6f0f9c6",
+    "parent": "447506ebe02f1475734b66137feb02ae0fd9decf",
+    "check": "cargo test --test integration f1466_no_ignore_files",
+    "protected": [
+      "tests/feature.rs"
+    ],
+    "oracle": [
+      "crates/core/app.rs",
+      "crates/core/args.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "replacement for unsolvable",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1466",
+    "leak": "지목되지 않음 (verify 통과 후 재조달; 원 출력 audit/<task>-check.txt 참조)"
+  },
+  {
+    "task": "rg-1390-no-context-sep",
+    "repo": "ripgrep",
+    "issue": 1390,
+    "title": "Add --no-context-separator option",
+    "fix": "e71eedf0eb802c27541292f06676aa782be9bd21",
+    "parent": "88f46d12f1f3f7c2eac925ecb0b1c816ffddb943",
+    "check": "cargo test --test integration no_context_sep",
+    "protected": [
+      "tests/feature.rs"
+    ],
+    "oracle": [
+      "src/app.rs",
+      "src/args.rs"
+    ],
+    "nav_label": "단축 안 됨",
+    "note": "replacement for unsolvable",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1390",
+    "leak": "지목되지 않음 (verify 통과 후 재조달; 원 출력 audit/<task>-check.txt 참조)"
+  },
+  {
+    "task": "rg-1420-no-ignore-exclude",
+    "repo": "ripgrep",
+    "issue": 1420,
+    "title": "ripgrep: add --no-ignore-exclude flag",
+    "fix": "297b428c8c92dca2c62d57dd41ad085aa94c4aa4",
+    "parent": "804b43ecd8bd37fde4fc81f49d1f9bb659aeac1c",
+    "check": "cargo test --test integration f1420",
+    "protected": [
+      "tests/feature.rs"
+    ],
+    "oracle": [
+      "src/app.rs",
+      "src/args.rs"
+    ],
+    "nav_label": "단축됨",
+    "note": "replacement for unsolvable",
+    "issue_url": "https://github.com/BurntSushi/ripgrep/issues/1420",
+    "leak": "지목되지 않음 (verify 통과 후 재조달; 원 출력 audit/<task>-check.txt 참조)"
+  }
+]

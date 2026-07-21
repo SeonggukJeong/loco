@@ -1,0 +1,159 @@
+
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded memoffset v0.9.0
+  Downloaded autocfg v1.1.0
+  Downloaded aho-corasick v1.1.2
+  Downloaded anyhow v1.0.75
+  Downloaded log v0.4.20
+  Downloaded itoa v1.0.9
+  Downloaded quote v1.0.33
+  Downloaded termcolor v1.4.0
+  Downloaded memmap2 v0.9.0
+  Downloaded lexopt v0.3.0
+  Downloaded walkdir v2.4.0
+  Downloaded crossbeam-deque v0.8.3
+  Downloaded crossbeam-epoch v0.9.15
+  Downloaded proc-macro2 v1.0.70
+  Downloaded ryu v1.0.15
+  Downloaded crossbeam-utils v0.8.16
+  Downloaded textwrap v0.16.0
+  Downloaded unicode-ident v1.0.12
+  Downloaded serde_derive v1.0.193
+  Downloaded serde v1.0.193
+  Downloaded memchr v2.6.4
+  Downloaded serde_json v1.0.108
+  Downloaded syn v2.0.39
+  Downloaded regex-syntax v0.8.2
+  Downloaded bstr v1.8.0
+  Downloaded regex-automata v0.4.3
+  Downloaded libc v0.2.150
+  Downloaded encoding_rs v0.8.33
+   Compiling memchr v2.6.4
+   Compiling regex-syntax v0.8.2
+   Compiling cfg-if v1.0.0
+   Compiling autocfg v1.1.0
+   Compiling libc v0.2.150
+   Compiling log v0.4.20
+   Compiling crossbeam-utils v0.8.16
+   Compiling serde v1.0.193
+   Compiling serde_json v1.0.108
+   Compiling proc-macro2 v1.0.70
+   Compiling scopeguard v1.2.0
+   Compiling unicode-ident v1.0.12
+   Compiling encoding_rs v0.8.33
+   Compiling termcolor v1.4.0
+   Compiling ryu v1.0.15
+   Compiling itoa v1.0.9
+   Compiling anyhow v1.0.75
+   Compiling memoffset v0.9.0
+   Compiling crossbeam-epoch v0.9.15
+   Compiling aho-corasick v1.1.2
+   Compiling grep-matcher v0.1.7 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-rg-2664-sortr-path-pg56yi8p/src/crates/matcher)
+   Compiling same-file v1.0.6
+   Compiling walkdir v2.4.0
+   Compiling ripgrep v14.0.2 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-rg-2664-sortr-path-pg56yi8p/src)
+   Compiling encoding_rs_io v0.1.7
+   Compiling regex-automata v0.4.3
+   Compiling lexopt v0.3.0
+   Compiling textwrap v0.16.0
+   Compiling memmap2 v0.9.0
+   Compiling bstr v1.8.0
+   Compiling quote v1.0.33
+   Compiling syn v2.0.39
+   Compiling globset v0.4.14 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-rg-2664-sortr-path-pg56yi8p/src/crates/globset)
+   Compiling grep-searcher v0.1.13 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-rg-2664-sortr-path-pg56yi8p/src/crates/searcher)
+   Compiling grep-regex v0.1.12 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-rg-2664-sortr-path-pg56yi8p/src/crates/regex)
+   Compiling grep-cli v0.1.10 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-rg-2664-sortr-path-pg56yi8p/src/crates/cli)
+   Compiling grep-printer v0.2.1 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-rg-2664-sortr-path-pg56yi8p/src/crates/printer)
+   Compiling serde_derive v1.0.193
+   Compiling grep v0.3.1 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-rg-2664-sortr-path-pg56yi8p/src/crates/grep)
+   Compiling crossbeam-deque v0.8.3
+   Compiling ignore v0.4.21 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-compile-rg-2664-sortr-path-pg56yi8p/src/crates/ignore)
+warning: field `0` is never read
+  --> crates/ignore/src/dir.rs:37:35
+   |
+37 | pub(crate) struct IgnoreMatch<'a>(IgnoreMatchInner<'a>);
+   |                   -----------     ^^^^^^^^^^^^^^^^^^^^
+   |                   |
+   |                   field in this struct
+   |
+   = help: consider removing this field
+   = note: `IgnoreMatch` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `0` is never read
+  --> crates/ignore/src/dir.rs:43:14
+   |
+43 |     Override(overrides::Glob<'a>),
+   |     -------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+43 -     Override(overrides::Glob<'a>),
+43 +     Override(()),
+   |
+
+warning: field `0` is never read
+  --> crates/ignore/src/dir.rs:44:15
+   |
+44 |     Gitignore(&'a gitignore::Glob),
+   |     --------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+44 -     Gitignore(&'a gitignore::Glob),
+44 +     Gitignore(()),
+   |
+
+warning: field `0` is never read
+  --> crates/ignore/src/dir.rs:45:11
+   |
+45 |     Types(types::Glob<'a>),
+   |     ----- ^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+45 -     Types(types::Glob<'a>),
+45 +     Types(()),
+   |
+
+warning: field `0` is never read
+  --> crates/ignore/src/overrides.rs:26:21
+   |
+26 | pub struct Glob<'a>(GlobInner<'a>);
+   |            ----     ^^^^^^^^^^^^^
+   |            |
+   |            field in this struct
+   |
+   = help: consider removing this field
+   = note: `Glob` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `0` is never read
+  --> crates/ignore/src/overrides.rs:33:13
+   |
+33 |     Matched(&'a gitignore::Glob),
+   |     ------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `GlobInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+33 -     Matched(&'a gitignore::Glob),
+33 +     Matched(()),
+   |
+
+warning: `ignore` (lib) generated 6 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.68s
+  Executable unittests crates/core/main.rs (target/debug/deps/rg-b7d885dcff8e9674)
+  Executable tests/tests.rs (target/debug/deps/integration-c637374dbf034441)

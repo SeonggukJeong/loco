@@ -1,0 +1,126 @@
+
+running 1 test
+test test_number_parsing_errors ... FAILED
+
+failures:
+
+---- test_number_parsing_errors stdout ----
+
+thread 'test_number_parsing_errors' (15783925) panicked at tests/testenv/mod.rs:256:13:
+Failure did not occur as expected.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    test_number_parsing_errors
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 54 filtered out; finished in 0.47s
+
+
+   Compiling libc v0.2.70
+   Compiling cfg-if v0.1.10
+   Compiling memchr v2.3.3
+   Compiling bitflags v1.2.1
+   Compiling log v0.4.8
+   Compiling lazy_static v1.4.0
+   Compiling autocfg v1.0.0
+   Compiling unicode-width v0.1.7
+   Compiling regex-syntax v0.6.17
+   Compiling nix v0.17.0
+   Compiling ansi_term v0.11.0
+   Compiling vec_map v0.8.2
+   Compiling strsim v0.8.0
+   Compiling thread_local v1.0.1
+   Compiling anyhow v1.0.31
+   Compiling void v1.0.2
+   Compiling version_check v0.9.1
+   Compiling fnv v1.0.7
+   Compiling crossbeam-utils v0.7.2
+   Compiling same-file v1.0.6
+   Compiling ansi_term v0.12.1
+   Compiling humantime v2.0.0
+   Compiling walkdir v2.3.1
+   Compiling remove_dir_all v0.5.2
+   Compiling lscolors v0.7.0
+   Compiling diff v0.1.12
+   Compiling aho-corasick v0.7.10
+   Compiling bstr v0.2.13
+   Compiling regex v1.3.7
+   Compiling globset v0.4.5
+   Compiling term_size v0.3.2
+   Compiling atty v0.2.14
+   Compiling dirs-sys-next v0.1.0
+   Compiling users v0.10.0
+   Compiling num_cpus v1.13.0
+   Compiling rand v0.4.6
+   Compiling textwrap v0.11.0
+   Compiling dirs-next v1.0.1
+   Compiling filetime v0.2.10
+   Compiling clap v2.33.1
+   Compiling tempdir v0.3.7
+   Compiling ignore v0.4.15
+   Compiling ctrlc v3.1.4
+   Compiling fd-find v8.1.1 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-fd-675-number-parse-error-ncc1idt6/f)
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:200:20
+    |
+200 |             panic!(format_exit_error(args, &output));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: `#[warn(non_fmt_panics)]` (part of `#[warn(rust_2021_compatibility)]`) on by default
+help: add a "{}" format string to `Display` the message
+    |
+200 |             panic!("{}", format_exit_error(args, &output));
+    |                    +++++
+
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:239:20
+    |
+239 |             panic!(format_output_error(args, &expected, &actual));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+help: add a "{}" format string to `Display` the message
+    |
+239 |             panic!("{}", format_output_error(args, &expected, &actual));
+    |                    +++++
+
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:292:24
+    |
+292 |                 panic!(format_output_error(args, &expected_error, &actual_err));
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+help: add a "{}" format string to `Display` the message
+    |
+292 |                 panic!("{}", format_output_error(args, &expected_error, &actual_err));
+    |                        +++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> src/filesystem.rs:91:30
+   |
+91 | pub fn osstr_to_bytes(input: &OsStr) -> Cow<[u8]> {
+   |                              ^^^^^^     ^^^^^^^^^ the same lifetime is hidden here
+   |                              |
+   |                              the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+91 | pub fn osstr_to_bytes(input: &OsStr) -> Cow<'_, [u8]> {
+   |                                             +++
+
+warning: `fd-find` (test "tests") generated 3 warnings (run `cargo fix --test "tests" -p fd-find` to apply 3 suggestions)
+warning: `fd-find` (bin "fd") generated 1 warning (run `cargo fix --bin "fd" -p fd-find` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.18s
+     Running tests/tests.rs (target/debug/deps/tests-d18940d38331506d)
+error: test failed, to rerun pass `--test tests`

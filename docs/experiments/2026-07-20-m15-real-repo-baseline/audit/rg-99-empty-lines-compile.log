@@ -1,0 +1,95 @@
+
+warning: An explicit [[test]] section is specified in Cargo.toml which currently
+disables Cargo from automatically inferring other test targets.
+This inference behavior will change in the Rust 2018 edition and the following
+files will be included as a test target:
+
+* tests/workdir.rs
+* tests/hay.rs
+
+This is likely to break cargo build or cargo test as these files may not be
+ready to be compiled as a test target today. You can future-proof yourself
+and disable this warning by adding `autotests = false` to your [package]
+section. You may also move the files to a location where Cargo would not
+automatically infer them to be a target, such as in subfolders.
+
+For more information on this warning you can consult
+https://github.com/rust-lang/cargo/issues/5330
+warning: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded deque v0.3.1
+  Downloaded fs2 v0.2.5
+  Downloaded glob v0.2.11
+  Downloaded num_cpus v1.1.0
+  Downloaded thread-id v2.0.0
+  Downloaded walkdir v0.1.8
+  Downloaded memmap v0.2.3
+  Downloaded utf8-ranges v0.1.3
+  Downloaded rustc-serialize v0.3.19
+  Downloaded regex v0.1.77
+  Downloaded aho-corasick v0.5.3
+  Downloaded strsim v0.5.1
+  Downloaded env_logger v0.3.5
+  Downloaded rand v0.3.14
+  Downloaded log v0.3.6
+  Downloaded libc v0.2.16
+  Downloaded thread_local v0.2.7
+  Downloaded lazy_static v0.2.1
+  Downloaded memchr v0.1.11
+  Downloaded term v0.4.4
+  Downloaded regex-syntax v0.3.5
+  Downloaded docopt v0.6.85
+   Compiling winapi-build v0.1.1
+   Compiling libc v0.2.16
+   Compiling winapi v0.2.8
+   Compiling utf8-ranges v0.1.3
+   Compiling regex-syntax v0.3.5
+   Compiling log v0.3.6
+   Compiling lazy_static v0.2.1
+   Compiling strsim v0.5.1
+   Compiling rustc-serialize v0.3.19
+   Compiling fnv v1.0.5
+   Compiling glob v0.2.11
+   Compiling kernel32-sys v0.2.2
+error[E0642]: patterns aren't allowed in functions without bodies
+   --> /Users/sgj/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustc-serialize-0.3.19/src/serialize.rs:147:45
+    |
+147 | ...                   &f_name: &str,
+    |                       ^^^^^^^ pattern not allowed in function without body
+
+   Compiling memchr v0.1.11
+   Compiling rand v0.3.14
+   Compiling num_cpus v1.1.0
+error[E0310]: the parameter type `T` may not live long enough
+   --> /Users/sgj/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustc-serialize-0.3.19/src/serialize.rs:454:5
+    |
+454 |     fn decode<D: Decoder>(d: &mut D) -> Result<Cow<'static, T>, D::Error> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     |
+    |     the parameter type `T` must be valid for the static lifetime...
+    |     ...so that the type `T` will meet its required lifetime bounds...
+    |
+note: ...that is required by this bound
+   --> /Users/sgj/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/borrow.rs:169:30
+    |
+169 | pub enum Cow<'a, B: ?Sized + 'a>
+    |                              ^^
+help: consider adding an explicit lifetime bound
+    |
+450 | impl<'a, T: ?Sized + 'static> Decodable for Cow<'a, T>
+    |                    +++++++++
+
+   Compiling aho-corasick v0.5.3
+   Compiling deque v0.3.1
+   Compiling thread-id v2.0.0
+   Compiling fs2 v0.2.5
+   Compiling term v0.4.4
+   Compiling walkdir v0.1.8
+   Compiling thread_local v0.2.7
+   Compiling memmap v0.2.3
+   Compiling regex v0.1.77
+Some errors have detailed explanations: E0310, E0642.
+For more information about an error, try `rustc --explain E0310`.
+error: could not compile `rustc-serialize` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

@@ -1,0 +1,7 @@
+prompt = "Is it possible to add an option `-prune`, to not explore sub-directories, when the current directory has been matched ? (like `find -prune`)"
+check = "cargo test --test tests test_prune"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/tests.rs"]

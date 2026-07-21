@@ -1,0 +1,157 @@
+
+running 1 test
+test test_min_depth ... FAILED
+
+failures:
+
+---- test_min_depth stdout ----
+
+thread 'test_min_depth' (15779090) panicked at tests/testenv/mod.rs:200:13:
+`fd --min-depth 3` did not exit successfully.
+stdout:
+---
+---
+stderr:
+---
+error: Found argument '--min-depth' which wasn't expected, or isn't valid in this context
+	Did you mean [32m--[0m[32mmax-depth[0m?
+
+USAGE:
+    fd [FLAGS/OPTIONS] [<pattern>] [<path>...]
+
+For more information try --help
+---
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    test_min_depth
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.48s
+
+
+   Compiling libc v0.2.68
+   Compiling cfg-if v0.1.10
+   Compiling memchr v2.3.3
+   Compiling bitflags v1.2.1
+   Compiling lazy_static v1.4.0
+   Compiling autocfg v1.0.0
+   Compiling fs_extra v1.1.0
+   Compiling cc v1.0.50
+   Compiling log v0.4.8
+   Compiling maybe-uninit v2.0.0
+   Compiling unicode-width v0.1.7
+   Compiling nix v0.17.0
+   Compiling thread_local v1.0.1
+   Compiling vec_map v0.8.1
+   Compiling strsim v0.8.0
+   Compiling crossbeam-utils v0.7.2
+   Compiling regex-syntax v0.6.17
+   Compiling ansi_term v0.11.0
+   Compiling fnv v1.0.6
+   Compiling version_check v0.9.1
+   Compiling anyhow v1.0.28
+   Compiling void v1.0.2
+   Compiling same-file v1.0.6
+   Compiling ansi_term v0.12.1
+   Compiling walkdir v2.3.1
+   Compiling jemalloc-sys v0.3.2
+   Compiling aho-corasick v0.7.10
+   Compiling bstr v0.2.12
+   Compiling lscolors v0.7.0
+   Compiling humantime v2.0.0
+   Compiling remove_dir_all v0.5.2
+   Compiling diff v0.1.12
+   Compiling regex v1.3.5
+   Compiling globset v0.4.5
+   Compiling term_size v0.3.1
+   Compiling atty v0.2.14
+   Compiling num_cpus v1.12.0
+   Compiling rand v0.4.6
+   Compiling filetime v0.2.8
+   Compiling textwrap v0.11.0
+   Compiling clap v2.33.0
+   Compiling tempdir v0.3.7
+   Compiling crossbeam-channel v0.4.2
+   Compiling ctrlc v3.1.4
+   Compiling ignore v0.4.12
+   Compiling fd-find v7.5.0 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-fd-404-min-exact-depth-411hqnld/f)
+   Compiling jemallocator v0.3.2
+warning: unnecessary braces around block return value
+ --> src/filter/size.rs:5:39
+  |
+5 |     static ref SIZE_CAPTURES: Regex = { Regex::new(r"(?i)^([+-])(\d+)(b|[kmgt]i?b?)$").unwrap() };
+  |                                       ^^                                                       ^^
+  |
+  = note: `#[warn(unused_braces)]` (part of `#[warn(unused)]`) on by default
+help: remove these braces
+  |
+5 -     static ref SIZE_CAPTURES: Regex = { Regex::new(r"(?i)^([+-])(\d+)(b|[kmgt]i?b?)$").unwrap() };
+5 +     static ref SIZE_CAPTURES: Regex = Regex::new(r"(?i)^([+-])(\d+)(b|[kmgt]i?b?)$").unwrap() ;
+  |
+
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:200:20
+    |
+200 |             panic!(format_exit_error(args, &output));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: `#[warn(non_fmt_panics)]` (part of `#[warn(rust_2021_compatibility)]`) on by default
+help: add a "{}" format string to `Display` the message
+    |
+200 |             panic!("{}", format_exit_error(args, &output));
+    |                    +++++
+
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:239:20
+    |
+239 |             panic!(format_output_error(args, &expected, &actual));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+help: add a "{}" format string to `Display` the message
+    |
+239 |             panic!("{}", format_output_error(args, &expected, &actual));
+    |                    +++++
+
+warning: panic message is not a string literal
+   --> tests/testenv/mod.rs:267:20
+    |
+267 |             panic!(format_output_error(args, &expected, &actual));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this usage of `panic!()` is deprecated; it will be a hard error in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+help: add a "{}" format string to `Display` the message
+    |
+267 |             panic!("{}", format_output_error(args, &expected, &actual));
+    |                    +++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> src/filesystem.rs:71:30
+   |
+71 | pub fn osstr_to_bytes(input: &OsStr) -> Cow<[u8]> {
+   |                              ^^^^^^     ^^^^^^^^^ the same lifetime is hidden here
+   |                              |
+   |                              the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+71 | pub fn osstr_to_bytes(input: &OsStr) -> Cow<'_, [u8]> {
+   |                                             +++
+
+warning: `fd-find` (test "tests") generated 3 warnings (run `cargo fix --test "tests" -p fd-find` to apply 3 suggestions)
+warning: `fd-find` (bin "fd") generated 2 warnings (run `cargo fix --bin "fd" -p fd-find` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.46s
+warning: the following packages contain code that will be rejected by a future version of Rust: fs_extra v1.1.0
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running tests/tests.rs (target/debug/deps/tests-f340b1c40abb5eb2)
+error: test failed, to rerun pass `--test tests`

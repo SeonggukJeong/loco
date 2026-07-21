@@ -1,0 +1,7 @@
+prompt = "We have `--max-depth` option, but there is no `--min-depth` counterpart. It could be used exactly like it's been used with `find`.\r\n"
+check = "cargo test --test tests test_min_depth"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/tests.rs"]

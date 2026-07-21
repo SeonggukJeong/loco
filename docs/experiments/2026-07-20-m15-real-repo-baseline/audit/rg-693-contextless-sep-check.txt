@@ -1,0 +1,1196 @@
+
+running 1 test
+test regression_693_context_option_in_contextless_mode ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 141 filtered out; finished in 0.48s
+
+
+warning: An explicit [[test]] section is specified in Cargo.toml which currently
+disables Cargo from automatically inferring other test targets.
+This inference behavior will change in the Rust 2018 edition and the following
+files will be included as a test target:
+
+* tests/workdir.rs
+* tests/hay.rs
+
+This is likely to break cargo build or cargo test as these files may not be
+ready to be compiled as a test target today. You can future-proof yourself
+and disable this warning by adding `autotests = false` to your [package]
+section. You may also move the files to a location where Cargo would not
+automatically infer them to be a target, such as in subfolders.
+
+For more information on this warning you can consult
+https://github.com/rust-lang/cargo/issues/5330
+warning: `package.edition` is unspecified, defaulting to `2015` while the latest is `2024`
+   Compiling libc v0.2.32
+   Compiling lazy_static v0.2.9
+   Compiling void v1.0.2
+   Compiling unicode-width v0.1.4
+   Compiling regex-syntax v0.4.1
+   Compiling utf8-ranges v1.0.0
+   Compiling log v0.3.8
+   Compiling vec_map v0.8.0
+   Compiling strsim v0.6.0
+   Compiling ansi_term v0.9.0
+   Compiling bitflags v0.9.1
+   Compiling same-file v1.0.0
+   Compiling unreachable v1.0.0
+   Compiling fnv v1.0.5
+   Compiling cfg-if v0.1.2
+   Compiling walkdir v2.0.1
+   Compiling crossbeam v0.3.0
+   Compiling memchr v1.0.2
+   Compiling term_size v0.3.0
+   Compiling thread_local v0.3.4
+   Compiling memchr v2.0.0
+   Compiling atty v0.2.3
+   Compiling num_cpus v1.7.0
+   Compiling memmap v0.6.1
+   Compiling encoding_rs v0.7.1
+   Compiling aho-corasick v0.6.3
+   Compiling textwrap v0.8.0
+   Compiling env_logger v0.4.3
+   Compiling bytecount v0.2.0
+   Compiling termcolor v0.3.3 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-693-contextless-sep-5jz7rqqm/f/termcolor)
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> termcolor/src/lib.rs:692:17
+    |
+692 |                 try!(stream.write_all(sep));
+    |                 ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> termcolor/src/lib.rs:693:17
+    |
+693 |                 try!(stream.write_all(b"\n"));
+    |                 ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> termcolor/src/lib.rs:697:44
+    |
+697 |             BufferInner::NoColor(ref b) => try!(stream.write_all(&b.0)),
+    |                                            ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> termcolor/src/lib.rs:698:41
+    |
+698 |             BufferInner::Ansi(ref b) => try!(stream.write_all(&b.0)),
+    |                                         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> termcolor/src/lib.rs:962:9
+    |
+962 |         try!(self.reset());
+    |         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> termcolor/src/lib.rs:964:13
+    |
+964 |             try!(self.write_color(true, c, spec.intense));
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> termcolor/src/lib.rs:967:13
+    |
+967 |             try!(self.write_color(false, c, spec.intense));
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> termcolor/src/lib.rs:970:13
+    |
+970 |             try!(self.write_str("\x1B[1m"));
+    |             ^^^
+
+   Compiling clap v2.26.2
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> termcolor/src/lib.rs:214:13
+    |
+214 |     fn lock(&self) -> IoStandardStreamLock {
+    |             ^^^^^     ^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |             |
+    |             the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+214 |     fn lock(&self) -> IoStandardStreamLock<'_> {
+    |                                           ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> termcolor/src/lib.rs:387:17
+    |
+387 |     pub fn lock(&self) -> StandardStreamLock {
+    |                 ^^^^^     ^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                 |
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+387 |     pub fn lock(&self) -> StandardStreamLock<'_> {
+    |                                             ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> termcolor/src/lib.rs:394:28
+    |
+394 |     fn from_stream(stream: &StandardStream) -> StandardStreamLock {
+    |                            ^^^^^^^^^^^^^^^     ^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                            |
+    |                            the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+394 |     fn from_stream(stream: &StandardStream) -> StandardStreamLock<'_> {
+    |                                                                  ++++
+
+warning: `termcolor` (lib) generated 11 warnings (run `cargo fix --lib -p termcolor` to apply 3 suggestions)
+   Compiling regex v0.2.2
+   Compiling globset v0.2.1 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-693-contextless-sep-5jz7rqqm/f/globset)
+   Compiling grep v0.1.7 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-693-contextless-sep-5jz7rqqm/f/grep)
+warning: use of deprecated macro `try`: use the `?` operator instead
+  --> grep/src/nonl.rs:47:29
+   |
+47 |                 e: Box::new(try!(remove(*e, byte))),
+   |                             ^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+  --> grep/src/nonl.rs:54:29
+   |
+54 |                 e: Box::new(try!(remove(*e, byte))),
+   |                             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+  --> grep/src/nonl.rs:60:20
+   |
+60 |             Concat(try!(
+   |                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+  --> grep/src/nonl.rs:64:23
+   |
+64 |             Alternate(try!(
+   |                       ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> grep/src/search.rs:144:20
+    |
+144 |         let expr = try!(self.parse());
+    |                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> grep/src/search.rs:146:18
+    |
+146 |         let re = try!(self.regex(&expr));
+    |                  ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> grep/src/search.rs:148:35
+    |
+148 |             Some(builder) => Some(try!(self.regex_build(builder))),
+    |                                   ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> grep/src/search.rs:189:13
+    |
+189 |             try!(syntax::ExprBuilder::new()
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> grep/src/search.rs:192:36
+    |
+192 |                  .case_insensitive(try!(self.is_case_insensitive()))
+    |                                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> grep/src/search.rs:194:20
+    |
+194 |         let expr = try!(nonl::remove(expr, self.opts.line_terminator));
+    |                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> grep/src/search.rs:210:13
+    |
+210 |             try!(syntax::ExprBuilder::new()
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:553:9
+    |
+553 |         try!(p.parse());
+    |         ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:723:24
+    |
+723 |                 '?' => try!(self.push_token(Token::Any)),
+    |                        ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:724:24
+    |
+724 |                 '*' => try!(self.parse_star()),
+    |                        ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:725:24
+    |
+725 |                 '[' => try!(self.parse_class()),
+    |                        ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:726:24
+    |
+726 |                 '{' => try!(self.push_alternate()),
+    |                        ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:727:24
+    |
+727 |                 '}' => try!(self.pop_alternate()),
+    |                        ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:728:24
+    |
+728 |                 ',' => try!(self.parse_comma()),
+    |                        ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:732:25
+    |
+732 |                         try!(self.push_token(Token::Literal('/')))
+    |                         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:734:25
+    |
+734 |                         try!(self.push_token(Token::Literal(c)))
+    |                         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:804:9
+    |
+804 |         try!(self.pop_token());
+    |         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:792:13
+    |
+792 |             try!(self.push_token(Token::ZeroOrMore));
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:797:13
+    |
+797 |             try!(self.push_token(Token::RecursivePrefix));
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:796:13
+    |
+796 |         if !try!(self.have_tokens()) {
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:876:25
+    |
+876 |                         try!(add_to_last_range(&self.glob, r, '-'));
+    |                         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/glob.rs:887:25
+    |
+887 |                         try!(add_to_last_range(
+    |                         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/lib.rs:415:21
+    |
+415 |                     try!(required_exts.build())),
+    |                     ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/lib.rs:416:45
+    |
+416 |                 GlobSetMatchStrategy::Regex(try!(regexes.regex_set())),
+    |                                             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/lib.rs:770:22
+    |
+770 |             matcher: try!(new_regex_set(self.literals)),
+    |                      ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> globset/src/lib.rs:795:32
+    |
+795 |                 let compiled = try!(new_regex(&regex));
+    |                                ^^^
+
+warning: trait objects without an explicit `dyn` are deprecated
+  --> grep/src/lib.rs:53:32
+   |
+53 |     fn cause(&self) -> Option<&error::Error> {
+   |                                ^^^^^^^^^^^^
+   |
+   = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+   = note: `#[warn(bare_trait_objects)]` (part of `#[warn(rust_2021_compatibility)]`) on by default
+help: if this is a dyn-compatible trait, use `dyn`
+   |
+53 |     fn cause(&self) -> Option<&dyn error::Error> {
+   |                                +++
+
+warning: use of deprecated method `std::error::Error::description`: use the Display impl or to_string()
+  --> grep/src/lib.rs:47:42
+   |
+47 |             Error::Regex(ref err) => err.description(),
+   |                                          ^^^^^^^^^^^
+
+warning: use of deprecated method `std::error::Error::cause`: replaced by Error::source, which can support downcasting
+  --> grep/src/lib.rs:55:42
+   |
+55 |             Error::Regex(ref err) => err.cause(),
+   |                                          ^^^^^
+
+warning: field `pat` is never read
+   --> globset/src/glob.rs:111:5
+    |
+109 | pub struct GlobMatcher {
+    |            ----------- field in this struct
+110 |     /// The underlying pattern.
+111 |     pat: Glob,
+    |     ^^^
+    |
+    = note: `GlobMatcher` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> globset/src/pathutil.rs:88:25
+   |
+88 | pub fn path_bytes(path: &Path) -> Cow<[u8]> {
+   |                         ^^^^^     ^^^^^^^^^ the same lifetime is hidden here
+   |                         |
+   |                         the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+88 | pub fn path_bytes(path: &Path) -> Cow<'_, [u8]> {
+   |                                       +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> globset/src/pathutil.rs:94:24
+   |
+94 | pub fn os_str_bytes(s: &OsStr) -> Cow<[u8]> {
+   |                        ^^^^^^     ^^^^^^^^^ the same lifetime is hidden here
+   |                        |
+   |                        the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+94 | pub fn os_str_bytes(s: &OsStr) -> Cow<'_, [u8]> {
+   |                                       +++
+
+   Compiling ignore v0.3.1 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-693-contextless-sep-5jz7rqqm/f/ignore)
+warning: `grep` (lib) generated 14 warnings (run `cargo fix --lib -p grep` to apply 1 suggestion)
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/gitignore.rs:325:19
+    |
+325 |         let set = try!(
+    |                   ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/gitignore.rs:468:22
+    |
+468 |         let parsed = try!(
+    |                      ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/overrides.rs:127:21
+    |
+127 |         Ok(Override(try!(self.builder.build())))
+    |                     ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/overrides.rs:137:9
+    |
+137 |         try!(self.builder.add_line(None, glob));
+    |         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/overrides.rs:147:9
+    |
+147 |         try!(self.builder.case_insensitive(yes));
+    |         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/types.rs:529:31
+    |
+529 |                 build_set.add(try!(
+    |                               ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/types.rs:543:19
+    |
+543 |         let set = try!(build_set.build().map_err(|err| {
+    |                   ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/types.rs:658:25
+    |
+658 |                         try!(self.add(name, &glob));
+    |                         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/walk.rs:282:18
+    |
+282 |         let ty = try!(ent.file_type().map_err(|err| {
+    |                  ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> ignore/src/walk.rs:340:18
+    |
+340 |         let md = try!(fs::metadata(&pb).map_err(|err| {
+    |                  ^^^
+
+warning: use of deprecated constant `std::sync::ONCE_INIT`: the `Once::new()` function is now preferred
+   --> ignore/src/gitignore.rs:534:5
+    |
+534 | /     lazy_static! {
+535 | |         static ref RE: Regex = Regex::new(
+536 | |             r"(?ium)^\s*excludesfile\s*=\s*(.+)\s*$").unwrap();
+537 | |     };
+    | |_____^
+    |
+    = note: this warning originates in the macro `__lazy_static_create` which comes from the expansion of the macro `lazy_static` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: use of deprecated constant `std::sync::ONCE_INIT`: the `Once::new()` function is now preferred
+   --> ignore/src/types.rs:610:9
+    |
+610 | /         lazy_static! {
+611 | |             static ref RE: Regex = Regex::new(r"^[\pL\pN]+$").unwrap();
+612 | |         };
+    | |_________^
+    |
+    = note: this warning originates in the macro `__lazy_static_create` which comes from the expansion of the macro `lazy_static` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: trait objects without an explicit `dyn` are deprecated
+   --> ignore/src/walk.rs:410:9
+    |
+410 |         Fn(&OsStr, &OsStr) -> cmp::Ordering + Send + Sync + 'static
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+    = note: `#[warn(bare_trait_objects)]` (part of `#[warn(rust_2021_compatibility)]`) on by default
+help: if this is a dyn-compatible trait, use `dyn`
+    |
+410 |         dyn Fn(&OsStr, &OsStr) -> cmp::Ordering + Send + Sync + 'static
+    |         +++
+
+warning: trait objects without an explicit `dyn` are deprecated
+    --> ignore/src/walk.rs:1037:12
+     |
+1037 |     f: Box<FnMut(Result<DirEntry, Error>) -> WalkState + Send + 'static>,
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+     = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+help: if this is a dyn-compatible trait, use `dyn`
+     |
+1037 |     f: Box<dyn FnMut(Result<DirEntry, Error>) -> WalkState + Send + 'static>,
+     |            +++
+
+warning: trait objects without an explicit `dyn` are deprecated
+   --> ignore/src/walk.rs:896:31
+    |
+896 |     ) where F: FnMut() -> Box<FnMut(Result<DirEntry, Error>) -> WalkState + Send + 'static> {
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+help: if this is a dyn-compatible trait, use `dyn`
+    |
+896 |     ) where F: FnMut() -> Box<dyn FnMut(Result<DirEntry, Error>) -> WalkState + Send + 'static> {
+    |                               +++
+
+warning: use of deprecated method `core::str::<impl str>::trim_right`: superseded by `trim_end`
+   --> ignore/src/gitignore.rs:406:25
+    |
+406 |             line = line.trim_right();
+    |                         ^^^^^^^^^^
+    |
+help: replace the use of the deprecated method
+    |
+406 -             line = line.trim_right();
+406 +             line = line.trim_end();
+    |
+
+warning: use of deprecated method `std::error::Error::description`: use the Display impl or to_string()
+   --> ignore/src/lib.rs:231:58
+    |
+231 |             Error::WithLineNumber { ref err, .. } => err.description(),
+    |                                                          ^^^^^^^^^^^
+
+warning: use of deprecated method `std::error::Error::description`: use the Display impl or to_string()
+   --> ignore/src/lib.rs:232:52
+    |
+232 |             Error::WithPath { ref err, .. } => err.description(),
+    |                                                    ^^^^^^^^^^^
+
+warning: use of deprecated method `std::error::Error::description`: use the Display impl or to_string()
+   --> ignore/src/lib.rs:233:53
+    |
+233 |             Error::WithDepth { ref err, .. } => err.description(),
+    |                                                     ^^^^^^^^^^^
+
+warning: use of deprecated method `std::error::Error::description`: use the Display impl or to_string()
+   --> ignore/src/lib.rs:235:39
+    |
+235 |             Error::Io(ref err) => err.description(),
+    |                                       ^^^^^^^^^^^
+
+warning: `globset` (lib) generated 22 warnings (run `cargo fix --lib -p globset` to apply 2 suggestions)
+warning: field `0` is never read
+  --> ignore/src/dir.rs:30:28
+   |
+30 | pub struct IgnoreMatch<'a>(IgnoreMatchInner<'a>);
+   |            -----------     ^^^^^^^^^^^^^^^^^^^^
+   |            |
+   |            field in this struct
+   |
+   = help: consider removing this field
+   = note: `IgnoreMatch` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `0` is never read
+  --> ignore/src/dir.rs:36:14
+   |
+36 |     Override(overrides::Glob<'a>),
+   |     -------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+36 -     Override(overrides::Glob<'a>),
+36 +     Override(()),
+   |
+
+warning: field `0` is never read
+  --> ignore/src/dir.rs:37:15
+   |
+37 |     Gitignore(&'a gitignore::Glob),
+   |     --------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+37 -     Gitignore(&'a gitignore::Glob),
+37 +     Gitignore(()),
+   |
+
+warning: field `0` is never read
+  --> ignore/src/dir.rs:38:11
+   |
+38 |     Types(types::Glob<'a>),
+   |     ----- ^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `IgnoreMatchInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+38 -     Types(types::Glob<'a>),
+38 +     Types(()),
+   |
+
+warning: field `0` is never read
+  --> ignore/src/overrides.rs:24:21
+   |
+24 | pub struct Glob<'a>(GlobInner<'a>);
+   |            ----     ^^^^^^^^^^^^^
+   |            |
+   |            field in this struct
+   |
+   = help: consider removing this field
+   = note: `Glob` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `0` is never read
+  --> ignore/src/overrides.rs:31:13
+   |
+31 |     Matched(&'a gitignore::Glob),
+   |     ------- ^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `GlobInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+31 -     Matched(&'a gitignore::Glob),
+31 +     Matched(()),
+   |
+
+warning: field `0` is never read
+   --> ignore/src/types.rs:301:21
+    |
+301 | pub struct Glob<'a>(GlobInner<'a>);
+    |            ----     ^^^^^^^^^^^^^
+    |            |
+    |            field in this struct
+    |
+    = help: consider removing this field
+    = note: `Glob` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: fields `def`, `which`, and `negated` are never read
+   --> ignore/src/types.rs:310:9
+    |
+308 |     Matched {
+    |     ------- fields in this variant
+309 |         /// The file type definition which provided the glob.
+310 |         def: &'a FileTypeDef,
+    |         ^^^
+311 |         /// The index of the glob that matched inside the file type definition.
+312 |         which: usize,
+    |         ^^^^^
+313 |         /// Whether the selection was negated or not.
+314 |         negated: bool,
+    |         ^^^^^^^
+    |
+    = note: `GlobInner` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> ignore/src/dir.rs:372:20
+    |
+372 |     pub fn parents(&self) -> Parents {
+    |                    ^^^^^     ^^^^^^^ the same lifetime is hidden here
+    |                    |
+    |                    the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+372 |     pub fn parents(&self) -> Parents<'_> {
+    |                                     ++++
+
+warning: `ignore` (lib) generated 31 warnings (2 duplicates) (run `cargo fix --lib -p ignore` to apply 5 suggestions)
+   Compiling ripgrep v0.7.1 (/private/var/folders/fz/rxv9mgcs6vx3cp8xjb9_mmch0000gn/T/m15-aud-rg-693-contextless-sep-5jz7rqqm/f)
+warning: use of deprecated constant `std::sync::ONCE_INIT`: the `Once::new()` function is now preferred
+   --> src/app.rs:208:1
+    |
+208 | / lazy_static! {
+209 | |     static ref LONG_VERSION: String = {
+210 | |         let mut features: Vec<&str> = vec![];
+...   |
+572 | |     };
+573 | | }
+    | |_^
+    |
+    = note: `#[warn(deprecated)]` on by default
+    = note: this warning originates in the macro `__lazy_static_create` which comes from the expansion of the macro `lazy_static` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: use of deprecated constant `std::sync::ONCE_INIT`: the `Once::new()` function is now preferred
+   --> src/app.rs:208:1
+    |
+208 | / lazy_static! {
+209 | |     static ref LONG_VERSION: String = {
+210 | |         let mut features: Vec<&str> = vec![];
+...   |
+572 | |     };
+573 | | }
+    | |_^
+    |
+    = note: this warning originates in the macro `__lazy_static_create` which comes from the expansion of the macro `lazy_static` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `ripgrep` (build script) generated 4 warnings (2 duplicates)
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:311:20
+    |
+311 |         let mmap = try!(self.mmap(&paths));
+    |                    ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:313:47
+    |
+313 |         let (before_context, after_context) = try!(self.contexts());
+    |                                               ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:320:21
+    |
+320 |             colors: try!(self.color_specs()),
+    |                     ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:324:23
+    |
+324 |             encoding: try!(self.encoding()),
+    |                       ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:330:29
+    |
+330 |             glob_overrides: try!(self.overrides()),
+    |                             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:331:19
+    |
+331 |             grep: try!(self.grep()),
+    |                   ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:338:26
+    |
+338 |             max_columns: try!(self.usize_of("max-columns")),
+    |                          ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:339:24
+    |
+339 |             max_count: try!(self.usize_of("max-count")).map(|max| max as u64),
+    |                        ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:340:27
+    |
+340 |             max_filesize: try!(self.max_filesize()),
+    |                           ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:341:23
+    |
+341 |             maxdepth: try!(self.usize_of("maxdepth")),
+    |                       ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:349:29
+    |
+349 |             path_separator: try!(self.path_separator()),
+    |                             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:356:22
+    |
+356 |             threads: try!(self.threads()),
+    |                      ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:358:20
+    |
+358 |             types: try!(self.types()),
+    |                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:422:12
+    |
+422 |         Ok(try!(self.patterns()).join("|"))
+    |            ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:443:35
+    |
+443 |                         pats.push(try!(self.os_str_pattern(os_pat)));
+    |                                   ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:449:31
+    |
+449 |                     pats.push(try!(self.os_str_pattern(os_pat)));
+    |                               ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:458:53
+    |
+458 |                         pats.push(self.str_pattern(&try!(line)));
+    |                                                     ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:461:29
+    |
+461 |                     let f = try!(fs::File::open(file));
+    |                             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:463:53
+    |
+463 |                         pats.push(self.str_pattern(&try!(line)));
+    |                                                     ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:479:17
+    |
+479 |         let s = try!(pattern_to_str(pat));
+    |                 ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:579:31
+    |
+579 |         let (before, after) = try!(self.contexts());
+    |                               ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:580:19
+    |
+580 |         let enc = try!(self.encoding());
+    |                   ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:669:21
+    |
+669 |         let after = try!(self.usize_of("after-context")).unwrap_or(0);
+    |                     ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:670:22
+    |
+670 |         let before = try!(self.usize_of("before-context")).unwrap_or(0);
+    |                      ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:671:20
+    |
+671 |         let both = try!(self.usize_of("context")).unwrap_or(0);
+    |                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:717:24
+    |
+717 |             specs.push(try!(spec_str.parse()));
+    |                        ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:750:23
+    |
+750 |         let threads = try!(self.usize_of("threads")).unwrap_or(0);
+    |                       ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:770:40
+    |
+770 |         let mut gb = GrepBuilder::new(&try!(self.pattern()))
+    |                                        ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:775:30
+    |
+775 |         if let Some(limit) = try!(self.dfa_size_limit()) {
+    |                              ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:778:30
+    |
+778 |         if let Some(limit) = try!(self.regex_size_limit()) {
+    |                              ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:794:9
+    |
+794 |         try!(ovr.case_insensitive(true));
+    |         ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:786:44
+    |
+786 |         let mut ovr = OverrideBuilder::new(try!(env::current_dir()));
+    |                                            ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:788:13
+    |
+788 |             try!(ovr.add(&glob));
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:796:13
+    |
+796 |             try!(ovr.add(&glob));
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:809:13
+    |
+809 |             try!(btypes.add_def(&def));
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:833:20
+    |
+833 |         let caps = try!(
+    |                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:838:21
+    |
+838 |         let value = try!(caps[1].parse::<u64>());
+    |                     ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:863:17
+    |
+863 |         let r = try!(self.parse_human_readable_size_arg("dfa-size-limit"));
+    |                 ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/args.rs:869:17
+    |
+869 |         let r = try!(self.parse_human_readable_size_arg("regex-size-limit"));
+    |                 ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+  --> src/decoder.rs:65:23
+   |
+65 |         let bom_len = try!(read_full(&mut self.rdr, &mut buf));
+   |                       ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+  --> src/decoder.rs:74:23
+   |
+74 |             let bom = try!(self.peek_bom());
+   |                       ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+  --> src/decoder.rs:84:21
+   |
+84 |         let nread = try!(self.rdr.read(buf));
+   |                     ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/decoder.rs:199:13
+    |
+199 |             try!(self.rdr.read(&mut self.buf.as_mut()[self.buflen..]));
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/decoder.rs:222:13
+    |
+222 |             try!(self.fill());
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/decoder.rs:238:13
+    |
+238 |             try!(self.fill());
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/decoder.rs:254:19
+    |
+254 |         let bom = try!(self.rdr.peek_bom());
+    |                   ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/decoder.rs:264:13
+    |
+264 |             try!(self.detect());
+    |             ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/printer.rs:729:30
+    |
+729 |         let otype: OutType = try!(pieces[0].parse());
+    |                              ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/printer.rs:730:15
+    |
+730 |         match try!(pieces[1].parse()) {
+    |               ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/printer.rs:736:36
+    |
+736 |                 let style: Style = try!(pieces[2].parse());
+    |                                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/printer.rs:743:36
+    |
+743 |                 let color: Color = try!(pieces[2].parse());
+    |                                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/printer.rs:750:36
+    |
+750 |                 let color: Color = try!(pieces[2].parse());
+    |                                    ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/search_stream.rs:267:17
+    |
+267 |             if !try!(self.fill()) {
+    |                 ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/search_stream.rs:304:17
+    |
+304 |                 try!(self.fill());
+    |                 ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/search_stream.rs:351:18
+    |
+351 |         let ok = try!(self.inp.fill(&mut self.haystack, keep).map_err(|err| {
+    |                  ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/search_stream.rs:597:21
+    |
+597 |             let n = try!(rdr.read(
+    |                     ^^^
+
+warning: `...` range patterns are deprecated
+  --> src/unescape.rs:40:24
+   |
+40 |                     '0'...'9' | 'A'...'F' | 'a'...'f' => {
+   |                        ^^^ help: use `..=` for an inclusive range
+   |
+   = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+   = note: `#[warn(ellipsis_inclusive_range_patterns)]` (part of `#[warn(rust_2021_compatibility)]`) on by default
+
+warning: `...` range patterns are deprecated
+  --> src/unescape.rs:40:36
+   |
+40 |                     '0'...'9' | 'A'...'F' | 'a'...'f' => {
+   |                                    ^^^ help: use `..=` for an inclusive range
+   |
+   = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+
+warning: `...` range patterns are deprecated
+  --> src/unescape.rs:40:48
+   |
+40 |                     '0'...'9' | 'A'...'F' | 'a'...'f' => {
+   |                                                ^^^ help: use `..=` for an inclusive range
+   |
+   = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+
+warning: `...` range patterns are deprecated
+  --> src/unescape.rs:51:24
+   |
+51 |                     '0'...'9' | 'A'...'F' | 'a'...'f' => {
+   |                        ^^^ help: use `..=` for an inclusive range
+   |
+   = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+
+warning: `...` range patterns are deprecated
+  --> src/unescape.rs:51:36
+   |
+51 |                     '0'...'9' | 'A'...'F' | 'a'...'f' => {
+   |                                    ^^^ help: use `..=` for an inclusive range
+   |
+   = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+
+warning: `...` range patterns are deprecated
+  --> src/unescape.rs:51:48
+   |
+51 |                     '0'...'9' | 'A'...'F' | 'a'...'f' => {
+   |                                                ^^^ help: use `..=` for an inclusive range
+   |
+   = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/worker.rs:285:12
+    |
+285 |         if try!(file.metadata()).len() == 0 {
+    |            ^^^
+
+warning: use of deprecated macro `try`: use the `?` operator instead
+   --> src/worker.rs:293:29
+    |
+293 |         let mmap = unsafe { try!(Mmap::map(file)) };
+    |                             ^^^
+
+warning: use of deprecated constant `std::sync::atomic::ATOMIC_USIZE_INIT`: the `new` function is now preferred
+ --> tests/workdir.rs:9:25
+  |
+9 | use std::sync::atomic::{ATOMIC_USIZE_INIT, AtomicUsize, Ordering};
+  |                         ^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated constant `std::sync::atomic::ATOMIC_USIZE_INIT`: the `new` function is now preferred
+  --> tests/workdir.rs:14:31
+   |
+14 | static NEXT_ID: AtomicUsize = ATOMIC_USIZE_INIT;
+   |                               ^^^^^^^^^^^^^^^^^
+   |
+help: replace the use of the deprecated constant
+   |
+14 - static NEXT_ID: AtomicUsize = ATOMIC_USIZE_INIT;
+14 + static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+   |
+
+warning: trait objects without an explicit `dyn` are deprecated
+  --> src/main.rs:54:44
+   |
+54 | pub type Result<T> = result::Result<T, Box<Error + Send + Sync>>;
+   |                                            ^^^^^^^^^^^^^^^^^^^
+   |
+   = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+   = note: `#[warn(bare_trait_objects)]` (part of `#[warn(rust_2021_compatibility)]`) on by default
+help: if this is a dyn-compatible trait, use `dyn`
+   |
+54 | pub type Result<T> = result::Result<T, Box<dyn Error + Send + Sync>>;
+   |                                            +++
+
+warning: trait objects without an explicit `dyn` are deprecated
+   --> src/printer.rs:522:32
+    |
+522 |     fn cause(&self) -> Option<&error::Error> {
+    |                                ^^^^^^^^^^^^
+    |
+    = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+help: if this is a dyn-compatible trait, use `dyn`
+    |
+522 |     fn cause(&self) -> Option<&dyn error::Error> {
+    |                                +++
+
+warning: trait objects without an explicit `dyn` are deprecated
+  --> src/search_stream.rs:46:32
+   |
+46 |     fn cause(&self) -> Option<&StdError> {
+   |                                ^^^^^^^^
+   |
+   = warning: this is accepted in the current edition (Rust 2015) but is a hard error in Rust 2021!
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/warnings-promoted-to-error.html>
+help: if this is a dyn-compatible trait, use `dyn`
+   |
+46 |     fn cause(&self) -> Option<&dyn StdError> {
+   |                                +++
+
+warning: use of deprecated method `std::error::Error::description`: use the Display impl or to_string()
+  --> src/search_stream.rs:42:46
+   |
+42 |             Error::Io { ref err, .. } => err.description(),
+   |                                              ^^^^^^^^^^^
+
+warning: `ripgrep` (test "integration") generated 2 warnings (run `cargo fix --test "integration" -p ripgrep` to apply 1 suggestion)
+warning: `ripgrep` (bin "rg") generated 72 warnings (4 duplicates) (run `cargo fix --bin "rg" -p ripgrep` to apply 9 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.47s
+     Running tests/tests.rs (target/debug/deps/integration-5f1b816eda5d4c15)

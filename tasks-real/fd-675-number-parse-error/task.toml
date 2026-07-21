@@ -1,0 +1,7 @@
+prompt = "**Describe the bug you encountered:**\r\nWhen supplying an invalid value to an option that expects a numeric value, `fd` silently ignores that option.\r\n\r\nFor example, `fd --max-depth x` silently ignores the `--max-depth` option.\r\n\r\nAt least the following options are affected:\r\n* `--min-depth`\r\n* `--max-depth` (`--maxdepth`)\r\n* `--exact-depth`\r\n* `--threads`\r\n* `--max-buffer-time`\r\n* `--max-results`\r\n\r\n**Describe what you expected to happen:**\r\nI expected `fd` to exit with an error message saying the option value is invalid.\r\n\r\n**What version of `fd` are you using?**\r\nfd 8.1.1\r\n\r\n**Which operating system / distribution are you on?**\r\nWindows 10 (Version 2004, Build 19041.572)"
+check = "cargo test --test tests test_number_parsing_errors"
+context_tokens = 32768
+command_timeout_secs = 180
+check_timeout_secs = 300
+timeout_secs = 600
+protected = ["tests/testenv/mod.rs", "tests/tests.rs"]
