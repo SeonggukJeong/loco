@@ -4,7 +4,7 @@
 |---|---|
 | **한 줄** | `repo_notes` on/off 재측정으로 cold-start `tasks-real` 통과율을 들어 올릴 수 있는지 본다 |
 | **성격** | 효과 실험 (control vs treatment) · **사전등록 필수** · M15 0/51 스탬프를 control로 **재사용 금지** |
-| **상태** | **코드 main 머지** · **사전등록 초안** (`pre-registration.md`) · **승인·GPU 대기** · 숫자/판정 없음 |
+| **상태** | **코드 main 머지** · **사전등록 승인됨 (2026-07-21)** · **GPU 배치 진행 가능** · 숫자/판정은 측정 후 |
 
 ---
 
@@ -32,7 +32,7 @@
 ## TODO (GPU 전)
 
 1. [x] `pre-registration.md` 초안 — §5 / §2-2 / mechanism-alive / DQ / 102런
-2. [ ] **사용자 승인 커밋** (상태 `승인됨`) — 전언 승인 불가
+2. [x] **사용자 승인 커밋** (상태 `승인됨`, 2026-07-21)
 3. [ ] control (`repo_notes=false`) → treatment (`true`) 재측정 (각 17×3)
 4. [ ] `report.md` · `docs/baselines.md` M16 절 — **측정 후에만** 숫자 기록
 
