@@ -46,6 +46,22 @@
 cargo run -- eval tasks-real --repeats 1 --seed 0 --filter fd-1873-path-sep
 ```
 
+
+## 0-D. 개정 D — timeout 1800s + max_turns 50
+
+| 항목 | 값 |
+|---|---|
+| 목적 | 벽시계 여유 후 턴/수선 진행 관찰 (ε 아님) |
+| 암 | treatment · B 경로 수정 포함 |
+| 과제 | `fd-1873-path-sep` ×1 seed 0 |
+| max_turns | **50** (config) |
+| agent timeout | **1800s** (`task.toml` 600 × `--timeout-scale 3`) |
+
+```bash
+cargo run -- eval tasks-real --repeats 1 --seed 0 --timeout-scale 3 --filter fd-1873-path-sep
+```
+
+
 **초판 §0–§13의 102런 계약은 효력 정지(보류).** 전량 측정 시 초판 또는 새 개정으로 재승인.
 
 ### 0-B 명령
