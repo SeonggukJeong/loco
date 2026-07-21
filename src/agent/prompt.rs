@@ -8,9 +8,9 @@ const TREE_DEPTH: usize = 3;
 
 /// SYSTEM pointer when `repo_notes` is on (M16 §3-4). Flag-off must not include this.
 pub const REPO_NOTES_SYSTEM_POINTER: &str = "\
-Maintain hierarchical repo notes under `.loco/notes/` via `update_repo_notes`. \
-Keep root short (summary + routes); deeper dirs hold role/entrypoints. \
-Do not paste file bodies, test logs, or issue text.";
+Maintain hierarchical repo notes via `update_repo_notes` (keys `_root` / `src` — not `.loco/notes/...` paths). \
+Root ≤1200 bytes (summary + routes); dir ≤800 (role + few entrypoints). \
+Do not paste file bodies, test logs, issue text, or rejection templates; shorten in place, do not split topics into extra files.";
 
 /// 에이전트 시스템 프롬프트 (영어 — 소형 모델의 지시 이행률, 스펙 §4).
 /// 매 턴 JSON 하나, 답변 채널은 finish.summary, few-shot 1개 포함.

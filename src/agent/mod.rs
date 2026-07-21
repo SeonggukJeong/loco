@@ -291,6 +291,9 @@ impl<C: LlmClient> Agent<C> {
         } else {
             None
         };
+        // M16: consecutive update_repo_notes schema rejects → one thrifty correction
+        let mut notes_schema_streak: usize = 0;
+        let mut notes_schema_corrected = false;
         while turns < self.max_turns {
             // 취소 신호 후에는 새 LLM 호출을 만들지 않는다 — run_bounded의 유예가
             // 이 경로로 빠르게 끝난다 (설계 §1). 진행 중이던 run_command는 자체
@@ -838,6 +841,26 @@ impl<C: LlmClient> Agent<C> {
             };
             let (mut note, stop) = self.track_and_note(&mut tracker, &turn, &body, args_tool_note, on_event);
             self.update_perturb(&tracker, on_event);
+            // M16: 2 consecutive notes schema rejects → thrifty correction once (before generic stop)
+            if turn.action.tool == "update_repo_notes" {
+                if body.contains(
+                    crate::tools::update_repo_notes::NOTES_SCHEMA_REJECT_PREFIX,
+                ) {
+                    notes_schema_streak += 1;
+                    if notes_schema_streak >= 2 && !notes_schema_corrected {
+                        notes_schema_corrected = true;
+                        on_event(AgentEvent::Notice(
+                            "(notes 스키마 반복 실패 — thrifty 교정 주입)".to_string(),
+                        ));
+                        note = merge_note(
+                            note,
+                            crate::tools::update_repo_notes::NOTES_SCHEMA_CORRECTION,
+                        );
+                    }
+                } else if dispatch_ok {
+                    notes_schema_streak = 0;
+                }
+            }
             // 반복정지 우선 (§4-2) — 정지 턴에는 넛지를 평가하지 않는다
             if !stop && let Some(nudge) = finish_nudge.on_turn(ev) {
                 let nudge = if unreleased_due_to_pipe && nudge == finish_nudge::FINISH_NUDGE {
@@ -1913,7 +1936,13 @@ mod tests {
         std::fs::write(dir.path().join("big.txt"), "z".repeat(6_000)).unwrap();
         let read = || ok(&turn("read_file", serde_json::json!({"path": "big.txt"})));
         let script = Scripted::new(vec![read(), read(), ok(&finish("done"))]);
-        let config = Config { context_tokens: 2_500, max_output_tokens: 100, ..Default::default() };
+        // repo_notes=false: pack arithmetic is calibrated without notes SYSTEM pointer
+        let config = Config {
+            context_tokens: 2_500,
+            max_output_tokens: 100,
+            repo_notes: false,
+            ..Default::default()
+        };
         let mut agent = Agent::new(
             &script, Registry::read_only(), ToolCtx::new(dir.path().to_path_buf()),
             "test-model".into(), &config,
@@ -3533,6 +3562,39 @@ mod tests {
         assert!(
             hist[0].content.contains(prompt::REPO_NOTES_SYSTEM_POINTER),
             "flag true: SYSTEM pointer present"
+        );
+    }
+
+    #[tokio::test]
+    async fn notes_schema_two_rejects_inject_thrifty_correction_once() {
+        // Oversized dir notes twice → NOTES_SCHEMA_CORRECTION on 2nd; third still fails schema
+        // without a second copy of the correction.
+        let dir = tempfile::tempdir().unwrap();
+        let mut fat = String::from("## role\ncli\n\n## entrypoints\n");
+        while fat.len() < 850 {
+            fat.push_str("- X — long entrypoint line that pads the body over the dir cap\n");
+        }
+        let script = Scripted::new(vec![
+            ok(&notes_update("src", &fat)),
+            ok(&notes_update("src", &fat)),
+            ok(&notes_update("src", &fat)),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_notes_agent(&script, dir.path().to_path_buf(), 25);
+        let mut session = new_session(&agent);
+        run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        let corr = crate::tools::update_repo_notes::NOTES_SCHEMA_CORRECTION;
+        let joined: String = session
+            .messages()
+            .iter()
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n---\n");
+        let n = joined.matches(corr).count();
+        assert_eq!(n, 1, "correction once per run, got {n}: …");
+        assert!(
+            joined.contains(crate::tools::update_repo_notes::NOTES_SCHEMA_REJECT_PREFIX),
+            "schema rejects present"
         );
     }
 }
