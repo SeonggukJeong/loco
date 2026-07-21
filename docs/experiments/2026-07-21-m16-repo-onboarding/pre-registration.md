@@ -6,24 +6,49 @@
 - 플랜: `docs/superpowers/plans/2026-07-21-m16-repo-onboarding.md` (T0–T7 구현 완료)
 - 프로토콜: `docs/experiments/PROTOCOL.md` (M15 이후 형태)
 - 표본 원천: M15 동결 `docs/experiments/2026-07-20-m15-real-repo-baseline/frozen-sample.md` (N=17)
-- **상태: 승인됨 (2026-07-21).** 승인 성립 커밋은 본 상태 행 변경 커밋.
-  GPU 배치는 이 승인 이후에만 시작 (PROTOCOL 1). M15 0/51 스탬프 control 비인용 불변.
+- **상태: 승인됨 (2026-07-21) · 개정 B (2026-07-21, 최소 스모크).**  
+  초판 102런(양 암)은 **보류**. 당장 수행하는 것은 아래 **§0-B treatment 최소 스모크**만.
+  PROTOCOL 1: 개정 B 승인 = 본 문서 개정 커밋.
 
 ---
 
-## 0. 성격 — 효과 실험 (재측정 control 필수)
+## 0-B. 개정 B — treatment 최소 스모크 (지금 돌릴 것)
 
-| 항목 | 본 사전등록 |
+| 항목 | 값 |
 |---|---|
-| 가설 | **있음** — notes 온보딩 하네스가 cold-start `tasks-real` 통과를 들어 올린다 |
-| 암 | control (`repo_notes=false`) · treatment (`repo_notes=true`) — **동일 바이너리** |
-| 1차 판정 | treatment `task_mean_pass ≥ ε` with **`ε = 1/17`** (스펙 §2-2) |
-| 실격 | 암 **독립**. N=17에서 전패 과제 ≥13 **또는** 전승 과제 ≥13 |
-| M15 0/51 스탬프 | **control로 인용 금지** — control도 본 브랜치에서 **재측정** (스펙 §7-10) |
-| 회귀 | `tasks` / `tasks-large` 는 eval이 `repo_notes=false` 강제 — 본 배치 대상 아님 |
+| 목적 | 하네스 **on** 경로가 사는지 · 기전 마커가 찍히는지 · 1런 완주 가능한지. **ε 판정·Δ 주장 아님** |
+| 암 | **treatment only** (`repo_notes=true`). control 재측정 **안 함** |
+| 과제 | **`fd-1873-path-sep` 1개** (동결 표본 안 · 소형 fd) |
+| 반복 | **`--repeats 1 --seed 0`** → **총 1런** |
+| 1차 판정 (이 개정) | **없음** (스펙 ε=1/17 적용 **안 함**) |
+| 성공 관찰 (보고만) | (1) 하네스 오류 없이 완주 (2) `effective_config.repo_notes==true` (3) mechanism-alive 여부 기록 |
+| 명시적 비주장 | M15 0/51 대비 “들어 올림” 통계 주장 금지 · N=17 실격 라벨 금지 |
+| 중단 시 | 부분 산출 폐기 · 동일 1런 재시도 1회까지 |
+| 이후 | 스모크 결과에 따라 전량(51 또는 개정 표본) 재사전등록 |
 
-**ε와 실격은 독립 라벨이다.** treatment가 ε를 넘어도 그 암의 전패 ≥13이면 실격으로 보고한다.
-사후 ε·실격 상향 금지 (사전등록 개정만).
+**초판 §0–§13의 102런 계약은 효력 정지(보류).** 전량 측정 시 초판 또는 새 개정으로 재승인.
+
+### 0-B 명령
+
+```bash
+# .loco/config.toml: repo_notes = true (+ 전역 8192/4096/8080)
+cargo run -- eval tasks-real --repeats 1 --seed 0 --filter fd-1873-path-sep
+```
+
+---
+
+## 0. 성격 — (초판, 보류) 효과 실험 (재측정 control)
+
+| 항목 | 초판 값 (보류) |
+|---|---|
+| 가설 | notes 온보딩이 cold-start 통과를 들어 올린다 |
+| 암 | control false · treatment true **재측정** |
+| 1차 판정 | treatment `task_mean_pass ≥ 1/17` |
+| 실격 | 암 독립 · 전패/전승 ≥13 |
+| M15 0/51 | control 인용 금지 (전량 실험 시) |
+| 총 런 | 102 (17×3×2) |
+
+**ε와 실격은 독립.** 사후 ε 상향 금지 — 개정만.
 
 ---
 
