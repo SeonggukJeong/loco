@@ -1,7 +1,7 @@
 # M16 SDD 인수인계 (다음 세션용)
 
-**작성:** 2026-07-21 · **상태:** 설계 Ready · 플랜 Ready · **구현 0%** · SDD 착수 대기  
-**브랜치 권고:** `m16/repo-onboarding` (main에서 분기; **main에 직접 구현 금지** — SDD 규율)
+**작성:** 2026-07-21 · **상태:** 설계 Ready (2R) · **플랜 Ready (2R Yes)** · **구현 0%** · SDD 착수 대기  
+**브랜치 권고:** `m16/repo-onboarding` (Task 0; **main에 직접 구현 금지**)
 
 ---
 
@@ -16,8 +16,9 @@ M15 cold-start 바닥(0/51) 위에 **계층 `.loco/notes/` + certified mut-gate 
 1. **이 파일** (인수인계)
 2. 스펙 (개정 2, Ready: Yes):  
    `docs/superpowers/specs/2026-07-21-m16-repo-onboarding-design.md`
-3. 구현 플랜:  
-   `docs/superpowers/plans/2026-07-21-m16-repo-onboarding.md`
+3. 구현 플랜 (**2R Ready: Yes**, 개정 2):  
+   `docs/superpowers/plans/2026-07-21-m16-repo-onboarding.md`  
+   리뷰: `…-repo-onboarding-review-1.md` · `…-review-2.md`
 4. (필요 시) 리뷰 이력:  
    `…-design-review-1.md` (I1–I8) · `…-design-review-2.md` (Ready Yes)
 5. 배경: `docs/m16-candidates.md` · `docs/baselines.md` M15 ·  
@@ -78,6 +79,7 @@ git checkout -b m16/repo-onboarding
 
 | Task | 내용 | 완료? |
 |---|---|---|
+| T0 | 브랜치 `m16/repo-onboarding` | **pending** |
 | T1 | `src/notes/` schema + path + templates | **pending** |
 | T2 | tool + `repo_notes` config + `Registry::guided(bool)` + EffectiveConfig | **pending** |
 | T3 | agent certified gate · dirty · finish order · VERIFY whitelist | **pending** |
