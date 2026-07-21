@@ -90,6 +90,17 @@ pub(crate) const LENGTH_RECOVERY: &str = "Your previous response was cut off by 
 Respond again with exactly one short JSON turn (one thought fragment + one tool call). \
 Do not paste the same JSON object more than once. Keep args tiny.";
 
+/// 연속 unsalvaged length 2회째+ (산문/비JSON 절단). 문구가 LENGTH_RECOVERY와
+/// **달라야** push_recovery_notice 중복 억제를 뚫고 재주입된다.
+pub(crate) const LENGTH_RECOVERY_JSON_ONLY: &str = "\
+Your previous response was cut off by the output token limit — it was prose or incomplete, not one JSON turn. \
+Output ONLY one JSON object and stop (no analysis, no markdown fences). \
+{\"thought\":\"<≤12 words>\",\"action\":{\"tool\":\"<name>\",\"args\":{...}}}. Keep args tiny.";
+
+/// unsalvaged length 직후 일시 출력 상한 — 4096 토큰 산문 루프가 벽시계를 태우는 것을 막는다.
+/// 성공 턴(비-length 파싱 또는 salvage)에서 원복.
+const LENGTH_OUTPUT_CAP: u32 = 1024;
+
 /// §4-2(c) 하한 — max_output_tokens가 context_tokens를 넘겨도 예산이 0이 되지
 /// 않게 한다. 0이면 pack()이 시스템 프롬프트와 마지막 메시지만 남긴다
 const MIN_INPUT_BUDGET: usize = 512;
@@ -299,6 +310,9 @@ impl<C: LlmClient> Agent<C> {
         // M16: length / notes-shaped parse fail → one mouth-small correction
         let mut notes_output_corrected = false;
         let mut saw_mut_gate = false;
+        // M16: unsalvaged length streak → escalate copy + temporary max_tokens cap
+        let mut length_fail_streak: usize = 0;
+        let base_max_output_tokens = self.max_output_tokens;
         while turns < self.max_turns {
             // 취소 신호 후에는 새 LLM 호출을 만들지 않는다 — run_bounded의 유예가
             // 이 경로로 빠르게 끝난다 (설계 §1). 진행 중이던 run_command는 자체
@@ -387,6 +401,8 @@ impl<C: LlmClient> Agent<C> {
                 session.record_extra("assistant", blob);
                 if let Ok(turn) = parse_turn(blob) {
                     // salvage 성공 — 히스토리에는 **한 턴분**만 (반복 blob 전체 X)
+                    length_fail_streak = 0;
+                    self.max_output_tokens = base_max_output_tokens;
                     let compact = serde_json::json!({
                         "thought": turn.thought,
                         "action": {
@@ -403,6 +419,9 @@ impl<C: LlmClient> Agent<C> {
                     );
                     length_salvaged = Some(turn);
                 } else {
+                    // unsalvaged: 산문/불완전 JSON — 스트릭 + 출력 상한 + 교정 문구
+                    length_fail_streak = length_fail_streak.saturating_add(1);
+                    self.max_output_tokens = base_max_output_tokens.min(LENGTH_OUTPUT_CAP);
                     // push_recovery_notice: assistant를 건너뛰므로 꼬리 user 병합 필요.
                     // M16: notes-shaped cut or post-mut-gate → thrifty notes recovery once
                     let notes_cut = self.repo_notes
@@ -419,12 +438,26 @@ impl<C: LlmClient> Agent<C> {
                             on_event,
                             "(응답 잘림 — notes thrifty 교정 주입)".to_string()
                         );
+                    } else if length_fail_streak >= 2 {
+                        // 문구를 바꿔 de-dupe를 뚫고, 산문 재발을 JSON-only로 누른다
+                        session.push_recovery_notice(LENGTH_RECOVERY_JSON_ONLY);
+                        notice_recorded!(
+                            session,
+                            on_event,
+                            format!(
+                                "(응답 잘림 — JSON-only 교정, max_tokens≤{})",
+                                self.max_output_tokens
+                            )
+                        );
                     } else {
                         session.push_recovery_notice(LENGTH_RECOVERY);
                         notice_recorded!(
                             session,
                             on_event,
-                            "(응답이 잘림 — 더 짧게 다시 요청)".to_string()
+                            format!(
+                                "(응답이 잘림 — 더 짧게 다시 요청, max_tokens≤{})",
+                                self.max_output_tokens
+                            )
                         );
                     }
                     let _ = status.on_turn(&status_note::TurnCtx {
@@ -437,6 +470,10 @@ impl<C: LlmClient> Agent<C> {
                     turns += 1;
                     continue;
                 }
+            } else {
+                // 비-length 정상 턴 — length 실패 상태 원복
+                length_fail_streak = 0;
+                self.max_output_tokens = base_max_output_tokens;
             }
 
             // 파싱 실패는 에러를 되먹여 턴당 총 PARSE_ATTEMPTS회 시도 (스펙 §9).
@@ -1617,6 +1654,46 @@ mod tests {
             "read_file should have run: {:?}",
             session.messages()
         );
+    }
+
+    #[tokio::test]
+    async fn unsalvaged_length_caps_max_tokens_and_escalates_on_streak() {
+        // prose length (no JSON) cannot salvage — cap output, then JSON-only escalate
+        let dir = tempfile::tempdir().unwrap();
+        let prose = "The test is failing because the expected output does not match. ".repeat(40);
+        let script = Scripted::new(vec![
+            ok_with_reason(&prose, "length"),
+            ok_with_reason(&prose, "length"),
+            ok(&finish("done")),
+        ]);
+        let mut agent = make_agent(&script, dir.path().to_path_buf(), 25);
+        // make_agent uses default max_output; force a high baseline like smoke
+        agent.max_output_tokens = 4096;
+        let mut session = new_session(&agent);
+        let outcome = run_quiet(&mut agent, &mut session, "x").await.unwrap();
+        assert!(matches!(outcome, AgentOutcome::Finished(_)), "{outcome:?}");
+        let reqs = script.requests.lock().unwrap();
+        assert!(reqs.len() >= 3, "need ≥3 requests, got {}", reqs.len());
+        // request 0: full budget; after 1st length fail request 1 is capped
+        assert_eq!(reqs[0].max_tokens, Some(4096), "first call at baseline");
+        assert_eq!(
+            reqs[1].max_tokens,
+            Some(LENGTH_OUTPUT_CAP),
+            "2nd call capped after unsalvaged length: {:?}",
+            reqs.iter().map(|r| r.max_tokens).collect::<Vec<_>>()
+        );
+        let hist = session
+            .messages()
+            .iter()
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            hist.contains("not a single JSON turn") || hist.contains("ONLY one JSON object"),
+            "JSON-only escalate missing:\n{hist}"
+        );
+        // after successful non-length finish path, agent restores baseline
+        assert_eq!(agent.max_output_tokens, 4096, "restored after success");
     }
 
     #[tokio::test]
