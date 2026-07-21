@@ -18,13 +18,33 @@
 |---|---|
 | 목적 | 하네스 **on** 경로가 사는지 · 기전 마커가 찍히는지 · 1런 완주 가능한지. **ε 판정·Δ 주장 아님** |
 | 암 | **treatment only** (`repo_notes=true`). control 재측정 **안 함** |
-| 과제 | **`fd-1873-path-sep` 1개** (동결 표본 안 · 소형 fd) |
-| 반복 | **`--repeats 1 --seed 0`** → **총 1런** |
+| 과제 | 스모크 확장: **`fd-1873-path-sep`** (완료) + **`delta-1089-whole-file-commit`** + **`rg-740-passthru`** (각 1런, 동결 표본 안 · 레포 다양) |
+| 반복 | **`--repeats 1 --seed 0`** → **총 3런** (과제당 1) |
 | 1차 판정 (이 개정) | **없음** (스펙 ε=1/17 적용 **안 함**) |
 | 성공 관찰 (보고만) | (1) 하네스 오류 없이 완주 (2) `effective_config.repo_notes==true` (3) mechanism-alive 여부 기록 |
 | 명시적 비주장 | M15 0/51 대비 “들어 올림” 통계 주장 금지 · N=17 실격 라벨 금지 |
 | 중단 시 | 부분 산출 폐기 · 동일 1런 재시도 1회까지 |
 | 이후 | 스모크 결과에 따라 전량(51 또는 개정 표본) 재사전등록 |
+
+
+
+## 0-C. 개정 C — max_turns 진단 스모크 (B 수정 후)
+
+| 항목 | 값 |
+|---|---|
+| 선행 | **0-B 경로 버그 수정** (`normalize_key` strips `.loco/notes/`) 커밋 포함 빌드 |
+| 목적 | 게이트 세금 제거 후 **턴 상한 민감도** — ε 판정 아님 |
+| 암 | treatment (`repo_notes=true`) |
+| 과제 | `fd-1873-path-sep` ×1 |
+| 예산 | **`max_turns=50`** (config 오버라이드; 제품 기본 25와 다름) · timeout 600 유지 |
+| 관찰 | outcome · notes_mut_gate/updates · first_mut_turn · passed · 종료 시 테스트 근접 여부 |
+
+```bash
+# .loco/config.toml
+# repo_notes = true
+# max_turns = 50
+cargo run -- eval tasks-real --repeats 1 --seed 0 --filter fd-1873-path-sep
+```
 
 **초판 §0–§13의 102런 계약은 효력 정지(보류).** 전량 측정 시 초판 또는 새 개정으로 재승인.
 
@@ -33,6 +53,8 @@
 ```bash
 # .loco/config.toml: repo_notes = true (+ 전역 8192/4096/8080)
 cargo run -- eval tasks-real --repeats 1 --seed 0 --filter fd-1873-path-sep
+cargo run -- eval tasks-real --repeats 1 --seed 0 --filter delta-1089-whole-file-commit
+cargo run -- eval tasks-real --repeats 1 --seed 0 --filter rg-740-passthru
 ```
 
 ---
