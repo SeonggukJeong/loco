@@ -28,8 +28,11 @@ pub struct ProcureSpec {
     pub parent_sha: String,
     /// 오라클 = 정답 커밋의 **비테스트 소스** 파일 (§5-4 제약 2).
     /// CHANGELOG·문서를 배제한 **명시 목록**이다 — 레포마다 관례가 달라
-    /// 자동 규칙으로는 못 좁힌다. 리포트에 동결돼 사후 변경이 막힌다
-    #[serde(default)]
+    /// 자동 규칙으로는 못 좁힌다. 리포트에 동결돼 사후 변경이 막힌다.
+    /// `#[serde(default)]`를 일부러 안 붙였다: 키 자체가 없으면(작성자가
+    /// 오라클 채우기를 잊음) 파싱 에러 — 명시적으로 쓴 빈 배열(`[]`, 의도된
+    /// 확정)만 합법적인 빈 상태다. 안 그러면 누락이 조용한 `[]`로 통과해
+    /// fail-closed 정책의 세 번째 우회로가 된다
     pub oracle_files: Vec<String>,
 }
 
@@ -78,11 +81,29 @@ oracle_files = ["crates/core/flags/hiargs.rs"]
     }
 
     #[test]
-    fn oracle_files_defaults_to_empty() {
+    fn omitted_oracle_files_is_rejected() {
+        // 키 자체가 없으면(작성자가 오라클 채우기를 잊음) 에러 —
+        // #[serde(default)]가 남아 있었다면 이 테스트는 Ok(빈 벡터)를 봐서
+        // 실패했을 것이다. 즉 이 테스트가 통과하는 것 자체가 default 제거의 증거다
         let dir = tempfile::tempdir().unwrap();
         let no_oracle = SAMPLE.lines().filter(|l| !l.starts_with("oracle_files")).collect::<Vec<_>>().join("\n");
         std::fs::write(dir.path().join("procure.toml"), no_oracle).unwrap();
-        assert!(load(dir.path()).unwrap().unwrap().oracle_files.is_empty());
+        let err = load(dir.path()).unwrap_err();
+        assert!(err.to_string().contains("procure.toml"), "{err:#}");
+    }
+
+    #[test]
+    fn explicit_empty_oracle_files_is_allowed() {
+        // 키가 명시적으로 존재하되 빈 배열이면 — 의도된 확정이므로 합법
+        let dir = tempfile::tempdir().unwrap();
+        let empty_oracle = SAMPLE
+            .lines()
+            .map(|l| if l.starts_with("oracle_files") { "oracle_files = []" } else { l })
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(dir.path().join("procure.toml"), empty_oracle).unwrap();
+        let s = load(dir.path()).unwrap().unwrap();
+        assert!(s.oracle_files.is_empty());
     }
 
     #[test]
